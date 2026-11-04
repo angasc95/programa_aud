@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Supabase Connection Tester</title>
+  <meta name="description" content="Clean and fully working Supabase connection and database query tester.">
+  <meta property="og:title" content="Supabase Connection Tester">
+  <meta property="og:description" content="Clean and fully working Supabase connection and database query tester.">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Supabase Official JS SDK CDN (v2) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    /* Clean custom scrollbar for logs and results */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+    <div class="max-w-6xl mx-auto px-4 py-3.5 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center space-x-3">
+        <!-- Supabase green lightning mark -->
+        <div class="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600 font-bold">
+          <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
+            <path d="M21.362 9.354H12V.396a.396.396 0 0 0-.716-.233L.32 14.12a.396.396 0 0 0 .307.638H12v8.846a.396.396 0 0 0 .716.233l10.963-13.844a.396.396 0 0 0-.317-.639z"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-base font-bold text-slate-900 leading-tight">Supabase Connection Tester</h1>
+          <p class="text-xs text-slate-500">Database health, PostgREST API & schema verifier</p>
+        </div>
+      </div>
+
+      <!-- Live Connection Status Badge -->
+      <div id="statusBadge" class="flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200 transition-all duration-300">
+        <span class="w-2 h-2 rounded-full bg-slate-400 animate-pulse" id="statusDot"></span>
+        <span id="statusText">Initializing...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-6 space-y-5">
+
+    <!-- Credentials & Config Card -->
+    <div class="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-xs">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <div>
+          <h2 class="text-sm font-bold text-slate-800">Connection Configuration</h2>
+          <p class="text-xs text-slate-500">Credentials configured for testing your Supabase instance</p>
+        </div>
+        <span class="text-[11px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
+          Project ID: ufowtgmpaahyshdxlnlq
+        </span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Project URL</label>
+          <input 
+            type="text" 
+            id="supabaseUrl" 
+            value="https://ufowtgmpaahyshdxlnlq.supabase.co" 
+            class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          >
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Publishable Key</label>
+          <div class="relative">
+            <input 
+              type="text" 
+              id="supabaseKey" 
+              value="sb_publishable_p8Gu4e4nS2DgPG-BqS6vAw_V_5owfv4" 
+              class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons Row -->
+      <div class="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2.5">
+        <div class="flex items-center space-x-2">
+          <!-- Primary action button -->
+          <button 
+            id="btnTestAll"
+            onclick="testFullConnection()"
+            class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold text-xs rounded-lg shadow-xs transition-colors flex items-center space-x-2 cursor-pointer"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            <span>Test Connection & Fetch Tables</span>
+          </button>
+
+          <button 
+            onclick="testAuthHealth()"
+            class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs rounded-lg transition-colors cursor-pointer"
+            title="Check Supabase Auth service ping"
+          >
+            Ping Auth API
+          </button>
+        </div>
+
+        <div class="flex items-center space-x-2">
+          <button 
+            onclick="clearLogs()"
+            class="px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+          >
+            Clear Logs
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Metrics Grid -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+      <!-- Latency -->
+      <div class="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+        <span class="text-slate-500 font-medium block">API Latency</span>
+        <div class="text-xl font-bold text-slate-900 mt-1 flex items-baseline space-x-1">
+          <span id="metricLatency">--</span>
+          <span class="text-xs font-normal text-slate-400">ms</span>
+        </div>
+        <span class="text-[11px] text-slate-400 mt-0.5 block" id="metricLatencyLabel">Roundtrip ping</span>
+      </div>
+
+      <!-- PostgREST Status -->
+      <div class="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+        <span class="text-slate-500 font-medium block">PostgREST REST API</span>
+        <div class="text-xl font-bold text-slate-900 mt-1" id="metricRest">
+          <span class="text-slate-400">--</span>
+        </div>
+        <span class="text-[11px] text-slate-400 mt-0.5 block" id="metricRestLabel">Status code</span>
+      </div>
+
+      <!-- Auth API Status -->
+      <div class="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+        <span class="text-slate-500 font-medium block">Auth / GoTrue</span>
+        <div class="text-xl font-bold text-slate-900 mt-1" id="metricAuth">
+          <span class="text-slate-400">--</span>
+        </div>
+        <span class="text-[11px] text-slate-400 mt-0.5 block" id="metricAuthLabel">Auth health</span>
+      </div>
+
+      <!-- Discovered Tables -->
+      <div class="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+        <span class="text-slate-500 font-medium block">Verified Tables</span>
+        <div class="text-xl font-bold text-emerald-600 mt-1" id="metricTables">
+          <span>--</span>
+        </div>
+        <span class="text-[11px] text-slate-400 mt-0.5 block">Accessible schema</span>
+      </div>
+    </div>
+
+    <!-- Table Explorer & Query Tool -->
+    <div class="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-xs space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+        <div>
+          <h3 class="text-sm font-bold text-slate-800">Database Table Explorer</h3>
+          <p class="text-xs text-slate-500">Query and inspect table rows using the official Supabase JavaScript SDK</p>
+        </div>
+
+        <!-- Quick Table Chips -->
+        <div class="flex items-center space-x-1.5 flex-wrap gap-y-1">
+          <span class="text-[11px] text-slate-400 font-medium mr-1">Known tables:</span>
+          <button onclick="selectAndQueryTable('auditoria')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer">auditoria</button>
+          <button onclick="selectAndQueryTable('auditor')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer">auditor</button>
+          <button onclick="selectAndQueryTable('norma')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer">norma</button>
+          <button onclick="selectAndQueryTable('proceso')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer">proceso</button>
+          <button onclick="selectAndQueryTable('certificado')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer">certificado</button>
+        </div>
+      </div>
+
+      <!-- Table Query Form -->
+      <div class="flex flex-col sm:flex-row sm:items-center gap-2 text-xs">
+        <div class="flex-1 flex items-center space-x-2">
+          <span class="font-mono text-slate-400 font-medium">from('</span>
+          <input 
+            type="text" 
+            id="tableNameInput" 
+            value="auditoria" 
+            placeholder="table_name" 
+            class="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          >
+          <span class="font-mono text-slate-400 font-medium">').select('*')</span>
+        </div>
+
+        <div class="flex items-center space-x-2">
+          <input 
+            type="number" 
+            id="tableLimit" 
+            value="25" 
+            min="1" 
+            max="100" 
+            class="w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 font-mono text-slate-800 text-center"
+            title="Result Limit"
+          >
+          <span class="text-slate-400 text-xs">limit</span>
+
+          <button 
+            id="btnQueryTable"
+            onclick="queryTable()" 
+            class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-semibold rounded-lg transition-colors cursor-pointer"
+          >
+            Execute Query
+          </button>
+        </div>
+      </div>
+
+      <!-- Results View Area -->
+      <div class="border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
+        <!-- Result Bar -->
+        <div class="px-3.5 py-2 bg-slate-100 border-b border-slate-200 flex items-center justify-between text-xs">
+          <div class="flex items-center space-x-2">
+            <span class="font-semibold text-slate-700">Query Results</span>
+            <span id="resultsCountBadge" class="px-2 py-0.2 rounded-full text-[11px] font-medium bg-slate-200 text-slate-700">0 rows</span>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <button 
+              id="btnViewTable" 
+              onclick="toggleResultFormat('table')" 
+              class="px-2 py-1 text-[11px] font-medium rounded bg-white text-slate-800 border border-slate-200 shadow-2xs"
+            >
+              Table View
+            </button>
+            <button 
+              id="btnViewJson" 
+              onclick="toggleResultFormat('json')" 
+              class="px-2 py-1 text-[11px] font-medium rounded text-slate-500 hover:text-slate-800"
+            >
+              JSON View
+            </button>
+          </div>
+        </div>
+
+        <!-- Dynamic Results Container -->
+        <div id="resultsContainer" class="p-4 max-h-80 overflow-auto text-xs">
+          <div class="text-center py-8 text-slate-400 italic">
+            Click "Test Connection & Fetch Tables" or "Execute Query" to inspect records.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Real-time Execution Logs -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xs text-xs">
+      <div class="px-4 py-2.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+          <span class="font-mono font-semibold text-slate-300">Activity & Request Log</span>
+        </div>
+        <span class="text-[11px] text-slate-500 font-mono" id="logTimestamp">Ready</span>
+      </div>
+
+      <div id="consoleLog" class="p-4 font-mono text-[12px] space-y-1.5 max-h-64 overflow-y-auto text-slate-300">
+        <!-- Logs appear here dynamically -->
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-500">
+    Clean Supabase Client SDK Connection Tester • Project Reference: <code class="font-mono text-slate-700">ufowtgmpaahyshdxlnlq</code>
+  </footer>
+
+  <!-- Application Logic -->
+  <script>
+    // Initialize state
+    let supabaseClient = null;
+    let currentResultsData = [];
+    let currentResultFormat = 'table';
+    const KNOWN_TABLES = ['auditoria', 'auditor', 'norma', 'proceso', 'certificado'];
+
+    /**
+     * Append a log entry to the dark console terminal
+     */
+    function log(message, type = 'info', meta = null) {
+      const consoleBox = document.getElementById('consoleLog');
+      const time = new Date().toLocaleTimeString();
+      const el = document.createElement('div');
+      el.className = 'flex items-start space-x-2';
+
+      let color = 'text-slate-300';
+      let icon = 'ℹ️';
+
+      if (type === 'success') {
+        color = 'text-emerald-400';
+        icon = '✅';
+      } else if (type === 'error') {
+        color = 'text-rose-400';
+        icon = '❌';
+      } else if (type === 'warn') {
+        color = 'text-amber-400';
+        icon = '⚠️';
+      } else if (type === 'ping') {
+        color = 'text-sky-400';
+        icon = '⚡';
+      }
+
+      let metaHtml = '';
+      if (meta) {
+        metaHtml = `<pre class="mt-1 text-[11px] p-2 bg-slate-950 rounded text-slate-400 border border-slate-800 overflow-x-auto">${JSON.stringify(meta, null, 2)}</pre>`;
+      }
+
+      el.innerHTML = `
+        <span class="text-slate-600 select-none">[${time}]</span>
+        <span class="select-none">${icon}</span>
+        <div class="flex-1 ${color}">
+          <span>${message}</span>
+          ${metaHtml}
+        </div>
+      `;
+
+      consoleBox.appendChild(el);
+      consoleBox.scrollTop = consoleBox.scrollHeight;
+      document.getElementById('logTimestamp').textContent = `Last update: ${time}`;
+    }
+
+    /**
+     * Clear all console log entries
+     */
+    function clearLogs() {
+      document.getElementById('consoleLog').innerHTML = '';
+      log('Logs cleared.', 'info');
+    }
+
+    /**
+     * Update the live header status badge
+     */
+    function updateStatus(state, message, latency = null) {
+      const badge = document.getElementById('statusBadge');
+      const dot = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+
+      dot.className = 'w-2 h-2 rounded-full';
+
+      if (state === 'testing') {
+        badge.className = 'flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200';
+        dot.classList.add('bg-amber-500', 'animate-pulse');
+        text.textContent = message || 'Testing connection...';
+      } else if (state === 'connected') {
+        badge.className = 'flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200';
+        dot.classList.add('bg-emerald-500');
+        text.textContent = latency ? `Connected (${latency}ms)` : (message || 'Connected 200 OK');
+      } else if (state === 'error') {
+        badge.className = 'flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200';
+        dot.classList.add('bg-rose-500');
+        text.textContent = message || 'Connection Failed';
+      } else {
+        badge.className = 'flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200';
+        dot.classList.add('bg-slate-400');
+        text.textContent = message || 'Standby';
+      }
+    }
+
+    /**
+     * Ensure Supabase client is initialized with current credentials
+     */
+    function getSupabase() {
+      const url = document.getElementById('supabaseUrl').value.trim();
+      const key = document.getElementById('supabaseKey').value.trim();
+
+      if (!url || !key) {
+        log('Error: Project URL and Publishable Key are required.', 'error');
+        return null;
+      }
+
+      if (!window.supabase) {
+        log('Error: Supabase SDK is not loaded from CDN.', 'error');
+        return null;
+      }
+
+      // Recreate client if url or key changed
+      if (!supabaseClient || supabaseClient.supabaseUrl !== url || supabaseClient.supabaseKey !== key) {
+        try {
+          supabaseClient = window.supabase.createClient(url, key);
+        } catch (err) {
+          log(`Failed to create Supabase client: ${err.message}`, 'error');
+          return null;
+        }
+      }
+      return supabaseClient;
+    }
+
+    /**
+     * Test Auth service health endpoint
+     */
+    async function testAuthHealth() {
+      const url = document.getElementById('supabaseUrl').value.trim();
+      const key = document.getElementById('supabaseKey').value.trim();
+      log(`Pinging Supabase Auth API: ${url}/auth/v1/health ...`, 'info');
+
+      const start = performance.now();
+      try {
+        const response = await fetch(`${url}/auth/v1/health`, {
+          headers: {
+            'apikey': key,
+            'Authorization': `Bearer ${key}`
+          }
+        });
+        const latency = Math.round(performance.now() - start);
+        const data = await response.json();
+
+        if (response.ok) {
+          log(`Auth Service Online: ${response.status} OK in ${latency}ms`, 'success', data);
+          document.getElementById('metricAuth').innerHTML = `<span class="text-emerald-600">${response.status} OK</span>`;
+          document.getElementById('metricAuthLabel').textContent = data.name || 'GoTrue v2';
+          return { ok: true, latency };
+        } else {
+          log(`Auth Service responded with error: ${response.status}`, 'warn', data);
+          document.getElementById('metricAuth').innerHTML = `<span class="text-amber-600">${response.status}</span>`;
+          return { ok: false, latency };
+        }
+      } catch (err) {
+        log(`Failed to reach Auth API: ${err.message}`, 'error');
+        document.getElementById('metricAuth').innerHTML = `<span class="text-rose-600">Err</span>`;
+        return { ok: false, error: err };
+      }
+    }
+
+    /**
+     * Comprehensive Connection Test & Tables discovery
+     */
+    async function testFullConnection() {
+      updateStatus('testing', 'Testing connection...');
+      const btn = document.getElementById('btnTestAll');
+      btn.disabled = true;
+      btn.classList.add('opacity-70');
+
+      const client = getSupabase();
+      if (!client) {
+        updateStatus('error', 'Client Init Failed');
+        btn.disabled = false;
+        btn.classList.remove('opacity-70');
+        return;
+      }
+
+      log('Starting full Supabase connection test...', 'info');
+
+      // 1. Measure Latency & Test Primary Table
+      const start = performance.now();
+      let primaryOk = false;
+      let totalLatency = 0;
+
+      try {
+        log(`Querying primary table 'auditoria' via Supabase JS SDK...`, 'info');
+        const { data, error, status } = await client
+          .from('auditoria')
+          .select('*')
+          .limit(10);
+
+        totalLatency = Math.round(performance.now() - start);
+        document.getElementById('metricLatency').textContent = totalLatency;
+
+        if (error) {
+          log(`PostgREST responded: ${error.message} (code: ${error.code})`, 'warn', error);
+          document.getElementById('metricRest').innerHTML = `<span class="text-amber-600">${status || 'Error'}</span>`;
+        } else {
+          primaryOk = true;
+          log(`Table 'auditoria' queried successfully! Status: ${status} OK (${totalLatency}ms, ${data.length} rows)`, 'success');
+          document.getElementById('metricRest').innerHTML = `<span class="text-emerald-600">${status} OK</span>`;
+          document.getElementById('metricRestLabel').textContent = 'PostgREST Ready';
+          
+          currentResultsData = data;
+          renderResults(data);
+        }
+      } catch (err) {
+        log(`Exception querying database: ${err.message}`, 'error');
+        document.getElementById('metricRest').innerHTML = `<span class="text-rose-600">Failed</span>`;
+      }
+
+      // 2. Ping Auth Service
+      const authResult = await testAuthHealth();
+
+      // 3. Verify Known Tables in parallel
+      log('Verifying accessible schema tables...', 'info');
+      let accessibleTables = [];
+
+      for (const t of KNOWN_TABLES) {
+        try {
+          const res = await client.from(t).select('*', { count: 'exact', head: true });
+          if (!res.error || res.status === 200) {
+            accessibleTables.push(t);
+            log(`Table '${t}': Verified accessible (status: ${res.status})`, 'success');
+          } else {
+            log(`Table '${t}': ${res.error.message}`, 'warn');
+          }
+        } catch (e) {
+          log(`Table '${t}': ${e.message}`, 'error');
+        }
+      }
+
+      document.getElementById('metricTables').innerHTML = `<span class="text-emerald-600">${accessibleTables.length} / ${KNOWN_TABLES.length}</span>`;
+
+      // Conclude overall status
+      if (primaryOk || authResult.ok || accessibleTables.length > 0) {
+        updateStatus('connected', 'Connected', totalLatency);
+        log(`✅ Connection test finished: Supabase API is reachable and responding!`, 'success');
+      } else {
+        updateStatus('error', 'Connection Error');
+        log(`❌ Connection test failed. Check CORS, API Key permissions or network access.`, 'error');
+      }
+
+      btn.disabled = false;
+      btn.classList.remove('opacity-70');
+    }
+
+    /**
+     * Query a specific table entered in the input
+     */
+    async function queryTable() {
+      const client = getSupabase();
+      if (!client) return;
+
+      const tableName = document.getElementById('tableNameInput').value.trim();
+      const limit = parseInt(document.getElementById('tableLimit').value) || 25;
+
+      if (!tableName) {
+        log('Please provide a table name to query.', 'warn');
+        return;
+      }
+
+      log(`Executing: supabase.from('${tableName}').select('*').limit(${limit}) ...`, 'info');
+      const start = performance.now();
+
+      try {
+        const { data, error, status, count } = await client
+          .from(tableName)
+          .select('*', { count: 'exact' })
+          .limit(limit);
+
+        const latency = Math.round(performance.now() - start);
+
+        if (error) {
+          log(`Query error on '${tableName}': ${error.message}`, 'error', error);
+          document.getElementById('resultsContainer').innerHTML = `
+            <div class="p-4 bg-rose-50 border border-rose-200 rounded-lg text-rose-800">
+              <div class="font-bold">Query Failed (Status ${status}):</div>
+              <div class="mt-1">${error.message}</div>
+              ${error.hint ? `<div class="mt-1 text-slate-600 font-mono text-[11px]">Hint: ${error.hint}</div>` : ''}
+              ${error.details ? `<div class="mt-1 text-slate-500 font-mono text-[11px]">${error.details}</div>` : ''}
+            </div>
+          `;
+          document.getElementById('resultsCountBadge').textContent = 'Error';
+          document.getElementById('resultsCountBadge').className = 'px-2 py-0.2 rounded-full text-[11px] font-medium bg-rose-100 text-rose-800';
+          return;
+        }
+
+        log(`Query completed in ${latency}ms. Received ${data.length} rows (status: ${status})`, 'success');
+        document.getElementById('metricLatency').textContent = latency;
+        currentResultsData = data;
+        renderResults(data);
+
+      } catch (err) {
+        log(`Unexpected error executing query: ${err.message}`, 'error');
+      }
+    }
+
+    /**
+     * Helper to select a chip table and query it
+     */
+    function selectAndQueryTable(name) {
+      document.getElementById('tableNameInput').value = name;
+      queryTable();
+    }
+
+    /**
+     * Render results as HTML Table or JSON
+     */
+    function renderResults(data) {
+      const container = document.getElementById('resultsContainer');
+      const badge = document.getElementById('resultsCountBadge');
+
+      if (!data || data.length === 0) {
+        badge.textContent = '0 rows (Empty)';
+        badge.className = 'px-2 py-0.2 rounded-full text-[11px] font-medium bg-slate-200 text-slate-700';
+        container.innerHTML = `
+          <div class="text-center py-8 text-slate-500">
+            <div class="font-semibold text-slate-700">Query returned 0 rows.</div>
+            <p class="text-[11px] text-slate-400 mt-1">The table exists and is accessible, but currently contains no records.</p>
+          </div>
+        `;
+        return;
+      }
+
+      badge.textContent = `${data.length} row${data.length === 1 ? '' : 's'}`;
+      badge.className = 'px-2 py-0.2 rounded-full text-[11px] font-medium bg-emerald-100 text-emerald-800';
+
+      if (currentResultFormat === 'json') {
+        container.innerHTML = `
+          <pre class="bg-slate-900 text-emerald-400 p-4 rounded-lg font-mono text-[11px] overflow-x-auto leading-relaxed border border-slate-800">${JSON.stringify(data, null, 2)}</pre>
+        `;
+      } else {
+        // Build table
+        const cols = Object.keys(data[0]);
+        let ths = cols.map(c => `<th class="py-2.5 px-3 text-left font-semibold text-slate-600 bg-slate-100 border-b border-slate-200">${c}</th>`).join('');
+        let trs = data.map((row, idx) => {
+          let tds = cols.map(c => {
+            const val = row[c];
+            const display = typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val ?? '');
+            return `<td class="py-2 px-3 border-b border-slate-100 text-slate-700 truncate max-w-xs font-mono text-[11px]">${display}</td>`;
+          }).join('');
+          return `<tr class="hover:bg-white transition-colors">${tds}</tr>`;
+        }).join('');
+
+        container.innerHTML = `
+          <div class="overflow-x-auto rounded border border-slate-200">
+            <table class="w-full text-left border-collapse">
+              <thead><tr>${ths}</tr></thead>
+              <tbody>${trs}</tbody>
+            </table>
+          </div>
+        `;
+      }
+    }
+
+    /**
+     * Toggle Result Format between Table and JSON
+     */
+    function toggleResultFormat(format) {
+      currentResultFormat = format;
+      const btnTable = document.getElementById('btnViewTable');
+      const btnJson = document.getElementById('btnViewJson');
+
+      if (format === 'table') {
+        btnTable.className = 'px-2 py-1 text-[11px] font-medium rounded bg-white text-slate-800 border border-slate-200 shadow-2xs';
+        btnJson.className = 'px-2 py-1 text-[11px] font-medium rounded text-slate-500 hover:text-slate-800';
+      } else {
+        btnJson.className = 'px-2 py-1 text-[11px] font-medium rounded bg-white text-slate-800 border border-slate-200 shadow-2xs';
+        btnTable.className = 'px-2 py-1 text-[11px] font-medium rounded text-slate-500 hover:text-slate-800';
+      }
+
+      renderResults(currentResultsData);
+    }
+
+    // Auto-test on window load as requested in requirements
+    window.addEventListener('DOMContentLoaded', () => {
+      log('Application initialized. Testing initial Supabase connection...', 'info');
+      setTimeout(() => {
+        testFullConnection();
+      }, 300);
+    });
+  </script>
+</body>
+</html>
