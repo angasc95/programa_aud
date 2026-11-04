@@ -2,7 +2,6 @@ name: Supabase Keep-Alive Cron Job
 
 on:
   schedule:
-    # Ejecuta la tarea cada 3 días a las 00:00 UTC
     - cron: '0 0 */3 * *'
   workflow_dispatch:
 
