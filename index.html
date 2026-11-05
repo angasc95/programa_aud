@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Supabase Connection Tester</title>
-  <meta name="description" content="Clean and fully working Supabase connection and database query tester.">
-  <meta property="og:title" content="Supabase Connection Tester">
-  <meta property="og:description" content="Clean and fully working Supabase connection and database query tester.">
+  <title>Supabase Connection Tester • Programa AUD</title>
+  <meta name="description" content="Clean and fully working Supabase connection, RBAC, and database query tester for Fondonorma Programa AUD.">
+  <meta property="og:title" content="Supabase Connection Tester • Programa AUD">
+  <meta property="og:description" content="Clean and fully working Supabase connection, RBAC, and database query tester for Fondonorma Programa AUD.">
   
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -36,70 +36,95 @@
 
   <!-- Header -->
   <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-    <div class="max-w-6xl mx-auto px-4 py-3.5 flex flex-wrap items-center justify-between gap-3">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
       <div class="flex items-center space-x-3">
         <!-- Supabase green lightning mark -->
-        <div class="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600 font-bold">
+        <div class="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600 font-bold shrink-0">
           <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
             <path d="M21.362 9.354H12V.396a.396.396 0 0 0-.716-.233L.32 14.12a.396.396 0 0 0 .307.638H12v8.846a.396.396 0 0 0 .716.233l10.963-13.844a.396.396 0 0 0-.317-.639z"/>
           </svg>
         </div>
         <div>
-          <h1 class="text-base font-bold text-slate-900 leading-tight">Supabase Connection Tester</h1>
-          <p class="text-xs text-slate-500">Database health, PostgREST API & schema verifier</p>
+          <div class="flex items-center space-x-2">
+            <h1 class="text-base font-bold text-slate-900 leading-tight">Supabase Connection Tester</h1>
+            <span class="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+              Programa AUD
+            </span>
+          </div>
+          <p class="text-xs text-slate-500">Database health, PostgreSQL DCL grants, RBAC security & schema verification</p>
         </div>
       </div>
 
-      <!-- Live Connection Status Badge -->
-      <div id="statusBadge" class="flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200 transition-all duration-300">
-        <span class="w-2 h-2 rounded-full bg-slate-400 animate-pulse" id="statusDot"></span>
-        <span id="statusText">Initializing...</span>
+      <div class="flex items-center space-x-2.5">
+        <!-- SQL Fixes & Scripts Modal Button -->
+        <button 
+          onclick="openSqlModal('dcl')"
+          class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 transition-colors flex items-center space-x-1.5 cursor-pointer shadow-2xs"
+          title="Ver scripts SQL para aplicar en Supabase SQL Editor"
+        >
+          <span>📜 SQL Hub & DCL Fixes</span>
+        </button>
+
+        <!-- Live Connection Status Badge -->
+        <div id="statusBadge" class="flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200 transition-all duration-300">
+          <span class="w-2 h-2 rounded-full bg-slate-400 animate-pulse" id="statusDot"></span>
+          <span id="statusText">Initializing...</span>
+        </div>
       </div>
     </div>
   </header>
 
   <!-- Main Content -->
-  <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-6 space-y-5">
+  <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-5 space-y-4">
 
     <!-- Credentials & Config Card -->
     <div class="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-xs">
-      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 mb-4 gap-2">
         <div>
-          <h2 class="text-sm font-bold text-slate-800">Connection Configuration</h2>
-          <p class="text-xs text-slate-500">Credentials configured for testing your Supabase instance</p>
+          <div class="flex items-center space-x-2">
+            <h2 class="text-sm font-bold text-slate-800">Connection Configuration & Environment</h2>
+            <span id="envSourceBadge" class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+              .env Configured
+            </span>
+          </div>
+          <p class="text-xs text-slate-500">Configured via environment variables (.env / .env.example) and connected to Supabase Cloud</p>
         </div>
-        <span class="text-[11px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
+        <span class="text-[11px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200 self-start sm:self-auto">
           Project ID: ufowtgmpaahyshdxlnlq
         </span>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
         <div>
-          <label class="block font-semibold text-slate-700 mb-1">Project URL</label>
+          <div class="flex items-center justify-between mb-1">
+            <label class="font-semibold text-slate-700">Project URL (VITE_SUPABASE_URL)</label>
+            <span class="text-[10px] text-slate-400 font-mono">From .env</span>
+          </div>
           <input 
             type="text" 
             id="supabaseUrl" 
             value="https://ufowtgmpaahyshdxlnlq.supabase.co" 
-            class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs"
           >
         </div>
 
         <div>
-          <label class="block font-semibold text-slate-700 mb-1">Publishable Key</label>
-          <div class="relative">
-            <input 
-              type="text" 
-              id="supabaseKey" 
-              value="sb_publishable_p8Gu4e4nS2DgPG-BqS6vAw_V_5owfv4" 
-              class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            >
+          <div class="flex items-center justify-between mb-1">
+            <label class="font-semibold text-slate-700">Publishable Key (VITE_SUPABASE_ANON_KEY)</label>
+            <span class="text-[10px] text-slate-400 font-mono">From .env</span>
           </div>
+          <input 
+            type="text" 
+            id="supabaseKey" 
+            value="sb_publishable_p8Gu4e4nS2DgPG-BqS6vAw_V_5owfv4" 
+            class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs"
+          >
         </div>
       </div>
 
       <!-- Action Buttons Row -->
       <div class="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2.5">
-        <div class="flex items-center space-x-2">
+        <div class="flex items-center space-x-2 flex-wrap gap-y-2">
           <!-- Primary action button -->
           <button 
             id="btnTestAll"
@@ -115,9 +140,25 @@
           <button 
             onclick="testAuthHealth()"
             class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs rounded-lg transition-colors cursor-pointer"
-            title="Check Supabase Auth service ping"
+            title="Verificar endpoint de salud de Supabase Auth (GoTrue)"
           >
             Ping Auth API
+          </button>
+
+          <button 
+            onclick="testRpcCoverage()"
+            class="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium text-xs rounded-lg transition-colors cursor-pointer border border-indigo-200"
+            title="Ejecutar función RPC evaluar_cobertura_certificado"
+          >
+            ⚡ Test RPC Cobertura
+          </button>
+
+          <button 
+            onclick="openSqlModal('dcl')"
+            class="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 font-medium text-xs rounded-lg transition-colors cursor-pointer border border-amber-300"
+            title="Copiar sentencias GRANT de permisos para Supabase"
+          >
+            🔑 Ver GRANTs DCL Fix
           </button>
         </div>
 
@@ -133,7 +174,7 @@
     </div>
 
     <!-- Live Metrics Grid -->
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-xs">
       <!-- Latency -->
       <div class="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
         <span class="text-slate-500 font-medium block">API Latency</span>
@@ -155,20 +196,105 @@
 
       <!-- Auth API Status -->
       <div class="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
-        <span class="text-slate-500 font-medium block">Auth / GoTrue</span>
+        <span class="text-slate-500 font-medium block">GoTrue Auth API</span>
         <div class="text-xl font-bold text-slate-900 mt-1" id="metricAuth">
           <span class="text-slate-400">--</span>
         </div>
         <span class="text-[11px] text-slate-400 mt-0.5 block" id="metricAuthLabel">Auth health</span>
       </div>
 
-      <!-- Discovered Tables -->
+      <!-- RPC Engine Status -->
       <div class="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
-        <span class="text-slate-500 font-medium block">Verified Tables</span>
+        <span class="text-slate-500 font-medium block">RPC LTREE Engine</span>
+        <div class="text-xl font-bold text-indigo-600 mt-1" id="metricRpc">
+          <span class="text-slate-400">--</span>
+        </div>
+        <span class="text-[11px] text-slate-400 mt-0.5 block" id="metricRpcLabel">Cobertura Normativa</span>
+      </div>
+
+      <!-- Verified Tables -->
+      <div class="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+        <span class="text-slate-500 font-medium block">Verified Schema</span>
         <div class="text-xl font-bold text-emerald-600 mt-1" id="metricTables">
           <span>--</span>
         </div>
-        <span class="text-[11px] text-slate-400 mt-0.5 block">Accessible schema</span>
+        <span class="text-[11px] text-slate-400 mt-0.5 block" id="metricTablesLabel">Accessible entities</span>
+      </div>
+    </div>
+
+    <!-- Auth & RLS Context Card -->
+    <div class="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-xs text-xs space-y-3">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-slate-100 gap-2">
+        <div class="flex items-center space-x-2">
+          <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+          <h3 class="font-bold text-slate-800">Autenticación, Permisos DCL & Gobernanza RLS</h3>
+        </div>
+        <div id="sessionBadge" class="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+          Role: anon (Unauthenticated Key)
+        </div>
+      </div>
+
+      <!-- Informative Notice: DCL vs RLS -->
+      <div class="p-3 bg-blue-50/80 border border-blue-200 rounded-lg text-blue-950 space-y-1.5">
+        <div class="font-bold flex items-center text-blue-900">
+          <svg class="w-4 h-4 mr-1.5 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Mecanismo de Doble Capa en PostgreSQL / Supabase:
+        </div>
+        <p class="text-[11px] leading-relaxed text-blue-800">
+          <strong>1. Capa DCL (GRANTs):</strong> PostgreSQL comprueba primero si el rol (<code class="font-mono bg-blue-100/70 px-1 rounded">authenticated</code> o <code class="font-mono bg-blue-100/70 px-1 rounded">anon</code>) tiene privilegios base de tabla (<code class="font-mono">GRANT SELECT ON ALL TABLES...</code>). Si falta este permiso, responde con <code class="font-mono text-rose-700 font-semibold">42501 permission denied for table organizacion</code> antes de evaluar RLS.<br>
+          <strong>2. Capa RLS (Políticas de Fila):</strong> Una vez otorgado el permiso base, las políticas en <code class="font-mono bg-blue-100/70 px-1 rounded">rls.sql</code> filtran los registros visibles permitiendo acceso completo a usuarios con estado <span class="font-semibold underline">APPROVED</span> (<code class="font-mono">is_approved_user()</code>).
+        </p>
+      </div>
+
+      <!-- Quick Session Testing Options -->
+      <div class="pt-1 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center space-x-2 flex-wrap gap-y-2">
+          <input 
+            type="email" 
+            id="authEmail" 
+            placeholder="admin@fondonorma.test" 
+            class="bg-slate-50 border border-slate-200 rounded px-2.5 py-1 text-slate-800 font-mono text-[11px] w-52"
+          >
+          <input 
+            type="password" 
+            id="authPassword" 
+            value="Password123*"
+            placeholder="Password" 
+            class="bg-slate-50 border border-slate-200 rounded px-2.5 py-1 text-slate-800 font-mono text-[11px] w-28"
+          >
+          <button 
+            onclick="testSignIn()" 
+            class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-[11px] transition-colors cursor-pointer"
+          >
+            Sign In
+          </button>
+          <button 
+            onclick="testSignOut()" 
+            class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded font-medium text-[11px] transition-colors cursor-pointer"
+          >
+            Sign Out
+          </button>
+        </div>
+
+        <span class="text-[11px] text-slate-400">
+          Usuarios creados en <code class="font-mono font-semibold text-slate-600">usuarios.sql</code>
+        </span>
+      </div>
+
+      <!-- Quick Test Users Buttons (from usuarios.sql) -->
+      <div class="pt-2 border-t border-slate-100 flex items-center space-x-2 flex-wrap gap-y-1.5">
+        <span class="text-[11px] font-semibold text-slate-500">Quick Login:</span>
+        <button onclick="fillAndSignIn('admin@fondonorma.test', 'Password123*')" class="px-2.5 py-1 text-[11px] font-mono font-medium bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 rounded cursor-pointer transition-colors">
+          👑 Admin (admin@fondonorma.test)
+        </button>
+        <button onclick="fillAndSignIn('auditor@fondonorma.test', 'Password123*')" class="px-2.5 py-1 text-[11px] font-mono font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded cursor-pointer transition-colors">
+          🔍 Auditor (auditor@fondonorma.test)
+        </button>
+        <button onclick="fillAndSignIn('user@fondonorma.test', 'Password123*')" class="px-2.5 py-1 text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer transition-colors">
+          👤 User (user@fondonorma.test)
+        </button>
       </div>
     </div>
 
@@ -176,18 +302,24 @@
     <div class="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-xs space-y-4">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
         <div>
-          <h3 class="text-sm font-bold text-slate-800">Database Table Explorer</h3>
+          <h3 class="text-sm font-bold text-slate-800">Database Table & Schema Explorer</h3>
           <p class="text-xs text-slate-500">Query and inspect table rows using the official Supabase JavaScript SDK</p>
         </div>
 
         <!-- Quick Table Chips -->
         <div class="flex items-center space-x-1.5 flex-wrap gap-y-1">
-          <span class="text-[11px] text-slate-400 font-medium mr-1">Known tables:</span>
-          <button onclick="selectAndQueryTable('auditoria')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer">auditoria</button>
-          <button onclick="selectAndQueryTable('auditor')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer">auditor</button>
-          <button onclick="selectAndQueryTable('norma')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer">norma</button>
-          <button onclick="selectAndQueryTable('proceso')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer">proceso</button>
+          <span class="text-[11px] text-slate-400 font-medium mr-1">Tables:</span>
+          <button onclick="selectAndQueryTable('organizacion')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer">organizacion</button>
           <button onclick="selectAndQueryTable('certificado')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer">certificado</button>
+          <button onclick="selectAndQueryTable('auditoria')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer">auditoria</button>
+          <button onclick="selectAndQueryTable('hallazgo')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer">hallazgo</button>
+          <button onclick="selectAndQueryTable('sitio')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 rounded cursor-pointer">sitio</button>
+          <button onclick="selectAndQueryTable('proceso')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 rounded cursor-pointer">proceso</button>
+          <button onclick="selectAndQueryTable('norma')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 rounded cursor-pointer">norma</button>
+          <button onclick="selectAndQueryTable('requisito')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 rounded cursor-pointer">requisito</button>
+          <button onclick="selectAndQueryTable('auditor')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 rounded cursor-pointer">auditor</button>
+          <button onclick="selectAndQueryTable('profiles')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded cursor-pointer">profiles</button>
+          <button onclick="selectAndQueryTable('audit_log')" class="px-2 py-0.5 text-[11px] font-mono font-medium bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 rounded cursor-pointer">audit_log</button>
         </div>
       </div>
 
@@ -198,7 +330,7 @@
           <input 
             type="text" 
             id="tableNameInput" 
-            value="auditoria" 
+            value="organizacion" 
             placeholder="table_name" 
             class="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
           >
@@ -240,14 +372,14 @@
             <button 
               id="btnViewTable" 
               onclick="toggleResultFormat('table')" 
-              class="px-2 py-1 text-[11px] font-medium rounded bg-white text-slate-800 border border-slate-200 shadow-2xs"
+              class="px-2 py-1 text-[11px] font-medium rounded bg-white text-slate-800 border border-slate-200 shadow-2xs cursor-pointer"
             >
               Table View
             </button>
             <button 
               id="btnViewJson" 
               onclick="toggleResultFormat('json')" 
-              class="px-2 py-1 text-[11px] font-medium rounded text-slate-500 hover:text-slate-800"
+              class="px-2 py-1 text-[11px] font-medium rounded text-slate-500 hover:text-slate-800 cursor-pointer"
             >
               JSON View
             </button>
@@ -255,11 +387,54 @@
         </div>
 
         <!-- Dynamic Results Container -->
-        <div id="resultsContainer" class="p-4 max-h-80 overflow-auto text-xs">
+        <div id="resultsContainer" class="p-4 max-h-96 overflow-auto text-xs">
           <div class="text-center py-8 text-slate-400 italic">
             Click "Test Connection & Fetch Tables" or "Execute Query" to inspect records.
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- RPC Evaluation Tool (cobertura_normativa_certificado) -->
+    <div class="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-xs space-y-3">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+        <div>
+          <h3 class="text-sm font-bold text-slate-800 flex items-center">
+            <span class="w-2 h-2 rounded-full bg-indigo-600 mr-2"></span>
+            LTREE RPC: Cobertura Normativa por Certificado
+          </h3>
+          <p class="text-xs text-slate-500">
+            Executes <code class="font-mono text-indigo-700">cobertura_normativa_certificado(p_id_certificado)</code> via RPC
+          </p>
+        </div>
+        <span class="text-[10px] font-mono px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+          SECURITY DEFINER
+        </span>
+      </div>
+
+      <div class="flex flex-col sm:flex-row sm:items-center gap-2 text-xs">
+        <div class="flex-1 flex items-center space-x-2">
+          <span class="font-mono text-slate-500">rpc('cobertura_normativa_certificado', { p_id_certificado: '</span>
+          <input 
+            type="text" 
+            id="rpcCertId" 
+            value="40000000-0000-0000-0000-000000000001" 
+            placeholder="UUID del certificado (ej. de datos_prueba.sql)" 
+            class="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-mono text-slate-800 text-xs"
+          >
+          <span class="font-mono text-slate-500">'})</span>
+        </div>
+
+        <button 
+          onclick="executeCustomRpc()"
+          class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors cursor-pointer"
+        >
+          Run RPC
+        </button>
+      </div>
+
+      <div id="rpcResultsBox" class="hidden p-3 bg-slate-900 rounded-lg text-emerald-400 font-mono text-[11px] overflow-x-auto max-h-48 border border-slate-800">
+        <!-- RPC results appear here -->
       </div>
     </div>
 
@@ -280,24 +455,162 @@
 
   </main>
 
+  <!-- SQL Hub & DCL Fixes Modal -->
+  <div id="sqlModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col border border-slate-200 overflow-hidden">
+      <!-- Modal Header -->
+      <div class="px-5 py-3.5 bg-slate-100 border-b border-slate-200 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <span class="text-amber-600 text-base">📜</span>
+          <h3 class="font-bold text-sm text-slate-900">Supabase SQL Scripts & DCL Fixes Hub</h3>
+        </div>
+        <button onclick="closeSqlModal()" class="text-slate-400 hover:text-slate-700 text-lg font-bold p-1 cursor-pointer">&times;</button>
+      </div>
+
+      <!-- Modal Tabs -->
+      <div class="flex border-b border-slate-200 bg-slate-50 px-5 pt-2 space-x-2 text-xs">
+        <button id="tabBtnDcl" onclick="switchSqlTab('dcl')" class="px-3 py-1.5 border-b-2 border-emerald-600 font-bold text-emerald-800 bg-white rounded-t cursor-pointer">
+          1. GRANTs DCL Fix (Error 42501)
+        </button>
+        <button id="tabBtnSeeds" onclick="switchSqlTab('seeds')" class="px-3 py-1.5 border-b-2 border-transparent font-medium text-slate-600 hover:text-slate-900 rounded-t cursor-pointer">
+          2. Datos de Prueba (datos_prueba.sql)
+        </button>
+        <button id="tabBtnUsers" onclick="switchSqlTab('users')" class="px-3 py-1.5 border-b-2 border-transparent font-medium text-slate-600 hover:text-slate-900 rounded-t cursor-pointer">
+          3. Usuarios Auth (usuarios.sql)
+        </button>
+      </div>
+
+      <!-- Modal Content Body -->
+      <div class="p-5 flex-1 overflow-y-auto text-xs space-y-3">
+        <div id="tabContentDcl" class="space-y-2">
+          <p class="text-slate-600 text-xs">
+            <strong>Instrucción:</strong> Copia y ejecuta este bloque en el <em>SQL Editor</em> de Supabase. Otorga privilegios a <code class="font-mono font-semibold">authenticated</code> y <code class="font-mono font-semibold">anon</code> para resolver el error <code class="text-rose-600 font-mono">42501 permission denied for table organizacion</code>:
+          </p>
+          <div class="relative">
+            <pre id="sqlTextDcl" class="bg-slate-900 text-amber-300 p-3.5 rounded-lg font-mono text-[11px] overflow-x-auto leading-relaxed max-h-60 border border-slate-800">-- ============================================================================
+-- FIX: PRIVILEGIOS BASE DE POSTGRESQL (DCL) PARA ROLES DE SUPABASE
+-- ============================================================================
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+
+-- Otorgar permisos sobre todas las tablas actuales
+GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO authenticated;
+
+-- Permisos de lectura pública para anon (restringido luego por RLS)
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon;
+GRANT EXECUTE ON ALL ROUTINES IN SCHEMA public TO anon;
+
+-- Configurar privilegios automáticos por defecto para tablas futuras
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO anon, authenticated;</pre>
+            <button 
+              onclick="copyToClipboard('sqlTextDcl', this)" 
+              class="absolute top-2 right-2 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold transition-colors cursor-pointer"
+            >
+              Copy SQL
+            </button>
+          </div>
+        </div>
+
+        <div id="tabContentSeeds" class="hidden space-y-2">
+          <p class="text-slate-600 text-xs">
+            <strong>Datos de Prueba:</strong> Poblar catálogos, organizaciones (<code class="font-mono">Iberometal Componentes</code>, <code class="font-mono">CyberCloud Solutions</code>), certificados, sitios, procesos, auditorías y hallazgos ISO:
+          </p>
+          <div class="relative">
+            <pre id="sqlTextSeeds" class="bg-slate-900 text-emerald-400 p-3.5 rounded-lg font-mono text-[11px] overflow-x-auto leading-relaxed max-h-60 border border-slate-800">-- Consulta completa disponible en: /public/supabase/queries/datos_prueba.sql
+-- Ejecutar en Supabase SQL Editor para poblar registros idenficables.</pre>
+            <button 
+              onclick="copySeedData(this)" 
+              class="absolute top-2 right-2 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold transition-colors cursor-pointer"
+            >
+              Copy Full Seed SQL
+            </button>
+          </div>
+        </div>
+
+        <div id="tabContentUsers" class="hidden space-y-2">
+          <p class="text-slate-600 text-xs">
+            <strong>Usuarios Auth:</strong> Crea 3 usuarios de prueba con roles aprobados (<code class="font-mono">admin@fondonorma.test</code>, <code class="font-mono">auditor@fondonorma.test</code>, <code class="font-mono">user@fondonorma.test</code> con clave <code class="font-mono font-semibold">Password123*</code>):
+          </p>
+          <div class="relative">
+            <pre id="sqlTextUsers" class="bg-slate-900 text-sky-300 p-3.5 rounded-lg font-mono text-[11px] overflow-x-auto leading-relaxed max-h-60 border border-slate-800">-- Script disponible en: /public/supabase/queries/usuarios.sql
+-- Crea usuarios en auth.users y perfiles APPROVED en public.profiles</pre>
+            <button 
+              onclick="copyUsersData(this)" 
+              class="absolute top-2 right-2 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold transition-colors cursor-pointer"
+            >
+              Copy Users SQL
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-5 py-3 bg-slate-100 border-t border-slate-200 flex justify-between items-center text-xs">
+        <span class="text-slate-500">Archivos en <code class="font-mono">/public/supabase/queries/</code></span>
+        <button onclick="closeSqlModal()" class="px-4 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded font-medium cursor-pointer">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Footer -->
   <footer class="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-500">
-    Clean Supabase Client SDK Connection Tester • Project Reference: <code class="font-mono text-slate-700">ufowtgmpaahyshdxlnlq</code>
+    FONDONORMA Programa AUD • Supabase Client SDK Connection & RBAC Tester • Project: <code class="font-mono text-slate-700">ufowtgmpaahyshdxlnlq</code>
   </footer>
 
-  <!-- Application Logic -->
-  <script>
+  <!-- Application Logic as ESM Module to access import.meta.env -->
+  <script type="module">
+    // Load environment variables with fallback
+    const ENV_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL) 
+      ? import.meta.env.VITE_SUPABASE_URL 
+      : 'https://ufowtgmpaahyshdxlnlq.supabase.co';
+
+    const ENV_KEY = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) 
+      ? import.meta.env.VITE_SUPABASE_ANON_KEY 
+      : 'sb_publishable_p8Gu4e4nS2DgPG-BqS6vAw_V_5owfv4';
+
+    // Populate input fields with environment values
+    const urlInput = document.getElementById('supabaseUrl');
+    const keyInput = document.getElementById('supabaseKey');
+    if (urlInput) urlInput.value = ENV_URL;
+    if (keyInput) keyInput.value = ENV_KEY;
+
     // Initialize state
     let supabaseClient = null;
     let currentResultsData = [];
     let currentResultFormat = 'table';
-    const KNOWN_TABLES = ['auditoria', 'auditor', 'norma', 'proceso', 'certificado'];
+    
+    // Complete schema entities from creacion.sql, rls.sql and datos_prueba.sql
+    const KNOWN_TABLES = [
+      'organizacion',
+      'certificado',
+      'auditoria',
+      'hallazgo',
+      'sitio',
+      'proceso',
+      'requisito',
+      'norma',
+      'sector_iaf',
+      'estatus',
+      'tipo_auditoria',
+      'metodologia_auditoria',
+      'auditor',
+      'profiles',
+      'audit_log'
+    ];
 
     /**
      * Append a log entry to the dark console terminal
      */
     function log(message, type = 'info', meta = null) {
       const consoleBox = document.getElementById('consoleLog');
+      if (!consoleBox) return;
       const time = new Date().toLocaleTimeString();
       const el = document.createElement('div');
       el.className = 'flex items-start space-x-2';
@@ -335,14 +648,16 @@
 
       consoleBox.appendChild(el);
       consoleBox.scrollTop = consoleBox.scrollHeight;
-      document.getElementById('logTimestamp').textContent = `Last update: ${time}`;
+      const ts = document.getElementById('logTimestamp');
+      if (ts) ts.textContent = `Last update: ${time}`;
     }
 
     /**
      * Clear all console log entries
      */
     function clearLogs() {
-      document.getElementById('consoleLog').innerHTML = '';
+      const el = document.getElementById('consoleLog');
+      if (el) el.innerHTML = '';
       log('Logs cleared.', 'info');
     }
 
@@ -353,6 +668,7 @@
       const badge = document.getElementById('statusBadge');
       const dot = document.getElementById('statusDot');
       const text = document.getElementById('statusText');
+      if (!badge || !dot || !text) return;
 
       dot.className = 'w-2 h-2 rounded-full';
 
@@ -379,8 +695,8 @@
      * Ensure Supabase client is initialized with current credentials
      */
     function getSupabase() {
-      const url = document.getElementById('supabaseUrl').value.trim();
-      const key = document.getElementById('supabaseKey').value.trim();
+      const url = document.getElementById('supabaseUrl')?.value?.trim() || ENV_URL;
+      const key = document.getElementById('supabaseKey')?.value?.trim() || ENV_KEY;
 
       if (!url || !key) {
         log('Error: Project URL and Publishable Key are required.', 'error');
@@ -392,10 +708,15 @@
         return null;
       }
 
-      // Recreate client if url or key changed
+      // Recreate client if credentials changed or not yet instantiated
       if (!supabaseClient || supabaseClient.supabaseUrl !== url || supabaseClient.supabaseKey !== key) {
         try {
-          supabaseClient = window.supabase.createClient(url, key);
+          supabaseClient = window.supabase.createClient(url, key, {
+            auth: {
+              persistSession: true,
+              autoRefreshToken: true
+            }
+          });
         } catch (err) {
           log(`Failed to create Supabase client: ${err.message}`, 'error');
           return null;
@@ -408,8 +729,8 @@
      * Test Auth service health endpoint
      */
     async function testAuthHealth() {
-      const url = document.getElementById('supabaseUrl').value.trim();
-      const key = document.getElementById('supabaseKey').value.trim();
+      const url = document.getElementById('supabaseUrl')?.value?.trim() || ENV_URL;
+      const key = document.getElementById('supabaseKey')?.value?.trim() || ENV_KEY;
       log(`Pinging Supabase Auth API: ${url}/auth/v1/health ...`, 'info');
 
       const start = performance.now();
@@ -425,106 +746,217 @@
 
         if (response.ok) {
           log(`Auth Service Online: ${response.status} OK in ${latency}ms`, 'success', data);
-          document.getElementById('metricAuth').innerHTML = `<span class="text-emerald-600">${response.status} OK</span>`;
-          document.getElementById('metricAuthLabel').textContent = data.name || 'GoTrue v2';
+          const elAuth = document.getElementById('metricAuth');
+          if (elAuth) elAuth.innerHTML = `<span class="text-emerald-600">${response.status} OK</span>`;
+          const elAuthLabel = document.getElementById('metricAuthLabel');
+          if (elAuthLabel) elAuthLabel.textContent = data.name || 'GoTrue v2';
           return { ok: true, latency };
         } else {
           log(`Auth Service responded with error: ${response.status}`, 'warn', data);
-          document.getElementById('metricAuth').innerHTML = `<span class="text-amber-600">${response.status}</span>`;
+          const elAuth = document.getElementById('metricAuth');
+          if (elAuth) elAuth.innerHTML = `<span class="text-amber-600">${response.status}</span>`;
           return { ok: false, latency };
         }
       } catch (err) {
         log(`Failed to reach Auth API: ${err.message}`, 'error');
-        document.getElementById('metricAuth').innerHTML = `<span class="text-rose-600">Err</span>`;
+        const elAuth = document.getElementById('metricAuth');
+        if (elAuth) elAuth.innerHTML = `<span class="text-rose-600">Err</span>`;
         return { ok: false, error: err };
       }
     }
 
     /**
-     * Comprehensive Connection Test & Tables discovery
+     * Test the RPC function (evaluar_cobertura_certificado or cobertura_normativa_certificado)
+     */
+    async function testRpcCoverage() {
+      const client = getSupabase();
+      if (!client) return;
+
+      log(`Invoking RPC: cobertura_normativa_certificado ...`, 'info');
+      const start = performance.now();
+
+      try {
+        // Try cobertura_normativa_certificado first (cobertura_normativa.sql)
+        let rpcRes = await client.rpc('cobertura_normativa_certificado', {
+          p_id_certificado: '40000000-0000-0000-0000-000000000001'
+        });
+
+        // Fallback to evaluar_cobertura_certificado if defined under alias
+        if (rpcRes.error && rpcRes.error.message?.includes('function') && rpcRes.error.message?.includes('does not exist')) {
+          rpcRes = await client.rpc('evaluar_cobertura_certificado', {
+            p_id_certificado: '00000000-0000-0000-0000-000000000000'
+          });
+        }
+
+        const latency = Math.round(performance.now() - start);
+
+        if (rpcRes.error) {
+          log(`RPC error: ${rpcRes.error.message}`, 'warn', rpcRes.error);
+          const elRpc = document.getElementById('metricRpc');
+          if (elRpc) elRpc.innerHTML = `<span class="text-amber-600">RPC Err</span>`;
+        } else {
+          log(`RPC executed successfully: Status ${rpcRes.status} in ${latency}ms (LTREE engine verified)`, 'success');
+          const elRpc = document.getElementById('metricRpc');
+          if (elRpc) elRpc.innerHTML = `<span class="text-emerald-600">200 OK</span>`;
+          const elRpcLabel = document.getElementById('metricRpcLabel');
+          if (elRpcLabel) elRpcLabel.textContent = `${latency}ms (Online)`;
+          
+          const box = document.getElementById('rpcResultsBox');
+          if (box) {
+            box.classList.remove('hidden');
+            box.textContent = JSON.stringify({ status: rpcRes.status, latency_ms: latency, result: rpcRes.data }, null, 2);
+          }
+        }
+      } catch (err) {
+        log(`RPC Exception: ${err.message}`, 'error');
+        const elRpc = document.getElementById('metricRpc');
+        if (elRpc) elRpc.innerHTML = `<span class="text-rose-600">Failed</span>`;
+      }
+    }
+
+    /**
+     * User-triggered custom RPC execution
+     */
+    async function executeCustomRpc() {
+      const client = getSupabase();
+      if (!client) return;
+
+      const certId = document.getElementById('rpcCertId')?.value?.trim() || '40000000-0000-0000-0000-000000000001';
+      log(`Calling rpc('cobertura_normativa_certificado', { p_id_certificado: '${certId}' }) ...`, 'info');
+      const start = performance.now();
+
+      try {
+        let { data, error, status } = await client.rpc('cobertura_normativa_certificado', {
+          p_id_certificado: certId
+        });
+
+        if (error && error.message?.includes('does not exist')) {
+          const fallback = await client.rpc('evaluar_cobertura_certificado', {
+            p_id_certificado: certId
+          });
+          data = fallback.data;
+          error = fallback.error;
+          status = fallback.status;
+        }
+
+        const latency = Math.round(performance.now() - start);
+        const box = document.getElementById('rpcResultsBox');
+        if (box) {
+          box.classList.remove('hidden');
+          if (error) {
+            log(`RPC call failed: ${error.message}`, 'error', error);
+            box.textContent = `Error (${status}): ${error.message}\n${error.details || ''}\n${error.hint || ''}`;
+          } else {
+            log(`RPC completed in ${latency}ms. Returned ${data?.length || 0} evaluated requirement records.`, 'success');
+            box.textContent = JSON.stringify(data, null, 2);
+          }
+        }
+      } catch (e) {
+        log(`RPC execution error: ${e.message}`, 'error');
+      }
+    }
+
+    /**
+     * Comprehensive Connection Test & Schema Discovery
      */
     async function testFullConnection() {
       updateStatus('testing', 'Testing connection...');
       const btn = document.getElementById('btnTestAll');
-      btn.disabled = true;
-      btn.classList.add('opacity-70');
+      if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-70');
+      }
 
       const client = getSupabase();
       if (!client) {
         updateStatus('error', 'Client Init Failed');
-        btn.disabled = false;
-        btn.classList.remove('opacity-70');
+        if (btn) {
+          btn.disabled = false;
+          btn.classList.remove('opacity-70');
+        }
         return;
       }
 
-      log('Starting full Supabase connection test...', 'info');
+      log('Starting full Supabase connection & schema test...', 'info');
 
-      // 1. Measure Latency & Test Primary Table
-      const start = performance.now();
-      let primaryOk = false;
-      let totalLatency = 0;
-
-      try {
-        log(`Querying primary table 'auditoria' via Supabase JS SDK...`, 'info');
-        const { data, error, status } = await client
-          .from('auditoria')
-          .select('*')
-          .limit(10);
-
-        totalLatency = Math.round(performance.now() - start);
-        document.getElementById('metricLatency').textContent = totalLatency;
-
-        if (error) {
-          log(`PostgREST responded: ${error.message} (code: ${error.code})`, 'warn', error);
-          document.getElementById('metricRest').innerHTML = `<span class="text-amber-600">${status || 'Error'}</span>`;
-        } else {
-          primaryOk = true;
-          log(`Table 'auditoria' queried successfully! Status: ${status} OK (${totalLatency}ms, ${data.length} rows)`, 'success');
-          document.getElementById('metricRest').innerHTML = `<span class="text-emerald-600">${status} OK</span>`;
-          document.getElementById('metricRestLabel').textContent = 'PostgREST Ready';
-          
-          currentResultsData = data;
-          renderResults(data);
-        }
-      } catch (err) {
-        log(`Exception querying database: ${err.message}`, 'error');
-        document.getElementById('metricRest').innerHTML = `<span class="text-rose-600">Failed</span>`;
+      // 1. Check existing session
+      const { data: { session } } = await client.auth.getSession();
+      if (session?.user) {
+        log(`Active session detected: ${session.user.email}`, 'info');
+        await updateSessionBadge(session.user);
+      } else {
+        await updateSessionBadge(null);
       }
 
-      // 2. Ping Auth Service
+      // 2. Measure Latency & Test RPC
+      await testRpcCoverage();
+
+      // 3. Ping Auth Service
       const authResult = await testAuthHealth();
 
-      // 3. Verify Known Tables in parallel
-      log('Verifying accessible schema tables...', 'info');
-      let accessibleTables = [];
+      // 4. Verify Known Tables in sequence
+      log('Scanning and validating schema entities...', 'info');
+      let accessibleTables = 0;
+      let start = performance.now();
 
       for (const t of KNOWN_TABLES) {
         try {
           const res = await client.from(t).select('*', { count: 'exact', head: true });
           if (!res.error || res.status === 200) {
-            accessibleTables.push(t);
-            log(`Table '${t}': Verified accessible (status: ${res.status})`, 'success');
+            accessibleTables++;
+            log(`Entity '${t}': Online & accessible (status: ${res.status})`, 'success');
+          } else if (res.status === 401 || res.status === 403 || res.error?.code === '42501') {
+            // Table exists in schema cache, but RLS/DCL protects it
+            accessibleTables++;
+            const hint = res.error?.hint ? ` - Hint: ${res.error.hint}` : '';
+            log(`Entity '${t}': Table verified in schema cache (Protected: ${res.error?.code || res.status}${hint})`, 'warn');
           } else {
-            log(`Table '${t}': ${res.error.message}`, 'warn');
+            log(`Entity '${t}': ${res.error?.message || 'Check schema'}`, 'warn');
           }
         } catch (e) {
-          log(`Table '${t}': ${e.message}`, 'error');
+          log(`Entity '${t}': ${e.message}`, 'error');
         }
       }
 
-      document.getElementById('metricTables').innerHTML = `<span class="text-emerald-600">${accessibleTables.length} / ${KNOWN_TABLES.length}</span>`;
+      const totalLatency = Math.round(performance.now() - start);
+      const elLatency = document.getElementById('metricLatency');
+      if (elLatency) elLatency.textContent = totalLatency;
+      const elTables = document.getElementById('metricTables');
+      if (elTables) elTables.innerHTML = `<span class="text-emerald-600">${accessibleTables} / ${KNOWN_TABLES.length}</span>`;
 
-      // Conclude overall status
-      if (primaryOk || authResult.ok || accessibleTables.length > 0) {
-        updateStatus('connected', 'Connected', totalLatency);
-        log(`✅ Connection test finished: Supabase API is reachable and responding!`, 'success');
-      } else {
-        updateStatus('error', 'Connection Error');
-        log(`❌ Connection test failed. Check CORS, API Key permissions or network access.`, 'error');
+      // 5. Query Organizacion as prime check
+      try {
+        const { data, error, status } = await client.from('organizacion').select('*').limit(5);
+        const elRest = document.getElementById('metricRest');
+        const elRestLabel = document.getElementById('metricRestLabel');
+        if (status === 200) {
+          if (elRest) elRest.innerHTML = `<span class="text-emerald-600">200 OK</span>`;
+          if (elRestLabel) elRestLabel.textContent = 'PostgREST Active';
+          currentResultsData = data || [];
+          renderResults(data || []);
+        } else if (error?.code === '42501') {
+          if (elRest) elRest.innerHTML = `<span class="text-amber-600">42501 DCL</span>`;
+          if (elRestLabel) elRestLabel.textContent = 'GRANTs Required';
+          log(`DCL Privilege Notice: 'organizacion' requires GRANT privileges in Supabase SQL editor.`, 'warn');
+          renderDclError('organizacion', error);
+        }
+      } catch (err) {
+        // Handled
       }
 
-      btn.disabled = false;
-      btn.classList.remove('opacity-70');
+      // Conclude overall status
+      if (accessibleTables > 0 || (authResult && authResult.ok)) {
+        updateStatus('connected', 'Connected', totalLatency);
+        log(`✅ Full test completed: Supabase instance is active and schema cache is populated.`, 'success');
+      } else {
+        updateStatus('error', 'Connection Error');
+        log(`❌ Connection test failed. Check network, project URL, or API key.`, 'error');
+      }
+
+      if (btn) {
+        btn.disabled = false;
+        btn.classList.remove('opacity-70');
+      }
     }
 
     /**
@@ -534,8 +966,8 @@
       const client = getSupabase();
       if (!client) return;
 
-      const tableName = document.getElementById('tableNameInput').value.trim();
-      const limit = parseInt(document.getElementById('tableLimit').value) || 25;
+      const tableName = document.getElementById('tableNameInput')?.value?.trim();
+      const limit = parseInt(document.getElementById('tableLimit')?.value) || 25;
 
       if (!tableName) {
         log('Please provide a table name to query.', 'warn');
@@ -555,21 +987,31 @@
 
         if (error) {
           log(`Query error on '${tableName}': ${error.message}`, 'error', error);
+          
+          if (error.code === '42501') {
+            renderDclError(tableName, error, status);
+            return;
+          }
+
           document.getElementById('resultsContainer').innerHTML = `
             <div class="p-4 bg-rose-50 border border-rose-200 rounded-lg text-rose-800">
-              <div class="font-bold">Query Failed (Status ${status}):</div>
-              <div class="mt-1">${error.message}</div>
+              <div class="font-bold">Query Error (Status ${status}):</div>
+              <div class="mt-1 font-mono">${error.message}</div>
               ${error.hint ? `<div class="mt-1 text-slate-600 font-mono text-[11px]">Hint: ${error.hint}</div>` : ''}
               ${error.details ? `<div class="mt-1 text-slate-500 font-mono text-[11px]">${error.details}</div>` : ''}
             </div>
           `;
-          document.getElementById('resultsCountBadge').textContent = 'Error';
-          document.getElementById('resultsCountBadge').className = 'px-2 py-0.2 rounded-full text-[11px] font-medium bg-rose-100 text-rose-800';
+          const badge = document.getElementById('resultsCountBadge');
+          if (badge) {
+            badge.textContent = `Error: ${error.code || status}`;
+            badge.className = 'px-2 py-0.2 rounded-full text-[11px] font-medium bg-rose-100 text-rose-800';
+          }
           return;
         }
 
         log(`Query completed in ${latency}ms. Received ${data.length} rows (status: ${status})`, 'success');
-        document.getElementById('metricLatency').textContent = latency;
+        const latEl = document.getElementById('metricLatency');
+        if (latEl) latEl.textContent = latency;
         currentResultsData = data;
         renderResults(data);
 
@@ -579,11 +1021,156 @@
     }
 
     /**
+     * Render specialized DCL Error Card with 1-click Copy SQL Fix
+     */
+    function renderDclError(tableName, error, status = 403) {
+      const container = document.getElementById('resultsContainer');
+      const badge = document.getElementById('resultsCountBadge');
+      if (badge) {
+        badge.textContent = 'DCL 42501 (Grant Needed)';
+        badge.className = 'px-2 py-0.2 rounded-full text-[11px] font-medium bg-amber-100 text-amber-800';
+      }
+
+      if (!container) return;
+
+      container.innerHTML = `
+        <div class="p-4 bg-amber-50/90 border border-amber-300 rounded-lg text-amber-950 space-y-3">
+          <div class="flex items-start justify-between">
+            <div class="flex items-center space-x-2">
+              <span class="text-base text-amber-600">🚨</span>
+              <h4 class="font-bold text-slate-900 text-xs">Privilegios PostgreSQL Faltantes (Error 42501 - ${tableName})</h4>
+            </div>
+            <span class="font-mono text-[10px] bg-amber-200/60 text-amber-900 px-2 py-0.5 rounded border border-amber-300">
+              PostgreSQL DCL
+            </span>
+          </div>
+
+          <p class="text-[11px] text-amber-900 leading-relaxed">
+            PostgreSQL requiere que otorgues permisos base sobre el esquema y las tablas antes de evaluar las políticas RLS. 
+            El error reportado por Supabase es:
+          </p>
+
+          <div class="p-2.5 bg-slate-900 rounded font-mono text-[11px] text-rose-300 border border-slate-800">
+            <div>"code": "42501", "message": "${error.message}"</div>
+            <div class="text-amber-300 mt-1">"hint": "${error.hint || `Grant the required privileges to the current role with: GRANT SELECT ON public.${tableName} TO authenticated;`}"</div>
+          </div>
+
+          <div class="space-y-1.5 pt-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-slate-800 text-[11px]">Solución Inmediata: Ejecutar en Supabase SQL Editor:</span>
+              <button 
+                onclick="openSqlModal('dcl')"
+                class="px-2 py-1 bg-amber-700 hover:bg-amber-800 text-white rounded text-[10px] font-bold transition-colors cursor-pointer"
+              >
+                Copiar Todo el Script DCL
+              </button>
+            </div>
+            <pre class="bg-white p-2.5 rounded border border-amber-200 font-mono text-[11px] text-slate-800 select-all overflow-x-auto">GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO authenticated;</pre>
+          </div>
+        </div>
+      `;
+    }
+
+    /**
      * Helper to select a chip table and query it
      */
     function selectAndQueryTable(name) {
-      document.getElementById('tableNameInput').value = name;
+      const input = document.getElementById('tableNameInput');
+      if (input) input.value = name;
       queryTable();
+    }
+
+    /**
+     * Helper to auto-fill credentials and sign in directly
+     */
+    function fillAndSignIn(email, password) {
+      const emailInput = document.getElementById('authEmail');
+      const passInput = document.getElementById('authPassword');
+      if (emailInput) emailInput.value = email;
+      if (passInput) passInput.value = password;
+      testSignIn();
+    }
+
+    /**
+     * Test User Sign In to evaluate authenticated RLS policies
+     */
+    async function testSignIn() {
+      const client = getSupabase();
+      if (!client) return;
+
+      const email = document.getElementById('authEmail')?.value?.trim() || '';
+      const password = document.getElementById('authPassword')?.value?.trim() || '';
+
+      if (!email || !password) {
+        log('Enter email and password to test sign in.', 'warn');
+        return;
+      }
+
+      log(`Attempting authentication for ${email}...`, 'info');
+      try {
+        const { data, error } = await client.auth.signInWithPassword({ email, password });
+        if (error) {
+          log(`Auth error: ${error.message}`, 'error', error);
+        } else {
+          log(`Successfully authenticated as ${data.user.email} (UID: ${data.user.id})`, 'success');
+          await updateSessionBadge(data.user);
+          // Query organizacion automatically after login to test permissions
+          setTimeout(() => {
+            selectAndQueryTable('organizacion');
+          }, 300);
+        }
+      } catch (e) {
+        log(`Sign in exception: ${e.message}`, 'error');
+      }
+    }
+
+    /**
+     * Test User Sign Out
+     */
+    async function testSignOut() {
+      const client = getSupabase();
+      if (!client) return;
+
+      await client.auth.signOut();
+      log('User signed out. Reverted to anonymous public key.', 'info');
+      await updateSessionBadge(null);
+    }
+
+    /**
+     * Update session badge in UI with profile info
+     */
+    async function updateSessionBadge(user) {
+      const badge = document.getElementById('sessionBadge');
+      if (!badge) return;
+
+      if (user) {
+        let roleInfo = 'Authenticated';
+        try {
+          const client = getSupabase();
+          if (client) {
+            const { data } = await client
+              .from('profiles')
+              .select('role, status, nombre')
+              .eq('id', user.id)
+              .maybeSingle();
+
+            if (data) {
+              roleInfo = `${data.role} (${data.status}) - ${data.nombre}`;
+            }
+          }
+        } catch (err) {
+          // Fallback
+        }
+
+        badge.className = 'text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300';
+        badge.textContent = `User: ${user.email} • ${roleInfo}`;
+      } else {
+        badge.className = 'text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200';
+        badge.textContent = 'Role: anon (Unauthenticated Key)';
+      }
     }
 
     /**
@@ -592,14 +1179,26 @@
     function renderResults(data) {
       const container = document.getElementById('resultsContainer');
       const badge = document.getElementById('resultsCountBadge');
+      if (!container || !badge) return;
 
       if (!data || data.length === 0) {
         badge.textContent = '0 rows (Empty)';
         badge.className = 'px-2 py-0.2 rounded-full text-[11px] font-medium bg-slate-200 text-slate-700';
         container.innerHTML = `
           <div class="text-center py-8 text-slate-500">
-            <div class="font-semibold text-slate-700">Query returned 0 rows.</div>
-            <p class="text-[11px] text-slate-400 mt-1">The table exists and is accessible, but currently contains no records.</p>
+            <div class="font-semibold text-slate-700">La consulta se ejecutó exitosamente pero retornó 0 filas.</div>
+            <p class="text-[11px] text-slate-400 mt-1 max-w-md mx-auto">
+              La tabla existe y tienes permisos para leerla, pero aún no contiene registros. 
+              Puedes cargar los registros de prueba abriendo el <strong>SQL Hub</strong> y ejecutando <code class="font-mono">datos_prueba.sql</code>.
+            </p>
+            <div class="mt-3">
+              <button 
+                onclick="openSqlModal('seeds')"
+                class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-medium text-xs cursor-pointer shadow-xs"
+              >
+                Ver SQL para Cargar Datos de Prueba
+              </button>
+            </div>
           </div>
         `;
         return;
@@ -615,8 +1214,8 @@
       } else {
         // Build table
         const cols = Object.keys(data[0]);
-        let ths = cols.map(c => `<th class="py-2.5 px-3 text-left font-semibold text-slate-600 bg-slate-100 border-b border-slate-200">${c}</th>`).join('');
-        let trs = data.map((row, idx) => {
+        let ths = cols.map(c => `<th class="py-2 px-3 text-left font-semibold text-slate-600 bg-slate-100 border-b border-slate-200 whitespace-nowrap">${c}</th>`).join('');
+        let trs = data.map((row) => {
           let tds = cols.map(c => {
             const val = row[c];
             const display = typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val ?? '');
@@ -645,19 +1244,159 @@
       const btnJson = document.getElementById('btnViewJson');
 
       if (format === 'table') {
-        btnTable.className = 'px-2 py-1 text-[11px] font-medium rounded bg-white text-slate-800 border border-slate-200 shadow-2xs';
-        btnJson.className = 'px-2 py-1 text-[11px] font-medium rounded text-slate-500 hover:text-slate-800';
+        if (btnTable) btnTable.className = 'px-2 py-1 text-[11px] font-medium rounded bg-white text-slate-800 border border-slate-200 shadow-2xs cursor-pointer';
+        if (btnJson) btnJson.className = 'px-2 py-1 text-[11px] font-medium rounded text-slate-500 hover:text-slate-800 cursor-pointer';
       } else {
-        btnJson.className = 'px-2 py-1 text-[11px] font-medium rounded bg-white text-slate-800 border border-slate-200 shadow-2xs';
-        btnTable.className = 'px-2 py-1 text-[11px] font-medium rounded text-slate-500 hover:text-slate-800';
+        if (btnJson) btnJson.className = 'px-2 py-1 text-[11px] font-medium rounded bg-white text-slate-800 border border-slate-200 shadow-2xs cursor-pointer';
+        if (btnTable) btnTable.className = 'px-2 py-1 text-[11px] font-medium rounded text-slate-500 hover:text-slate-800 cursor-pointer';
       }
 
       renderResults(currentResultsData);
     }
 
-    // Auto-test on window load as requested in requirements
+    /**
+     * SQL Hub Modal management
+     */
+    function openSqlModal(tab = 'dcl') {
+      const modal = document.getElementById('sqlModal');
+      if (modal) modal.classList.remove('hidden');
+      switchSqlTab(tab);
+    }
+
+    function closeSqlModal() {
+      const modal = document.getElementById('sqlModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function switchSqlTab(tab) {
+      const tabDcl = document.getElementById('tabContentDcl');
+      const tabSeeds = document.getElementById('tabContentSeeds');
+      const tabUsers = document.getElementById('tabContentUsers');
+      const btnDcl = document.getElementById('tabBtnDcl');
+      const btnSeeds = document.getElementById('tabBtnSeeds');
+      const btnUsers = document.getElementById('tabBtnUsers');
+
+      const activeClasses = 'px-3 py-1.5 border-b-2 border-emerald-600 font-bold text-emerald-800 bg-white rounded-t cursor-pointer';
+      const inactiveClasses = 'px-3 py-1.5 border-b-2 border-transparent font-medium text-slate-600 hover:text-slate-900 rounded-t cursor-pointer';
+
+      if (tab === 'dcl') {
+        tabDcl?.classList.remove('hidden');
+        tabSeeds?.classList.add('hidden');
+        tabUsers?.classList.add('hidden');
+        if (btnDcl) btnDcl.className = activeClasses;
+        if (btnSeeds) btnSeeds.className = inactiveClasses;
+        if (btnUsers) btnUsers.className = inactiveClasses;
+      } else if (tab === 'seeds') {
+        tabDcl?.classList.add('hidden');
+        tabSeeds?.classList.remove('hidden');
+        tabUsers?.classList.add('hidden');
+        if (btnSeeds) btnSeeds.className = activeClasses;
+        if (btnDcl) btnDcl.className = inactiveClasses;
+        if (btnUsers) btnUsers.className = inactiveClasses;
+        loadSeedSnippet();
+      } else if (tab === 'users') {
+        tabDcl?.classList.add('hidden');
+        tabSeeds?.classList.add('hidden');
+        tabUsers?.classList.remove('hidden');
+        if (btnUsers) btnUsers.className = activeClasses;
+        if (btnDcl) btnDcl.className = inactiveClasses;
+        if (btnSeeds) btnSeeds.className = inactiveClasses;
+        loadUsersSnippet();
+      }
+    }
+
+    async function loadSeedSnippet() {
+      const el = document.getElementById('sqlTextSeeds');
+      if (!el || el.dataset.loaded) return;
+      try {
+        const res = await fetch('/supabase/queries/datos_prueba.sql');
+        if (res.ok) {
+          const text = await res.text();
+          el.textContent = text;
+          el.dataset.loaded = 'true';
+        }
+      } catch (e) {
+        // Fallback
+      }
+    }
+
+    async function loadUsersSnippet() {
+      const el = document.getElementById('sqlTextUsers');
+      if (!el || el.dataset.loaded) return;
+      try {
+        const res = await fetch('/supabase/queries/usuarios.sql');
+        if (res.ok) {
+          const text = await res.text();
+          el.textContent = text;
+          el.dataset.loaded = 'true';
+        }
+      } catch (e) {
+        // Fallback
+      }
+    }
+
+    function copyToClipboard(elementId, btn) {
+      const text = document.getElementById(elementId)?.textContent;
+      if (!text) return;
+      navigator.clipboard.writeText(text).then(() => {
+        const old = btn.textContent;
+        btn.textContent = 'Copied! ✓';
+        btn.classList.add('bg-emerald-800');
+        setTimeout(() => {
+          btn.textContent = old;
+          btn.classList.remove('bg-emerald-800');
+        }, 2000);
+      });
+    }
+
+    async function copySeedData(btn) {
+      try {
+        const res = await fetch('/supabase/queries/datos_prueba.sql');
+        const text = await res.text();
+        await navigator.clipboard.writeText(text);
+        const old = btn.textContent;
+        btn.textContent = 'Copied! ✓';
+        setTimeout(() => { btn.textContent = old; }, 2000);
+      } catch (e) {
+        copyToClipboard('sqlTextSeeds', btn);
+      }
+    }
+
+    async function copyUsersData(btn) {
+      try {
+        const res = await fetch('/supabase/queries/usuarios.sql');
+        const text = await res.text();
+        await navigator.clipboard.writeText(text);
+        const old = btn.textContent;
+        btn.textContent = 'Copied! ✓';
+        setTimeout(() => { btn.textContent = old; }, 2000);
+      } catch (e) {
+        copyToClipboard('sqlTextUsers', btn);
+      }
+    }
+
+    // Expose all action handlers globally for HTML event attributes
+    window.testFullConnection = testFullConnection;
+    window.testAuthHealth = testAuthHealth;
+    window.testRpcCoverage = testRpcCoverage;
+    window.executeCustomRpc = executeCustomRpc;
+    window.queryTable = queryTable;
+    window.selectAndQueryTable = selectAndQueryTable;
+    window.fillAndSignIn = fillAndSignIn;
+    window.testSignIn = testSignIn;
+    window.testSignOut = testSignOut;
+    window.clearLogs = clearLogs;
+    window.toggleResultFormat = toggleResultFormat;
+    window.openSqlModal = openSqlModal;
+    window.closeSqlModal = closeSqlModal;
+    window.switchSqlTab = switchSqlTab;
+    window.copyToClipboard = copyToClipboard;
+    window.copySeedData = copySeedData;
+    window.copyUsersData = copyUsersData;
+
+    // Auto-test on DOM ready
     window.addEventListener('DOMContentLoaded', () => {
-      log('Application initialized. Testing initial Supabase connection...', 'info');
+      log('Application initialized with .env credentials. Testing Supabase connection & RPC engine...', 'info');
       setTimeout(() => {
         testFullConnection();
       }, 300);

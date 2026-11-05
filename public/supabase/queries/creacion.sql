@@ -1,8 +1,61 @@
--- =============================================================================
--- CREACIÓN DE EXTENSIONES REQUERIDAS
--- =============================================================================
+-- ============================================================================
+-- FILE 1: CREACION.SQL
+-- ============================================================================
+-- CREACIÓN DE EXTENSIONES Y TIPOS ENUMERADOS
+
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "ltree";
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_status') THEN
+        CREATE TYPE public.user_status AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+        CREATE TYPE public.user_role AS ENUM ('ADMIN', 'AUDITOR', 'USER');
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'tipo_hallazgo') THEN
+        CREATE TYPE public.tipo_hallazgo AS ENUM ('NC_MAYOR', 'NC_MENOR', 'OBSERVACION', 'OPORTUNIDAD_MEJORA');
+    END IF;
+END $$;
+
+-- =============================================================================
+-- PERFILES DE SISTEMA Y DISPARADOR DE REGISTRO
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    nombre VARCHAR(150) NOT NULL,
+    role public.user_role NOT NULL DEFAULT 'USER',
+    status public.user_status NOT NULL DEFAULT 'PENDING',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER 
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    INSERT INTO public.profiles (id, nombre, role, status)
+    VALUES (
+        NEW.id,
+        COALESCE(NEW.raw_user_meta_data->>'nombre', NEW.email),
+        'USER',
+        'PENDING'
+    )
+    ON CONFLICT (id) DO NOTHING;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- =============================================================================
 -- DOMINIO 1: CATÁLOGOS BASE Y COMPETENCIAS DE AUDITORES
@@ -77,13 +130,22 @@ CREATE TABLE sector_iaf_auditor (
 -- DOMINIO 2: CERTIFICADOS, SITIOS, PROCESOS Y TURNOS
 -- =============================================================================
 
+CREATE TABLE organizacion (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    nombre VARCHAR(200) NOT NULL,
+    rif VARCHAR(50),
+    direccion_fiscal TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE certificado (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     id_norma UUID NOT NULL REFERENCES norma(id) ON DELETE RESTRICT,
     id_estatus UUID NOT NULL REFERENCES estatus(id) ON DELETE RESTRICT,
     id_sector_iaf UUID NOT NULL REFERENCES sector_iaf(id) ON DELETE RESTRICT,
+    id_organizacion UUID NOT NULL REFERENCES organizacion(id) ON DELETE RESTRICT,
     numero_certificado VARCHAR(100) NOT NULL UNIQUE,
-    nombre_empresa VARCHAR(200) NOT NULL,
     multisitio BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -162,6 +224,7 @@ CREATE TABLE comentarios_por_auditoria (
 CREATE TABLE equipo_auditor (
     id_auditoria UUID NOT NULL REFERENCES auditoria(id) ON DELETE CASCADE,
     id_auditor UUID NOT NULL REFERENCES auditor(id) ON DELETE CASCADE,
+    rol_auditor VARCHAR(50) NOT NULL DEFAULT 'AUDITOR',
     PRIMARY KEY (id_auditoria, id_auditor)
 );
 
@@ -189,7 +252,86 @@ CREATE TABLE procesos_sitio_auditoria (
 );
 
 -- =============================================================================
--- DISPARADORES (TRIGGERS) PARA ACTUALIZACIÓN AUTOMÁTICA DE TIMESTAMP
+-- REGISTRO DE HALLAZGOS ISO
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS public.hallazgo (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_auditoria UUID NOT NULL REFERENCES public.auditoria(id) ON DELETE CASCADE,
+    id_requisito UUID NOT NULL REFERENCES public.requisito(id) ON DELETE RESTRICT,
+    id_proceso UUID NOT NULL REFERENCES public.proceso(id) ON DELETE RESTRICT,
+    tipo public.tipo_hallazgo NOT NULL,
+    descripcion TEXT NOT NULL,
+    evidencia TEXT,
+    cerrado BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================================================================
+-- SISTEMA DE AUDIT LOG INMUTABLE
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS public.audit_log (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    table_name TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    record_id UUID NOT NULL,
+    old_data JSONB,
+    new_data JSONB,
+    performed_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    performed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE OR REPLACE FUNCTION public.audit_trigger_func()
+RETURNS TRIGGER 
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    current_user_id UUID;
+    target_record_id UUID;
+BEGIN
+    current_user_id := auth.uid();
+
+    IF (TG_OP = 'DELETE') THEN
+        target_record_id := OLD.id;
+        INSERT INTO public.audit_log (table_name, operation, record_id, old_data, performed_by)
+        VALUES (TG_TABLE_NAME, TG_OP, target_record_id, to_jsonb(OLD), current_user_id);
+        RETURN OLD;
+    ELSIF (TG_OP = 'UPDATE') THEN
+        target_record_id := NEW.id;
+        INSERT INTO public.audit_log (table_name, operation, record_id, old_data, new_data, performed_by)
+        VALUES (TG_TABLE_NAME, TG_OP, target_record_id, to_jsonb(OLD), to_jsonb(NEW), current_user_id);
+        RETURN NEW;
+    ELSIF (TG_OP = 'INSERT') THEN
+        target_record_id := NEW.id;
+        INSERT INTO public.audit_log (table_name, operation, record_id, new_data, performed_by)
+        VALUES (TG_TABLE_NAME, TG_OP, target_record_id, to_jsonb(NEW), current_user_id);
+        RETURN NEW;
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS audit_organizacion_trigger ON public.organizacion;
+CREATE TRIGGER audit_organizacion_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON public.organizacion
+    FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
+DROP TRIGGER IF EXISTS audit_certificado_trigger ON public.certificado;
+CREATE TRIGGER audit_certificado_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON public.certificado
+    FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
+DROP TRIGGER IF EXISTS audit_auditoria_trigger ON public.auditoria;
+CREATE TRIGGER audit_auditoria_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON public.auditoria
+    FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
+-- =============================================================================
+-- DISPARADORES PARA ACTUALIZACIÓN AUTOMÁTICA DE TIMESTAMP
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -200,9 +342,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE TRIGGER update_organizacion_modtime BEFORE UPDATE ON organizacion FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_norma_modtime BEFORE UPDATE ON norma FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_requisito_modtime BEFORE UPDATE ON requisito FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_certificado_modtime BEFORE UPDATE ON certificado FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_sitio_modtime BEFORE UPDATE ON sitio FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_proceso_modtime BEFORE UPDATE ON proceso FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_auditoria_modtime BEFORE UPDATE ON auditoria FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_hallazgo_modtime BEFORE UPDATE ON hallazgo FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
