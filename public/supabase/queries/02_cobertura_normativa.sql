@@ -1,10 +1,7 @@
 -- ============================================================================
--- FILE 2: COBERTURA_NORMATIVA.SQL
+-- FILE 2: 02_COBERTURA_NORMATIVA.SQL (Motor de Cálculo LTREE)
 -- ============================================================================
--- MOTOR DE CÁLCULO DE COBERTURA NORMATIVA CON LTREE (RPC)
 
--- Función Avanzada de Evaluación Central (evaluar_cobertura_certificado)
--- Calcula la cobertura directa e heredada aprovechando el operador ltree (@>)
 CREATE OR REPLACE FUNCTION public.evaluar_cobertura_certificado(p_id_certificado UUID)
 RETURNS TABLE (
     id_requisito UUID,
@@ -12,11 +9,7 @@ RETURNS TABLE (
     ruta_materializada LTREE,
     estado_cobertura TEXT
 ) 
-LANGUAGE plpgsql
-STABLE
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
     RETURN QUERY
     WITH RequisitosCubiertosDirectos AS (
@@ -61,19 +54,13 @@ BEGIN
 END;
 $$;
 
--- Wrapper API SQL (cobertura_normativa_certificado)
--- Llama al motor de evaluación para exponer los datos de cobertura del certificado
 CREATE OR REPLACE FUNCTION public.cobertura_normativa_certificado(p_id_certificado UUID)
 RETURNS TABLE (
     id_requisito UUID,
     codigo VARCHAR,
     estado_cobertura TEXT
 ) 
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
     SELECT id_requisito, codigo, estado_cobertura 
     FROM public.evaluar_cobertura_certificado(p_id_certificado);
 $$;
