@@ -1,6 +1,7 @@
 # Resumen del Proyecto: `programa_aud`
 
-**Repositorio GitHub:** [https://github.com/certificacionfn/programa_aud](https://github.com/certificacionfn/programa_aud)  
+** Google AI Studio Public Link:** [programa_aud](https://ai.studio/apps/f5f27961-b10a-4b29-a8c7-6153e393aa1f)
+**Repositorio GitHub:** [programa_aud](https://github.com/certificacionfn/programa_aud)  
 **Organización / Coordinación:** Certificación FN (`coord.operativacertificacionfn@gmail.com`)  
 **Base de Datos Supabase:**
 - **Project URL:** `https://ufowtgmpaahyshdxlnlq.supabase.co`
