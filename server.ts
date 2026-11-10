@@ -147,6 +147,10 @@ async function createServer(): Promise<void> {
   const app = express();
   app.use(express.json());
 
+  app.get('/api/health', (_req: Request, res: Response) => {
+    res.status(200).json({ ok: true });
+  });
+
   app.post('/api/reset-db', async (_req: Request, res: Response) => {
     try {
       const result = await runAllQueriesInOrder();
@@ -164,21 +168,36 @@ async function createServer(): Promise<void> {
     }
   });
 
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        hmr: false,
-      },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
+  const isStartScript = process.env.npm_lifecycle_event === 'start';
+  const useProdStatic = process.env.NODE_ENV === 'production' || isStartScript;
+
+  let mountedVite = false;
+  if (!useProdStatic) {
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          hmr: false,
+        },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+      mountedVite = true;
+    } catch {
+      mountedVite = false;
+    }
+  }
+
+  if (!mountedVite) {
     const distDir = path.resolve(__dirname, 'dist');
     app.use(express.static(distDir));
-    app.get('*', (_req: Request, res: Response) => {
-      res.sendFile(path.join(distDir, 'index.html'));
+    app.use((req: Request, res: Response, next) => {
+      if ((req.method === 'GET' || req.method === 'HEAD') && !req.path.startsWith('/api/')) {
+        res.sendFile(path.join(distDir, 'index.html'));
+        return;
+      }
+      next();
     });
   }
 

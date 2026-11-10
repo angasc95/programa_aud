@@ -1,26 +1,43 @@
 -- ============================================================================
--- FILE 1: 01_CREACION.SQL (Esquema DDL, Tipos, Perfiles, Triggers y Audit Log)
+-- FILE 1: 01_CREACION.SQL (Fase 1: Infraestructura Base, Auth, Audit Log + DDL)
 -- ============================================================================
 
+-- 1. Extensiones PostgreSQL
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "ltree";
 
-DO $$ 
+-- 2. Tipos Enumerados (aislados en esquema public)
+DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_status') THEN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_type t
+        JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname = 'public' AND t.typname = 'user_status'
+    ) THEN
         CREATE TYPE public.user_status AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_type t
+        JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname = 'public' AND t.typname = 'user_role'
+    ) THEN
         CREATE TYPE public.user_role AS ENUM ('ADMIN', 'WORKER', 'AUDITOR', 'CLIENT');
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'tipo_hallazgo') THEN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_type t
+        JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname = 'public' AND t.typname = 'tipo_hallazgo'
+    ) THEN
         CREATE TYPE public.tipo_hallazgo AS ENUM ('NC_MAYOR', 'NC_MENOR', 'OBSERVACION', 'OPORTUNIDAD_MEJORA');
     END IF;
 END $$;
 
--- Perfiles de Usuario del Sistema
+-- 3. Perfiles de Usuario y Máquina de Estados (RBAC)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     nombre VARCHAR(150) NOT NULL,
@@ -30,35 +47,51 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Disparador de Autoregisto en auth.users
+-- Disparador de Autoregisto en auth.users:
+--   * CLIENT -> APPROVED automático
+--   * ADMIN / WORKER / AUDITOR -> PENDING obligatorio (aprobación administrativa)
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER 
+RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
+    v_raw_role TEXT;
     v_role public.user_role;
     v_status public.user_status;
+    v_nombre VARCHAR(150);
 BEGIN
-    v_role := COALESCE((NEW.raw_user_meta_data->>'role')::public.user_role, 'CLIENT');
-    
+    v_raw_role := UPPER(NULLIF(TRIM(NEW.raw_user_meta_data->>'role'), ''));
+
+    BEGIN
+        v_role := COALESCE(v_raw_role::public.user_role, 'CLIENT');
+    EXCEPTION
+        WHEN invalid_text_representation THEN
+            v_role := 'CLIENT';
+    END;
+
     IF v_role = 'CLIENT' THEN
         v_status := 'APPROVED';
     ELSE
         v_status := 'PENDING';
     END IF;
 
+    v_nombre := LEFT(
+        COALESCE(
+            NULLIF(TRIM(NEW.raw_user_meta_data->>'nombre'), ''),
+            NEW.email,
+            'Usuario'
+        ),
+        150
+    );
+
     INSERT INTO public.profiles (id, nombre, role, status)
-    VALUES (
-        NEW.id,
-        COALESCE(NEW.raw_user_meta_data->>'nombre', NEW.email),
-        v_role,
-        v_status
-    )
+    VALUES (NEW.id, v_nombre, v_role, v_status)
     ON CONFLICT (id) DO UPDATE SET
         nombre = EXCLUDED.nombre,
         updated_at = NOW();
+
     RETURN NEW;
 END;
 $$;
@@ -331,13 +364,30 @@ CREATE TRIGGER trg_validar_proceso_sitio_auditoria_certificado
 CREATE TABLE IF NOT EXISTS public.audit_log (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     table_name TEXT NOT NULL,
-    operation TEXT NOT NULL,
+    operation TEXT NOT NULL CHECK (operation IN ('INSERT', 'UPDATE', 'DELETE')),
     record_id UUID NOT NULL,
     old_data JSONB,
     new_data JSONB,
     performed_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     performed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Garantía de inmutabilidad en capa de datos (bloqueo de UPDATE/DELETE)
+CREATE OR REPLACE FUNCTION public.prevent_audit_log_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    RAISE EXCEPTION 'Violación de Inmutabilidad: no se permiten operaciones % sobre public.audit_log.', TG_OP;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_audit_log_immutable ON public.audit_log;
+CREATE TRIGGER trg_audit_log_immutable
+    BEFORE UPDATE OR DELETE ON public.audit_log
+    FOR EACH ROW EXECUTE FUNCTION public.prevent_audit_log_mutation();
 
 CREATE OR REPLACE FUNCTION public.audit_trigger_func()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -379,19 +429,40 @@ DROP TRIGGER IF EXISTS audit_client_access_trigger ON public.client_organization
 CREATE TRIGGER audit_client_access_trigger AFTER INSERT OR UPDATE OR DELETE ON public.client_organization_access FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
 
 -- Actualización Automática de Timestamps
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
 BEGIN
     NEW.updated_at = NOW();
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
-CREATE TRIGGER update_organizacion_modtime BEFORE UPDATE ON organizacion FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_norma_modtime BEFORE UPDATE ON norma FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_requisito_modtime BEFORE UPDATE ON requisito FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_certificado_modtime BEFORE UPDATE ON certificado FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_sitio_modtime BEFORE UPDATE ON sitio FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_proceso_modtime BEFORE UPDATE ON proceso FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_auditoria_modtime BEFORE UPDATE ON auditoria FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_hallazgo_modtime BEFORE UPDATE ON hallazgo FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_profiles_modtime ON public.profiles;
+CREATE TRIGGER update_profiles_modtime BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_organizacion_modtime ON public.organizacion;
+CREATE TRIGGER update_organizacion_modtime BEFORE UPDATE ON public.organizacion FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_norma_modtime ON public.norma;
+CREATE TRIGGER update_norma_modtime BEFORE UPDATE ON public.norma FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_requisito_modtime ON public.requisito;
+CREATE TRIGGER update_requisito_modtime BEFORE UPDATE ON public.requisito FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_certificado_modtime ON public.certificado;
+CREATE TRIGGER update_certificado_modtime BEFORE UPDATE ON public.certificado FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_sitio_modtime ON public.sitio;
+CREATE TRIGGER update_sitio_modtime BEFORE UPDATE ON public.sitio FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_proceso_modtime ON public.proceso;
+CREATE TRIGGER update_proceso_modtime BEFORE UPDATE ON public.proceso FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_auditoria_modtime ON public.auditoria;
+CREATE TRIGGER update_auditoria_modtime BEFORE UPDATE ON public.auditoria FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_hallazgo_modtime ON public.hallazgo;
+CREATE TRIGGER update_hallazgo_modtime BEFORE UPDATE ON public.hallazgo FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
