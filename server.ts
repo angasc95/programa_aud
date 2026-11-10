@@ -1,4 +1,5 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config({ override: true });
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -68,7 +69,10 @@ async function runAllQueriesInOrder(): Promise<{
   executedFiles: ExecutedScript[];
   totalDurationMs: number;
 }> {
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+  let supabaseUrl = (process.env.VITE_SUPABASE_URL || '').trim();
+  if (!supabaseUrl || supabaseUrl.includes('your-project')) {
+    supabaseUrl = 'https://ufowtgmpaahyshdxlnlq.supabase.co';
+  }
   const supabaseToken = process.env.VITE_SUPABASE_TOKEN || '';
   const databaseKey = process.env.VITE_SUPABASE_DATABASE_KEY || '';
   const projectRef = extractProjectRef(supabaseUrl);
