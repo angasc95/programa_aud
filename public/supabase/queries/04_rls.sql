@@ -291,6 +291,79 @@ CREATE POLICY "hallazgo_write_auditor_or_worker" ON public.hallazgo FOR ALL TO a
     USING (public.is_approved_worker() OR public.is_assigned_auditor(id_auditoria))
     WITH CHECK (public.is_approved_worker() OR public.is_assigned_auditor(id_auditoria));
 
+-- Políticas para SITIOS_POR_AUDITORIA
+CREATE POLICY "sitios_por_auditoria_select" ON public.sitios_por_auditoria FOR SELECT TO authenticated
+    USING (
+        public.is_approved_worker() OR
+        public.is_assigned_auditor(id_auditoria) OR
+        EXISTS (
+            SELECT 1 FROM public.auditoria a
+            JOIN public.certificado c ON a.id_certificado = c.id
+            WHERE a.id = sitios_por_auditoria.id_auditoria AND public.has_client_org_access(c.id_organizacion)
+        )
+    );
+
+CREATE POLICY "sitios_por_auditoria_write_worker" ON public.sitios_por_auditoria FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
+
+-- Políticas para TURNOS_SITIO_AUDITORIA
+CREATE POLICY "turnos_sitio_auditoria_select" ON public.turnos_sitio_auditoria FOR SELECT TO authenticated
+    USING (
+        public.is_approved_worker() OR
+        EXISTS (
+            SELECT 1 FROM public.sitios_por_auditoria sa
+            WHERE sa.id = turnos_sitio_auditoria.id_sitios_por_auditoria
+              AND (
+                  public.is_assigned_auditor(sa.id_auditoria) OR
+                  EXISTS (
+                      SELECT 1 FROM public.auditoria a
+                      JOIN public.certificado c ON a.id_certificado = c.id
+                      WHERE a.id = sa.id_auditoria AND public.has_client_org_access(c.id_organizacion)
+                  )
+              )
+        )
+    );
+
+CREATE POLICY "turnos_sitio_auditoria_write_worker" ON public.turnos_sitio_auditoria FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
+
+-- Políticas para PROCESOS_SITIO_AUDITORIA
+CREATE POLICY "procesos_sitio_auditoria_select" ON public.procesos_sitio_auditoria FOR SELECT TO authenticated
+    USING (
+        public.is_approved_worker() OR
+        EXISTS (
+            SELECT 1 FROM public.sitios_por_auditoria sa
+            WHERE sa.id = procesos_sitio_auditoria.id_sitios_por_auditoria
+              AND (
+                  public.is_assigned_auditor(sa.id_auditoria) OR
+                  EXISTS (
+                      SELECT 1 FROM public.auditoria a
+                      JOIN public.certificado c ON a.id_certificado = c.id
+                      WHERE a.id = sa.id_auditoria AND public.has_client_org_access(c.id_organizacion)
+                  )
+              )
+        )
+    );
+
+CREATE POLICY "procesos_sitio_auditoria_write_worker" ON public.procesos_sitio_auditoria FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
+
+-- Políticas para COMENTARIOS_POR_AUDITORIA
+CREATE POLICY "comentarios_auditoria_select" ON public.comentarios_por_auditoria FOR SELECT TO authenticated
+    USING (
+        public.is_approved_worker() OR
+        public.is_assigned_auditor(id_auditoria) OR
+        EXISTS (
+            SELECT 1 FROM public.auditoria a
+            JOIN public.certificado c ON a.id_certificado = c.id
+            WHERE a.id = comentarios_por_auditoria.id_auditoria AND public.has_client_org_access(c.id_organizacion)
+        )
+    );
+
+CREATE POLICY "comentarios_auditoria_write_worker_or_auditor" ON public.comentarios_por_auditoria FOR ALL TO authenticated
+    USING (public.is_approved_worker() OR public.is_assigned_auditor(id_auditoria))
+    WITH CHECK (public.is_approved_worker() OR public.is_assigned_auditor(id_auditoria));
+
 -- Políticas para AUDIT_LOG
 CREATE POLICY "audit_log_select_admin" ON public.audit_log FOR SELECT TO authenticated
     USING (public.is_approved_admin());
