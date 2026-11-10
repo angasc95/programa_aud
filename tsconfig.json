@@ -3,8 +3,11 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "strict": false,
+    "types": ["vite/client", "node"],
+    "strict": true,
+    "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "server.ts", "src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
 }

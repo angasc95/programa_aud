@@ -1,0 +1,190 @@
+import 'dotenv/config';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import express from 'express';
+import type { Request, Response } from 'express';
+import { Client as PgClient } from 'pg';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PORT = Number(process.env.PORT || 3000);
+const QUERIES_DIR = path.resolve(__dirname, 'public', 'supabase', 'queries');
+
+interface ExecutedScript {
+  file: string;
+  durationMs: number;
+}
+
+function extractProjectRef(supabaseUrl: string): string | null {
+  try {
+    const parsed = new URL(supabaseUrl.trim());
+    const [ref] = parsed.hostname.split('.');
+    return ref || null;
+  } catch {
+    return null;
+  }
+}
+
+async function listOrderedSqlFiles(): Promise<string[]> {
+  const entries = await fs.readdir(QUERIES_DIR, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.sql'))
+    .map((entry) => entry.name)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+async function runViaManagementApi(
+  projectRef: string,
+  token: string,
+  sql: string
+): Promise<void> {
+  const response = await fetch(
+    `https://api.supabase.com/v1/projects/${projectRef}/database/query`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query: sql }),
+    }
+  );
+
+  if (!response.ok) {
+    let message = `Supabase query failed with HTTP ${response.status}`;
+    try {
+      const body = (await response.json()) as { message?: string; error?: string };
+      message = body.message || body.error || message;
+    } catch {
+      const text = await response.text().catch(() => '');
+      if (text) message = text;
+    }
+    throw new Error(message);
+  }
+}
+
+async function runAllQueriesInOrder(): Promise<{
+  executedFiles: ExecutedScript[];
+  totalDurationMs: number;
+}> {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+  const supabaseToken = process.env.VITE_SUPABASE_TOKEN || '';
+  const databaseKey = process.env.VITE_SUPABASE_DATABASE_KEY || '';
+  const projectRef = extractProjectRef(supabaseUrl);
+
+  if (!projectRef) {
+    throw new Error('VITE_SUPABASE_URL is missing or invalid in .env.');
+  }
+
+  if (!supabaseToken && !databaseKey) {
+    throw new Error(
+      'Missing Supabase database credentials in .env (VITE_SUPABASE_TOKEN or VITE_SUPABASE_DATABASE_KEY).'
+    );
+  }
+
+  const sqlFiles = await listOrderedSqlFiles();
+  if (sqlFiles.length === 0) {
+    throw new Error('No .sql files were found in public/supabase/queries/.');
+  }
+
+  const totalStart = performance.now();
+  const executedFiles: ExecutedScript[] = [];
+
+  if (supabaseToken) {
+    for (const file of sqlFiles) {
+      const fileStart = performance.now();
+      const sql = await fs.readFile(path.join(QUERIES_DIR, file), 'utf8');
+      try {
+        await runViaManagementApi(projectRef, supabaseToken, sql);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        throw new Error(`Failed executing ${file}: ${reason}`);
+      }
+      executedFiles.push({
+        file,
+        durationMs: Math.round(performance.now() - fileStart),
+      });
+    }
+  } else {
+    const client = new PgClient({
+      host: `db.${projectRef}.supabase.co`,
+      port: 5432,
+      user: 'postgres',
+      password: databaseKey,
+      database: 'postgres',
+      ssl: { rejectUnauthorized: false },
+    });
+
+    await client.connect();
+    try {
+      for (const file of sqlFiles) {
+        const fileStart = performance.now();
+        const sql = await fs.readFile(path.join(QUERIES_DIR, file), 'utf8');
+        try {
+          await client.query(sql);
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          throw new Error(`Failed executing ${file}: ${reason}`);
+        }
+        executedFiles.push({
+          file,
+          durationMs: Math.round(performance.now() - fileStart),
+        });
+      }
+    } finally {
+      await client.end();
+    }
+  }
+
+  return {
+    executedFiles,
+    totalDurationMs: Math.round(performance.now() - totalStart),
+  };
+}
+
+async function createServer(): Promise<void> {
+  const app = express();
+  app.use(express.json());
+
+  app.post('/api/reset-db', async (_req: Request, res: Response) => {
+    try {
+      const result = await runAllQueriesInOrder();
+      res.status(200).json({
+        ok: true,
+        executedFiles: result.executedFiles,
+        totalDurationMs: result.totalDurationMs,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unexpected database reset error.';
+      res.status(500).json({
+        ok: false,
+        error: message,
+      });
+    }
+  });
+
+  if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: {
+        middlewareMode: true,
+        hmr: false,
+      },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distDir = path.resolve(__dirname, 'dist');
+    app.use(express.static(distDir));
+    app.get('*', (_req: Request, res: Response) => {
+      res.sendFile(path.join(distDir, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server listening on http://0.0.0.0:${PORT}`);
+  });
+}
+
+void createServer();
