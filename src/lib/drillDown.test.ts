@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getFindingTypeMeta,
+  getAuditModalityMeta,
   calculateFindingStats,
   filterFindings,
   validateFindingInput,
@@ -10,6 +11,23 @@ import {
   INITIAL_FINDINGS,
   type FindingRecord,
 } from './drillDown';
+
+test('getAuditModalityMeta returns accurate metadata and ISO audit descriptors', () => {
+  const e1 = getAuditModalityMeta('ETAPA_1');
+  assert.equal(e1.symbol, '📑');
+  assert.match(e1.label, /Etapa 1/);
+
+  const e2 = getAuditModalityMeta('ETAPA_2');
+  assert.equal(e2.symbol, '🔍');
+  assert.match(e2.label, /Etapa 2/);
+
+  const v1 = getAuditModalityMeta('VIGILANCIA_1');
+  assert.equal(v1.symbol, '🔎');
+
+  const recert = getAuditModalityMeta('RECERTIFICACION');
+  assert.equal(recert.symbol, '🔄');
+  assert.match(recert.label, /Recertificación/);
+});
 
 test('getFindingTypeMeta returns correct visual metadata and symbols', () => {
   const mayor = getFindingTypeMeta('NC_MAYOR');

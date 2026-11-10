@@ -47,6 +47,61 @@ export interface DrillDownBreadcrumb {
   active: boolean;
 }
 
+export interface AuditModalityMeta {
+  label: string;
+  badgeClass: string;
+  symbol: string;
+  description: string;
+}
+
+export function getAuditModalityMeta(modality: string): AuditModalityMeta {
+  switch (modality) {
+    case 'ETAPA_1':
+      return {
+        label: 'Etapa 1 - Revisión Documental y Contexto',
+        badgeClass: 'bg-sky-100 text-sky-900 border-sky-300',
+        symbol: '📑',
+        description: 'Evaluación preliminar de la documentación del sistema de gestión y ubicación del cliente.',
+      };
+    case 'ETAPA_2':
+      return {
+        label: 'Etapa 2 - Evaluación de Campo de Conformidad',
+        badgeClass: 'bg-indigo-100 text-indigo-900 border-indigo-300',
+        symbol: '🔍',
+        description: 'Verificación in situ de la implementación y eficacia operativa del sistema evaluado.',
+      };
+    case 'VIGILANCIA_1':
+      return {
+        label: 'Vigilancia 1 (Anual)',
+        badgeClass: 'bg-teal-100 text-teal-900 border-teal-300',
+        symbol: '🔎',
+        description: 'Auditoría periódica de mantenimiento del primer año del ciclo de certificación.',
+      };
+    case 'VIGILANCIA_2':
+      return {
+        label: 'Vigilancia 2 (Anual)',
+        badgeClass: 'bg-cyan-100 text-cyan-900 border-cyan-300',
+        symbol: '📊',
+        description: 'Auditoría de seguimiento previo a la recertificación del ciclo de 3 años.',
+      };
+    case 'RECERTIFICACION':
+      return {
+        label: 'Recertificación del Ciclo Trienal',
+        badgeClass: 'bg-purple-100 text-purple-900 border-purple-300',
+        symbol: '🔄',
+        description: 'Evaluación integral para la renovación formal de la certificación por un nuevo ciclo.',
+      };
+    case 'EXTRAORDINARIA':
+    default:
+      return {
+        label: 'Auditoría Extraordinaria / Especial',
+        badgeClass: 'bg-amber-100 text-amber-900 border-amber-300',
+        symbol: '⚡',
+        description: 'Evaluación motivada por ampliación de alcance, cambios estructurales o quejas.',
+      };
+  }
+}
+
 export function getFindingTypeMeta(type: FindingType | string): FindingVisualMeta {
   switch (type) {
     case 'NC_MAYOR':
