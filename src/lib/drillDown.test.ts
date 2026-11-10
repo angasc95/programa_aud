@@ -2,14 +2,35 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getFindingTypeMeta,
+  getAuditModalityMeta,
   calculateFindingStats,
   filterFindings,
   validateFindingInput,
   validateAuditPlanningInput,
   isAuditorQualifiedForAudit,
+  evaluateCertificateIssuanceReadiness,
+  verifyAuditLogImmutabilityRule,
+  verifyRoleDataBoundary,
   INITIAL_FINDINGS,
   type FindingRecord,
 } from './drillDown';
+
+test('getAuditModalityMeta returns accurate metadata and ISO audit descriptors', () => {
+  const e1 = getAuditModalityMeta('ETAPA_1');
+  assert.equal(e1.symbol, '📑');
+  assert.match(e1.label, /Etapa 1/);
+
+  const e2 = getAuditModalityMeta('ETAPA_2');
+  assert.equal(e2.symbol, '🔍');
+  assert.match(e2.label, /Etapa 2/);
+
+  const v1 = getAuditModalityMeta('VIGILANCIA_1');
+  assert.equal(v1.symbol, '🔎');
+
+  const recert = getAuditModalityMeta('RECERTIFICACION');
+  assert.equal(recert.symbol, '🔄');
+  assert.match(recert.label, /Recertificación/);
+});
 
 test('getFindingTypeMeta returns correct visual metadata and symbols', () => {
   const mayor = getFindingTypeMeta('NC_MAYOR');
@@ -143,3 +164,108 @@ test('isAuditorQualifiedForAudit verifies ISO standards and IAF sector competenc
   assert.equal(unqualifiedIaf.qualified, false);
   assert.match(unqualifiedIaf.reason, /sector IAF 17/);
 });
+
+test('evaluateCertificateIssuanceReadiness blocks issuance when mandatory requirements are pending or major NCs remain open', () => {
+  const requirements = [
+    { codigo: '4.1', estado: 'CUBIERTO' as const },
+    { codigo: '4.2', estado: 'PENDIENTE' as const },
+    { codigo: '5.1', estado: 'NO_APLICABLE' as const },
+    { codigo: '8.5', estado: 'CUBIERTO' as const },
+  ];
+
+  const findingsWithOpenMajor: FindingRecord[] = [
+    {
+      id: 'f-1',
+      id_auditoria: 'a-1',
+      id_requisito: 'r-1',
+      requisito_codigo: '4.2',
+      id_proceso: 'p-1',
+      proceso_nombre: 'Fundición',
+      tipo: 'NC_MAYOR',
+      descripcion: 'Falla crítica de control',
+      cerrado: false,
+    },
+  ];
+
+  const blocked = evaluateCertificateIssuanceReadiness(requirements, findingsWithOpenMajor);
+  assert.equal(blocked.canIssue, false);
+  assert.equal(blocked.mandatoryPendingCount, 1);
+  assert.equal(blocked.openMajorNcCount, 1);
+  assert.equal(blocked.blockingReasons.length, 2);
+
+  // When resolved
+  const resolvedRequirements = [
+    { codigo: '4.1', estado: 'CUBIERTO' as const },
+    { codigo: '4.2', estado: 'CUBIERTO' as const },
+    { codigo: '5.1', estado: 'NO_APLICABLE' as const },
+    { codigo: '8.5', estado: 'CUBIERTO' as const },
+  ];
+  const closedFindings: FindingRecord[] = [
+    { ...findingsWithOpenMajor[0], cerrado: true },
+  ];
+
+  const ready = evaluateCertificateIssuanceReadiness(resolvedRequirements, closedFindings);
+  assert.equal(ready.canIssue, true);
+  assert.equal(ready.mandatoryPendingCount, 0);
+  assert.equal(ready.openMajorNcCount, 0);
+  assert.equal(ready.blockingReasons.length, 0);
+  assert.equal(ready.coveragePercentage, 100);
+});
+
+test('verifyAuditLogImmutabilityRule rejects UPDATE and DELETE operations and unauthorized non-system inserts', () => {
+  const updateAttempt = verifyAuditLogImmutabilityRule('UPDATE', 'ADMIN');
+  assert.equal(updateAttempt.allowed, false);
+  assert.match(updateAttempt.reason, /Violación de Inmutabilidad/);
+
+  const deleteAttempt = verifyAuditLogImmutabilityRule('DELETE', 'ADMIN');
+  assert.equal(deleteAttempt.allowed, false);
+  assert.match(deleteAttempt.reason, /Violación de Inmutabilidad/);
+
+  const clientInsertAttempt = verifyAuditLogImmutabilityRule('INSERT', 'CLIENT');
+  assert.equal(clientInsertAttempt.allowed, false);
+  assert.match(clientInsertAttempt.reason, /Violación de Trazabilidad/);
+
+  const systemTriggerInsert = verifyAuditLogImmutabilityRule('INSERT', 'SYSTEM_TRIGGER');
+  assert.equal(systemTriggerInsert.allowed, true);
+});
+
+test('verifyRoleDataBoundary enforces strict multi-role partitioning', () => {
+  // Pending profile cannot access any resource
+  const pendingUser = verifyRoleDataBoundary('ADMIN', 'all_orgs', { isApprovedStatus: false });
+  assert.equal(pendingUser.canAccess, false);
+
+  // Worker cannot access audit_log (Admin exclusive)
+  const workerAuditLog = verifyRoleDataBoundary('WORKER', 'audit_log', { isApprovedStatus: true });
+  assert.equal(workerAuditLog.canAccess, false);
+
+  // Worker has global operational access
+  const workerOrgs = verifyRoleDataBoundary('WORKER', 'all_orgs', { isApprovedStatus: true });
+  assert.equal(workerOrgs.canAccess, true);
+
+  // Auditor can only access assigned audits
+  const unassignedAuditor = verifyRoleDataBoundary('AUDITOR', 'assigned_audits', {
+    isApprovedStatus: true,
+    isAssignedAuditor: false,
+  });
+  assert.equal(unassignedAuditor.canAccess, false);
+
+  const assignedAuditor = verifyRoleDataBoundary('AUDITOR', 'assigned_audits', {
+    isApprovedStatus: true,
+    isAssignedAuditor: true,
+  });
+  assert.equal(assignedAuditor.canAccess, true);
+
+  // Client can only access approved orgs
+  const unapprovedClient = verifyRoleDataBoundary('CLIENT', 'approved_orgs', {
+    isApprovedStatus: true,
+    hasApprovedClientAccess: false,
+  });
+  assert.equal(unapprovedClient.canAccess, false);
+
+  const approvedClient = verifyRoleDataBoundary('CLIENT', 'approved_orgs', {
+    isApprovedStatus: true,
+    hasApprovedClientAccess: true,
+  });
+  assert.equal(approvedClient.canAccess, true);
+});
+

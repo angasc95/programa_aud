@@ -47,6 +47,61 @@ export interface DrillDownBreadcrumb {
   active: boolean;
 }
 
+export interface AuditModalityMeta {
+  label: string;
+  badgeClass: string;
+  symbol: string;
+  description: string;
+}
+
+export function getAuditModalityMeta(modality: string): AuditModalityMeta {
+  switch (modality) {
+    case 'ETAPA_1':
+      return {
+        label: 'Etapa 1 - Revisión Documental y Contexto',
+        badgeClass: 'bg-sky-100 text-sky-900 border-sky-300',
+        symbol: '📑',
+        description: 'Evaluación preliminar de la documentación del sistema de gestión y ubicación del cliente.',
+      };
+    case 'ETAPA_2':
+      return {
+        label: 'Etapa 2 - Evaluación de Campo de Conformidad',
+        badgeClass: 'bg-indigo-100 text-indigo-900 border-indigo-300',
+        symbol: '🔍',
+        description: 'Verificación in situ de la implementación y eficacia operativa del sistema evaluado.',
+      };
+    case 'VIGILANCIA_1':
+      return {
+        label: 'Vigilancia 1 (Anual)',
+        badgeClass: 'bg-teal-100 text-teal-900 border-teal-300',
+        symbol: '🔎',
+        description: 'Auditoría periódica de mantenimiento del primer año del ciclo de certificación.',
+      };
+    case 'VIGILANCIA_2':
+      return {
+        label: 'Vigilancia 2 (Anual)',
+        badgeClass: 'bg-cyan-100 text-cyan-900 border-cyan-300',
+        symbol: '📊',
+        description: 'Auditoría de seguimiento previo a la recertificación del ciclo de 3 años.',
+      };
+    case 'RECERTIFICACION':
+      return {
+        label: 'Recertificación del Ciclo Trienal',
+        badgeClass: 'bg-purple-100 text-purple-900 border-purple-300',
+        symbol: '🔄',
+        description: 'Evaluación integral para la renovación formal de la certificación por un nuevo ciclo.',
+      };
+    case 'EXTRAORDINARIA':
+    default:
+      return {
+        label: 'Auditoría Extraordinaria / Especial',
+        badgeClass: 'bg-amber-100 text-amber-900 border-amber-300',
+        symbol: '⚡',
+        description: 'Evaluación motivada por ampliación de alcance, cambios estructurales o quejas.',
+      };
+  }
+}
+
 export function getFindingTypeMeta(type: FindingType | string): FindingVisualMeta {
   switch (type) {
     case 'NC_MAYOR':
@@ -287,3 +342,113 @@ export const INITIAL_FINDINGS: FindingRecord[] = [
     created_at: '2024-11-20T16:00:00Z',
   },
 ];
+
+export interface CertificateIssuanceEvaluation {
+  canIssue: boolean;
+  blockingReasons: string[];
+  mandatoryPendingCount: number;
+  openMajorNcCount: number;
+  coveragePercentage: number;
+}
+
+export function evaluateCertificateIssuanceReadiness(
+  requirements: Array<{ codigo: string; estado: 'CUBIERTO' | 'NO_APLICABLE' | 'PENDIENTE' }>,
+  findings: FindingRecord[]
+): CertificateIssuanceEvaluation {
+  const mandatoryPending = requirements.filter(
+    (r) => r.estado === 'PENDIENTE'
+  );
+  const openMajorNcs = findings.filter(
+    (f) => f.tipo === 'NC_MAYOR' && !f.cerrado
+  );
+
+  const total = requirements.length;
+  const coveredOrExcluded = requirements.filter(
+    (r) => r.estado === 'CUBIERTO' || r.estado === 'NO_APLICABLE'
+  ).length;
+  const coveragePercentage = total > 0 ? Math.round((coveredOrExcluded / total) * 100) : 0;
+
+  const blockingReasons: string[] = [];
+  if (mandatoryPending.length > 0) {
+    blockingReasons.push(
+      `Existen ${mandatoryPending.length} requisito(s) normativo(s) mandatorio(s) en estado PENDIENTE: ${mandatoryPending
+        .map((r) => r.codigo)
+        .join(', ')}.`
+    );
+  }
+  if (openMajorNcs.length > 0) {
+    blockingReasons.push(
+      `Existen ${openMajorNcs.length} No Conformidad(es) Mayor(es) (NC_MAYOR) sin cerrar en la auditoría.`
+    );
+  }
+
+  return {
+    canIssue: blockingReasons.length === 0,
+    blockingReasons,
+    mandatoryPendingCount: mandatoryPending.length,
+    openMajorNcCount: openMajorNcs.length,
+    coveragePercentage,
+  };
+}
+
+export function verifyAuditLogImmutabilityRule(
+  operation: 'INSERT' | 'UPDATE' | 'DELETE',
+  callerRole: 'ADMIN' | 'WORKER' | 'AUDITOR' | 'CLIENT' | 'SYSTEM_TRIGGER'
+): { allowed: boolean; reason: string } {
+  if (operation === 'UPDATE' || operation === 'DELETE') {
+    return {
+      allowed: false,
+      reason: 'Violación de Inmutabilidad ISO/IEC 17021-1: No se permiten mutaciones UPDATE o DELETE sobre public.audit_log.',
+    };
+  }
+  if (operation === 'INSERT' && callerRole !== 'SYSTEM_TRIGGER' && callerRole !== 'ADMIN') {
+    return {
+      allowed: false,
+      reason: 'Violación de Trazabilidad: Las entradas al registro forense deben originarse desde disparadores autorizados.',
+    };
+  }
+  return {
+    allowed: true,
+    reason: 'Operación permitida y registrada para trazabilidad forense.',
+  };
+}
+
+export function verifyRoleDataBoundary(
+  role: 'ADMIN' | 'WORKER' | 'AUDITOR' | 'CLIENT',
+  resource: 'all_orgs' | 'assigned_audits' | 'approved_orgs' | 'audit_log',
+  context: {
+    isAssignedAuditor?: boolean;
+    hasApprovedClientAccess?: boolean;
+    isApprovedStatus: boolean;
+  }
+): { canAccess: boolean; policy: string } {
+  if (!context.isApprovedStatus) {
+    return { canAccess: false, policy: 'Cuenta no aprobada (PENDING/REJECTED).' };
+  }
+
+  switch (role) {
+    case 'ADMIN':
+      return { canAccess: true, policy: 'Acceso administrativo global (ADMIN).' };
+    case 'WORKER':
+      if (resource === 'audit_log') {
+        return { canAccess: false, policy: 'audit_log_select_admin: Exclusivo para rol ADMIN.' };
+      }
+      return { canAccess: true, policy: 'Acceso operacional global para gestión de certificación (WORKER).' };
+    case 'AUDITOR':
+      if (resource === 'assigned_audits') {
+        return {
+          canAccess: Boolean(context.isAssignedAuditor),
+          policy: 'is_assigned_auditor: Restringido a auditorías donde es miembro de equipo_auditor.',
+        };
+      }
+      return { canAccess: false, policy: 'Aislamiento de auditor: Sin acceso fuera de asignación.' };
+    case 'CLIENT':
+      if (resource === 'approved_orgs') {
+        return {
+          canAccess: Boolean(context.hasApprovedClientAccess),
+          policy: 'has_client_org_access: Restringido a organizaciones con client_organization_access APPROVED.',
+        };
+      }
+      return { canAccess: false, policy: 'Aislamiento de cliente: Sin acceso a otras organizaciones.' };
+  }
+}

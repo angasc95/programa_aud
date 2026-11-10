@@ -11,6 +11,7 @@ import type { StandardRecord, RequirementRecord } from './extraView';
 import type { AuditRecord, AuditorRecord } from './auditoriasView';
 import {
   getFindingTypeMeta,
+  filterFindings,
   type FindingRecord,
   type FindingStats,
   calculateFindingStats,
@@ -22,6 +23,7 @@ export interface DrillDownViewState {
   selectedOrgId: string | null;
   selectedCertId: string | null;
   activeTab: DrillDownSubTab;
+  orgSearchQuery?: string;
   organizations: OrganizationRecord[];
   certificates: CertificateRecord[];
   sites: SiteRecord[];
@@ -82,6 +84,10 @@ export function renderDrillDownView(
   );
 
   const findingStats: FindingStats = calculateFindingStats(certFindings);
+  const filteredCertFindings = filterFindings(certFindings, {
+    type: state.findingFilterType,
+    status: state.findingFilterStatus,
+  });
 
   // Breadcrumbs Bar
   const breadcrumbsHtml = `
@@ -167,60 +173,103 @@ export function renderDrillDownView(
         ${headerBanner}
 
         <section class="space-y-3">
-          <div class="flex items-center justify-between">
-            <h2 class="text-sm font-bold uppercase tracking-wider text-slate-500">
-              Paso 1: Seleccione una Organización Cliente para Iniciar el Drill-Down
-            </h2>
-            <span class="text-xs text-slate-500">${state.organizations.length} registradas</span>
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 class="text-sm font-bold uppercase tracking-wider text-slate-700">
+                Paso 1: Seleccione una Organización Cliente para Iniciar el Drill-Down
+              </h2>
+              <p class="text-xs text-slate-500">
+                Navegue desde la razón social hacia certificados, sedes multisitio, turnos y matriz de procesos.
+              </p>
+            </div>
+            <div class="relative max-w-xs w-full">
+              <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-xs">🔍</span>
+              <input
+                type="text"
+                id="drilldownOrgSearch"
+                placeholder="Filtrar organizaciones..."
+                value="${escapeHtml(state.orgSearchQuery || '')}"
+                class="w-full text-xs rounded-lg border border-slate-300 bg-white pl-8 pr-3 py-1.5 shadow-2xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            ${state.organizations
-              .map((org) => {
-                const certs = state.certificates.filter(
-                  (c) =>
-                    c.organizacion_id === org.id ||
-                    c.organizacion_nombre.toLowerCase() === org.nombre.toLowerCase()
-                );
-                return `
-                  <div class="bg-white border border-slate-200 hover:border-indigo-400 rounded-xl p-5 shadow-xs transition-all flex flex-col justify-between gap-4">
-                    <div class="space-y-2">
-                      <div class="flex items-start justify-between gap-2">
-                        <span class="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                          RIF: ${escapeHtml(org.rif)}
-                        </span>
-                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                          ${certs.length} Certificado${certs.length === 1 ? '' : 's'}
-                        </span>
-                      </div>
-                      <h3 class="text-base font-bold text-slate-900">${escapeHtml(org.nombre)}</h3>
-                      <p class="text-xs text-slate-500 flex items-center gap-1.5">
-                        <span>📍</span>
-                        <span class="truncate">${escapeHtml(org.direccion_fiscal || 'Sin dirección fiscal registrada')}</span>
-                      </p>
-                    </div>
+            ${
+              (() => {
+                const orgSearch = (state.orgSearchQuery || '').toLowerCase().trim();
+                const displayedOrgs = state.organizations.filter((org) => {
+                  if (!orgSearch) return true;
+                  return (
+                    org.nombre.toLowerCase().includes(orgSearch) ||
+                    org.rif.toLowerCase().includes(orgSearch) ||
+                    (org.direccion_fiscal && org.direccion_fiscal.toLowerCase().includes(orgSearch))
+                  );
+                });
 
-                    <div class="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                      <div class="text-[11px] text-slate-500">
-                        ${
-                          certs.length > 0
-                            ? certs.map((c) => escapeHtml(c.norma)).join(', ')
-                            : 'Sin certificados asociados'
-                        }
-                      </div>
+                if (displayedOrgs.length === 0) {
+                  return `
+                    <div class="col-span-full p-8 text-center bg-white border border-slate-200 rounded-xl text-slate-500 text-xs space-y-2">
+                      <p>No se encontraron organizaciones que coincidan con "<strong>${escapeHtml(state.orgSearchQuery || '')}</strong>".</p>
                       <button
                         type="button"
-                        data-drilldown-select-org="${escapeHtml(org.id)}"
-                        class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors cursor-pointer inline-flex items-center gap-1 shrink-0"
+                        id="clearOrgSearchBtn"
+                        class="text-xs text-indigo-600 hover:text-indigo-800 font-semibold underline cursor-pointer"
                       >
-                        <span>Explorar Estructura</span>
-                        <span>→</span>
+                        Limpiar búsqueda
                       </button>
                     </div>
-                  </div>
-                `;
-              })
-              .join('')}
+                  `;
+                }
+
+                return displayedOrgs
+                  .map((org) => {
+                    const certs = state.certificates.filter(
+                      (c) =>
+                        c.organizacion_id === org.id ||
+                        c.organizacion_nombre.toLowerCase() === org.nombre.toLowerCase()
+                    );
+                    return `
+                      <div class="bg-white border border-slate-200 hover:border-indigo-400 rounded-xl p-5 shadow-xs transition-all flex flex-col justify-between gap-4">
+                        <div class="space-y-2">
+                          <div class="flex items-start justify-between gap-2">
+                            <span class="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                              RIF: ${escapeHtml(org.rif)}
+                            </span>
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                              ${certs.length} Certificado${certs.length === 1 ? '' : 's'}
+                            </span>
+                          </div>
+                          <h3 class="text-base font-bold text-slate-900">${escapeHtml(org.nombre)}</h3>
+                          <p class="text-xs text-slate-500 flex items-center gap-1.5">
+                            <span>📍</span>
+                            <span class="truncate">${escapeHtml(org.direccion_fiscal || 'Sin dirección fiscal registrada')}</span>
+                          </p>
+                        </div>
+
+                        <div class="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                          <div class="text-[11px] text-slate-500">
+                            ${
+                              certs.length > 0
+                                ? certs.map((c) => escapeHtml(c.norma)).join(', ')
+                                : 'Sin certificados asociados'
+                            }
+                          </div>
+                          <button
+                            type="button"
+                            data-drilldown-select-org="${escapeHtml(org.id)}"
+                            class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors cursor-pointer inline-flex items-center gap-1 shrink-0"
+                          >
+                            <span>Explorar Estructura</span>
+                            <span>→</span>
+                          </button>
+                        </div>
+                      </div>
+                    `;
+                  })
+                  .join('');
+              })()
+            }
           </div>
         </section>
       </main>
@@ -558,6 +607,105 @@ export function renderDrillDownView(
               <div class="text-[10px] font-semibold text-emerald-700 uppercase tracking-wider">Oportunidad Mejora</div>
             </div>
           </div>
+
+          <!-- Finding Filter Toolbar -->
+          <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
+            <div class="flex flex-wrap items-center gap-1.5 text-xs">
+              <span class="text-slate-500 font-semibold mr-1">Filtrar tipo:</span>
+              <button
+                type="button"
+                data-drilldown-filter-type="ALL"
+                class="px-2.5 py-1 rounded text-xs font-semibold cursor-pointer transition-all ${
+                  state.findingFilterType === 'ALL' || !state.findingFilterType
+                    ? 'bg-slate-900 text-white shadow-2xs'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }"
+              >
+                Todos (${findingStats.total})
+              </button>
+              <button
+                type="button"
+                data-drilldown-filter-type="NC_MAYOR"
+                class="px-2.5 py-1 rounded text-xs font-semibold cursor-pointer transition-all ${
+                  state.findingFilterType === 'NC_MAYOR'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200'
+                }"
+              >
+                🚨 NC Mayor (${findingStats.ncMayor})
+              </button>
+              <button
+                type="button"
+                data-drilldown-filter-type="NC_MENOR"
+                class="px-2.5 py-1 rounded text-xs font-semibold cursor-pointer transition-all ${
+                  state.findingFilterType === 'NC_MENOR'
+                    ? 'bg-amber-600 text-white shadow-2xs'
+                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200'
+                }"
+              >
+                ⚠️ NC Menor (${findingStats.ncMenor})
+              </button>
+              <button
+                type="button"
+                data-drilldown-filter-type="OBSERVACION"
+                class="px-2.5 py-1 rounded text-xs font-semibold cursor-pointer transition-all ${
+                  state.findingFilterType === 'OBSERVACION'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'bg-blue-50 text-blue-800 hover:bg-blue-100 border border-blue-200'
+                }"
+              >
+                👁️ Observación (${findingStats.observaciones})
+              </button>
+              <button
+                type="button"
+                data-drilldown-filter-type="OPORTUNIDAD_MEJORA"
+                class="px-2.5 py-1 rounded text-xs font-semibold cursor-pointer transition-all ${
+                  state.findingFilterType === 'OPORTUNIDAD_MEJORA'
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+                }"
+              >
+                💡 Oportunidad (${findingStats.oportunidadesMejora})
+              </button>
+            </div>
+
+            <div class="flex items-center gap-1.5 text-xs">
+              <span class="text-slate-500 font-semibold mr-1">Estado:</span>
+              <button
+                type="button"
+                data-drilldown-filter-status="all"
+                class="px-2.5 py-1 rounded text-xs font-semibold cursor-pointer transition-all ${
+                  state.findingFilterStatus === 'all' || !state.findingFilterStatus
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }"
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                data-drilldown-filter-status="open"
+                class="px-2.5 py-1 rounded text-xs font-semibold cursor-pointer transition-all ${
+                  state.findingFilterStatus === 'open'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200'
+                }"
+              >
+                ⏳ Abiertos (${findingStats.abiertos})
+              </button>
+              <button
+                type="button"
+                data-drilldown-filter-status="closed"
+                class="px-2.5 py-1 rounded text-xs font-semibold cursor-pointer transition-all ${
+                  state.findingFilterStatus === 'closed'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-emerald-50 text-emerald-900 hover:bg-emerald-100 border border-emerald-200'
+                }"
+              >
+                ✓ Cerrados (${findingStats.cerrados})
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Finding Creation Modal / Inline Form if active -->
@@ -678,8 +826,8 @@ export function renderDrillDownView(
         <!-- Findings List -->
         <div class="space-y-3">
           ${
-            certFindings.length > 0
-              ? certFindings
+            filteredCertFindings.length > 0
+              ? filteredCertFindings
                   .map((finding) => {
                     const meta = getFindingTypeMeta(finding.tipo);
                     const canEdit =
@@ -755,8 +903,20 @@ export function renderDrillDownView(
                   })
                   .join('')
               : `
-              <div class="p-8 text-center bg-white border border-slate-200 rounded-xl text-slate-500 text-xs">
-                No se han registrado desviaciones ni hallazgos para este certificado.
+              <div class="p-8 text-center bg-white border border-slate-200 rounded-xl text-slate-500 text-xs space-y-2">
+                <p>No se encontraron hallazgos registrados con los filtros seleccionados.</p>
+                ${
+                  state.findingFilterType !== 'ALL' || state.findingFilterStatus !== 'all'
+                    ? `<button
+                        type="button"
+                        data-drilldown-filter-type="ALL"
+                        data-drilldown-filter-status="all"
+                        class="text-xs text-indigo-600 hover:text-indigo-800 font-semibold underline cursor-pointer"
+                      >
+                        Restablecer filtros
+                      </button>`
+                    : ''
+                }
               </div>
             `
           }

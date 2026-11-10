@@ -63,10 +63,39 @@ RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, p
     );
 $$;
 
+CREATE OR REPLACE FUNCTION public.is_auditor_for_cert(p_id_certificado UUID)
+RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.auditoria a
+        JOIN public.equipo_auditor ea ON ea.id_auditoria = a.id
+        JOIN public.profiles p ON p.id = auth.uid()
+        WHERE a.id_certificado = p_id_certificado
+          AND ea.id_auditor = auth.uid()
+          AND p.role IN ('ADMIN', 'AUDITOR')
+          AND p.status = 'APPROVED'
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_auditor_for_org(p_id_organizacion UUID)
+RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.certificado c
+        JOIN public.auditoria a ON a.id_certificado = c.id
+        JOIN public.equipo_auditor ea ON ea.id_auditoria = a.id
+        JOIN public.profiles p ON p.id = auth.uid()
+        WHERE c.id_organizacion = p_id_organizacion
+          AND ea.id_auditor = auth.uid()
+          AND p.role IN ('ADMIN', 'AUDITOR')
+          AND p.status = 'APPROVED'
+    );
+$$;
+
 GRANT EXECUTE ON FUNCTION public.get_auth_user_role() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.is_approved_admin() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.is_approved_worker() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.is_assigned_auditor(UUID) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.is_auditor_for_cert(UUID) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.is_auditor_for_org(UUID) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.has_client_org_access(UUID) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.auditor_esta_calificado(UUID, UUID, UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.auditores_calificados_para_certificado(UUID) TO authenticated;
@@ -184,14 +213,14 @@ CREATE POLICY "client_access_update_worker" ON public.client_organization_access
 
 -- Políticas para ORGANIZACION
 CREATE POLICY "organizacion_select" ON public.organizacion FOR SELECT TO authenticated
-    USING (public.is_approved_worker() OR public.has_client_org_access(id));
+    USING (public.is_approved_worker() OR public.has_client_org_access(id) OR public.is_auditor_for_org(id));
 
 CREATE POLICY "organizacion_write_worker" ON public.organizacion FOR ALL TO authenticated
     USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
 
 -- Políticas para CERTIFICADO
 CREATE POLICY "certificado_select" ON public.certificado FOR SELECT TO authenticated
-    USING (public.is_approved_worker() OR public.has_client_org_access(id_organizacion));
+    USING (public.is_approved_worker() OR public.has_client_org_access(id_organizacion) OR public.is_auditor_for_cert(id));
 
 CREATE POLICY "certificado_write_worker" ON public.certificado FOR ALL TO authenticated
     USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
@@ -200,7 +229,11 @@ CREATE POLICY "certificado_write_worker" ON public.certificado FOR ALL TO authen
 CREATE POLICY "sitio_select" ON public.sitio FOR SELECT TO authenticated
     USING (
         public.is_approved_worker() OR 
-        EXISTS (SELECT 1 FROM public.certificado c WHERE c.id = sitio.id_certificado AND public.has_client_org_access(c.id_organizacion))
+        EXISTS (
+            SELECT 1 FROM public.certificado c 
+            WHERE c.id = sitio.id_certificado 
+              AND (public.has_client_org_access(c.id_organizacion) OR public.is_auditor_for_cert(c.id))
+        )
     );
 
 CREATE POLICY "sitio_write_worker" ON public.sitio FOR ALL TO authenticated
@@ -210,7 +243,11 @@ CREATE POLICY "sitio_write_worker" ON public.sitio FOR ALL TO authenticated
 CREATE POLICY "proceso_select" ON public.proceso FOR SELECT TO authenticated
     USING (
         public.is_approved_worker() OR 
-        EXISTS (SELECT 1 FROM public.certificado c WHERE c.id = proceso.id_certificado AND public.has_client_org_access(c.id_organizacion))
+        EXISTS (
+            SELECT 1 FROM public.certificado c 
+            WHERE c.id = proceso.id_certificado 
+              AND (public.has_client_org_access(c.id_organizacion) OR public.is_auditor_for_cert(c.id))
+        )
     );
 
 CREATE POLICY "proceso_write_worker" ON public.proceso FOR ALL TO authenticated
@@ -223,7 +260,8 @@ CREATE POLICY "req_proceso_select" ON public.requisitos_por_proceso FOR SELECT T
         EXISTS (
             SELECT 1 FROM public.proceso p
             JOIN public.certificado c ON c.id = p.id_certificado
-            WHERE p.id = requisitos_por_proceso.id_proceso AND public.has_client_org_access(c.id_organizacion)
+            WHERE p.id = requisitos_por_proceso.id_proceso 
+              AND (public.has_client_org_access(c.id_organizacion) OR public.is_auditor_for_cert(c.id))
         )
     );
 
@@ -236,7 +274,8 @@ CREATE POLICY "req_no_aplicables_select" ON public.requisitos_no_aplicables_cert
         public.is_approved_worker() OR
         EXISTS (
             SELECT 1 FROM public.certificado c
-            WHERE c.id = requisitos_no_aplicables_certificado.id_certificado AND public.has_client_org_access(c.id_organizacion)
+            WHERE c.id = requisitos_no_aplicables_certificado.id_certificado 
+              AND (public.has_client_org_access(c.id_organizacion) OR public.is_auditor_for_cert(c.id))
         )
     );
 
@@ -250,7 +289,8 @@ CREATE POLICY "turnos_sitio_select" ON public.turnos_por_sitio FOR SELECT TO aut
         EXISTS (
             SELECT 1 FROM public.sitio s
             JOIN public.certificado c ON c.id = s.id_certificado
-            WHERE s.id = turnos_por_sitio.id_sitio AND public.has_client_org_access(c.id_organizacion)
+            WHERE s.id = turnos_por_sitio.id_sitio 
+              AND (public.has_client_org_access(c.id_organizacion) OR public.is_auditor_for_cert(c.id))
         )
     );
 

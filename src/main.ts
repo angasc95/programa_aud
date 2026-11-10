@@ -119,10 +119,12 @@ interface AppState {
     findingFilterStatus: 'all' | 'open' | 'closed';
     isLoggingFinding: boolean;
     loggingAuditId: string | null;
+    orgSearchQuery?: string;
   };
   auditPlanning: {
     isModalOpen: boolean;
   };
+  selectedScopeAuditId: string | null;
 }
 
 function createInitialChecks(): HealthCheckItem[] {
@@ -388,10 +390,12 @@ const state: AppState = {
     findingFilterStatus: 'all',
     isLoggingFinding: false,
     loggingAuditId: null,
+    orgSearchQuery: '',
   },
   auditPlanning: {
     isModalOpen: false,
   },
+  selectedScopeAuditId: null,
 };
 
 function isApprovedAdmin(): boolean {
@@ -474,6 +478,7 @@ function render(): void {
       selectedOrgId: state.drilldown.selectedOrgId,
       selectedCertId: state.drilldown.selectedCertId,
       activeTab: state.drilldown.activeTab,
+      orgSearchQuery: state.drilldown.orgSearchQuery,
       organizations: state.domainData.organizations,
       certificates: state.exploration.records,
       sites: state.domainData.sites,
@@ -500,10 +505,12 @@ function render(): void {
       sites: state.domainData.sites,
       processes: state.domainData.processes,
       shifts: state.domainData.shifts,
+      requirements: state.domainData.requirements,
       isPlanningModalOpen: state.auditPlanning.isModalOpen,
       isLoggingFinding: state.drilldown.isLoggingFinding,
       findingFilterType: state.drilldown.findingFilterType,
       findingFilterStatus: state.drilldown.findingFilterStatus,
+      selectedScopeAuditId: state.selectedScopeAuditId,
       loading: state.domainData.loading,
     });
   } else if (effectiveRoute === 'certificacion') {
@@ -846,6 +853,76 @@ function bindAuthenticatedEvents(): void {
     });
   });
 
+  // Drill-Down Step 1 Search & Clear Handlers
+  const orgSearchInput = document.getElementById('drilldownOrgSearch') as HTMLInputElement | null;
+  if (orgSearchInput) {
+    orgSearchInput.addEventListener('input', () => {
+      state.drilldown.orgSearchQuery = orgSearchInput.value;
+      render();
+      const updatedInput = document.getElementById('drilldownOrgSearch') as HTMLInputElement | null;
+      if (updatedInput) {
+        updatedInput.focus();
+        updatedInput.setSelectionRange(updatedInput.value.length, updatedInput.value.length);
+      }
+    });
+  }
+
+  document.getElementById('clearOrgSearchBtn')?.addEventListener('click', () => {
+    state.drilldown.orgSearchQuery = '';
+    render();
+  });
+
+  // Drill-Down Findings Filter Handlers
+  document.querySelectorAll<HTMLElement>('[data-drilldown-filter-type]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.drilldown.findingFilterType = btn.dataset.drilldownFilterType || 'ALL';
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-drilldown-filter-status]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.drilldown.findingFilterStatus = (btn.dataset.drilldownFilterStatus || 'all') as 'all' | 'open' | 'closed';
+      render();
+    });
+  });
+
+  // Auditorias Findings Filter Handlers
+  document.querySelectorAll<HTMLElement>('[data-auditorias-filter-type]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.drilldown.findingFilterType = btn.dataset.auditoriasFilterType || 'ALL';
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-auditorias-filter-status]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.drilldown.findingFilterStatus = (btn.dataset.auditoriasFilterStatus || 'all') as 'all' | 'open' | 'closed';
+      render();
+    });
+  });
+
+  // Auditorias Scope Audit Selector Handlers
+  const scopeAuditSelect = document.getElementById('scopeAuditSelector') as HTMLSelectElement | null;
+  if (scopeAuditSelect) {
+    scopeAuditSelect.addEventListener('change', () => {
+      state.selectedScopeAuditId = scopeAuditSelect.value || null;
+      render();
+    });
+  }
+
+  document.querySelectorAll<HTMLElement>('[data-action="change-scope-audit"]').forEach((el) => {
+    if (el !== scopeAuditSelect) {
+      el.addEventListener('change', (e) => {
+        const target = e.target as HTMLSelectElement | null;
+        if (target) {
+          state.selectedScopeAuditId = target.value || null;
+          render();
+        }
+      });
+    }
+  });
+
   // Audit Planning handlers
   document.querySelectorAll<HTMLElement>('[data-action="open-plan-audit"]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -867,6 +944,7 @@ function bindAuthenticatedEvents(): void {
     const typeSelect = document.getElementById('planTypeSelect') as HTMLSelectElement | null;
     const methodSelect = document.getElementById('planMethodologySelect') as HTMLSelectElement | null;
     const dateInput = document.getElementById('planDateInput') as HTMLInputElement | null;
+    const reschedInput = document.getElementById('planRescheduleInput') as HTMLInputElement | null;
     const auditorSelect = document.getElementById('planAuditorSelect') as HTMLSelectElement | null;
 
     void handleCreateAudit({
@@ -874,6 +952,7 @@ function bindAuthenticatedEvents(): void {
       id_tipo_auditoria: typeSelect?.value || '',
       id_metodologia: methodSelect?.value || '',
       fecha_programacion: dateInput?.value || '',
+      fecha_reprogramacion: reschedInput?.value.trim() || null,
       id_auditor_lider: auditorSelect?.value || '',
     });
   });
@@ -926,11 +1005,27 @@ function bindAuthenticatedEvents(): void {
   });
 }
 
+const TIPO_AUDITORIA_MAP: Record<string, string> = {
+  'b0000000-0000-0000-0000-000000000001': 'ETAPA_1',
+  'b0000000-0000-0000-0000-000000000002': 'ETAPA_2',
+  'b0000000-0000-0000-0000-000000000003': 'VIGILANCIA_1',
+  'b0000000-0000-0000-0000-000000000004': 'VIGILANCIA_2',
+  'b0000000-0000-0000-0000-000000000005': 'RECERTIFICACION',
+  'b0000000-0000-0000-0000-000000000006': 'EXTRAORDINARIA',
+};
+
+const METODOLOGIA_MAP: Record<string, string> = {
+  'c0000000-0000-0000-0000-000000000001': 'PRESENCIAL',
+  'c0000000-0000-0000-0000-000000000002': 'REMOTA',
+  'c0000000-0000-0000-0000-000000000003': 'HIBRIDA',
+};
+
 async function handleCreateAudit(data: {
   id_certificado: string;
   id_tipo_auditoria: string;
   id_metodologia: string;
   fecha_programacion: string;
+  fecha_reprogramacion?: string | null;
   id_auditor_lider?: string;
 }): Promise<void> {
   const validation = validateAuditPlanningInput(data);
@@ -940,28 +1035,38 @@ async function handleCreateAudit(data: {
 
   const cert = state.exploration.records.find((c) => c.id === data.id_certificado);
   const auditor = state.domainData.auditors.find((a) => a.id === data.id_auditor_lider);
+  const tipoName =
+    TIPO_AUDITORIA_MAP[data.id_tipo_auditoria] || data.id_tipo_auditoria || 'RECERTIFICACION';
+  const metName =
+    METODOLOGIA_MAP[data.id_metodologia] || data.id_metodologia || 'PRESENCIAL';
 
   const newAudit: AuditRecord = {
     id: `audit-${Date.now()}`,
     id_certificado: data.id_certificado,
     numero_certificado: cert?.numero_certificado || 'FN-QMS-2024-001',
     organizacion_nombre: cert?.organizacion_nombre || 'Iberometal Componentes S.A.',
-    tipo_auditoria: 'RECERTIFICACION',
-    metodologia: 'PRESENCIAL',
+    tipo_auditoria: tipoName,
+    metodologia: metName,
     fecha_programacion: data.fecha_programacion,
-    auditor_lider: auditor?.nombre || 'Ing. Carlos Mendoza (Auditor Líder)',
+    fecha_reprogramacion: data.fecha_reprogramacion || null,
+    auditor_lider: auditor ? `${auditor.nombre} (Auditor Líder)` : 'Ing. Carlos Mendoza (Auditor Líder)',
     estatus: 'PLANIFICADA',
   };
 
   try {
+    const insertPayload: Record<string, unknown> = {
+      id_certificado: data.id_certificado,
+      id_tipo_auditoria: data.id_tipo_auditoria,
+      id_metodologia: data.id_metodologia,
+      fecha_programacion: data.fecha_programacion,
+    };
+    if (data.fecha_reprogramacion) {
+      insertPayload.fecha_reprogramacion = data.fecha_reprogramacion;
+    }
+
     const { data: dbAudit, error } = await supabase
       .from('auditoria')
-      .insert({
-        id_certificado: data.id_certificado,
-        id_tipo_auditoria: data.id_tipo_auditoria,
-        id_metodologia: data.id_metodologia,
-        fecha_programacion: data.fecha_programacion,
-      })
+      .insert(insertPayload)
       .select('id')
       .single();
 
@@ -974,12 +1079,22 @@ async function handleCreateAudit(data: {
           rol_auditor: 'AUDITOR_LIDER',
         });
       }
+      const relatedSite = state.domainData.sites.find(
+        (s) => s.numero_certificado === cert?.numero_certificado
+      );
+      if (relatedSite) {
+        await supabase.from('sitios_por_auditoria').insert({
+          id_auditoria: dbAudit.id,
+          id_sitio: relatedSite.id,
+        });
+      }
     }
   } catch (err) {
     console.warn('Fallback to local reactive state for new audit:', err);
   }
 
   state.domainData.audits = [newAudit, ...state.domainData.audits];
+  state.selectedScopeAuditId = newAudit.id;
   state.auditPlanning.isModalOpen = false;
   render();
 }
@@ -1268,6 +1383,7 @@ async function handleSignOut(): Promise<void> {
     requirements: [...INITIAL_REQUIREMENTS],
     iafSectors: [...INITIAL_IAF],
     catalogs: [...INITIAL_CATALOGS],
+    findings: [...INITIAL_FINDINGS],
     loading: false,
   };
   state.auth = {
@@ -1502,11 +1618,13 @@ async function loadDomainData(): Promise<void> {
     ] = await Promise.all([
       supabase.from('auditoria').select(`
         id,
+        id_certificado,
         fecha_programacion,
         fecha_reprogramacion,
         tipo_auditoria:id_tipo_auditoria ( tipo ),
         metodologia:id_metodologia ( metodologia ),
         certificado:id_certificado (
+          id,
           numero_certificado,
           organizacion:id_organizacion ( nombre )
         ),
@@ -1589,6 +1707,11 @@ async function loadDomainData(): Promise<void> {
 
         return {
           id: String(row.id),
+          id_certificado: row.id_certificado
+            ? String(row.id_certificado)
+            : cert.id
+            ? String(cert.id)
+            : undefined,
           numero_certificado: String(cert.numero_certificado || 'FN-QMS-2024-001'),
           organizacion_nombre: String(org.nombre || 'Iberometal Componentes S.A.'),
           tipo_auditoria: String(tipoObj.tipo || 'RECERTIFICACION'),
@@ -1601,6 +1724,10 @@ async function loadDomainData(): Promise<void> {
           estatus: 'PLANIFICADA',
         };
       });
+
+      if (!state.selectedScopeAuditId && state.domainData.audits.length > 0) {
+        state.selectedScopeAuditId = state.domainData.audits[0].id;
+      }
     }
 
     // Process Auditors
