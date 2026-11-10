@@ -73,7 +73,7 @@ export interface HealthSummary {
 export type ProfileFilter = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL';
 
 export type DomainRoute = 'auditorias' | 'certificacion' | 'extra';
-export type ActiveRoute = 'dashboard' | 'approvals' | 'database' | DomainRoute;
+export type ActiveRoute = 'dashboard' | 'approvals' | 'database' | 'drilldown' | DomainRoute;
 
 export interface RoleVisualMeta {
   role: UserRole;
@@ -210,6 +210,18 @@ export function getVisibleDomainMenus(
         symbol: '👥',
         tooltip: 'Equipo auditor asignado y calificación por auditoría',
       });
+      auditItems.push({
+        id: 'scope',
+        label: 'Audit Scope',
+        symbol: '🏭',
+        tooltip: 'Alcance de campo: sedes, turnos y procesos evaluados',
+      });
+      auditItems.push({
+        id: 'findings',
+        label: 'Audit Findings',
+        symbol: '📋',
+        tooltip: 'Registro de no conformidades (NC Mayor/Menor), observaciones y mejoras',
+      });
     }
 
     menus.push({
@@ -234,6 +246,12 @@ export function getVisibleDomainMenus(
         label: 'Issued Certificates',
         symbol: '📜',
         tooltip: 'Certificados emitidos y avance de cobertura normativa',
+      },
+      {
+        id: 'drilldown',
+        label: 'Hierarchical Drill-Down',
+        symbol: '🔍',
+        tooltip: 'Navegación relacional en profundidad (Organización > Certificado > Sedes > Hallazgos)',
       },
       {
         id: 'sites',
@@ -309,6 +327,7 @@ export function canAccessRoute(
 ): boolean {
   if (!profile) return false;
   if (route === 'dashboard') return true;
+  if (route === 'drilldown') return profile.status === 'APPROVED';
   if (route === 'approvals' || route === 'database') {
     return evaluateAdminAccess(profile).allowed;
   }

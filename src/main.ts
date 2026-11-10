@@ -21,6 +21,52 @@ import { renderAuthView, type AuthViewState } from './views/authView';
 import { renderDashboardView } from './views/dashboardView';
 import { renderApprovalsView } from './views/approvalsView';
 import { renderDatabaseStatusView } from './views/databaseStatusView';
+import {
+  renderAuditoriasView,
+  type AuditRecord,
+  type AuditorRecord,
+} from './views/auditoriasView';
+import {
+  renderCertificacionView,
+  type OrganizationRecord,
+  type SiteRecord,
+  type ProcessRecord,
+  type ShiftRecord,
+} from './views/certificacionView';
+import {
+  renderExtraView,
+  type StandardRecord,
+  type RequirementRecord,
+  type IafRecord,
+  type CatalogItem,
+} from './views/extraView';
+import {
+  extractUniqueStandards,
+  extractUniqueStatuses,
+  filterCertificateRecords,
+  getStoredViewMode,
+  SAMPLE_CERTIFICATE_RECORDS,
+  setStoredViewMode,
+  type CertificateRecord,
+  type CoverageBreakdown,
+  type ViewMode,
+} from './lib/searchControls';
+import {
+  renderCertificateGrid,
+  renderCertificateList,
+  renderEmptySearchState,
+} from './views/searchControlsView';
+import {
+  renderDrillDownView,
+  type DrillDownSubTab,
+} from './views/drillDownView';
+import {
+  INITIAL_FINDINGS,
+  validateFindingInput,
+  validateAuditPlanningInput,
+  type FindingRecord,
+  type FindingType,
+} from './lib/drillDown';
 
 interface AppState {
   booting: boolean;
@@ -42,6 +88,40 @@ interface AppState {
     checks: HealthCheckItem[];
     running: boolean;
     lastCheckedAt: string | null;
+  };
+  exploration: {
+    records: CertificateRecord[];
+    loading: boolean;
+    query: string;
+    selectedStatus: string;
+    selectedStandard: string;
+    viewMode: ViewMode;
+  };
+  domainData: {
+    audits: AuditRecord[];
+    auditors: AuditorRecord[];
+    organizations: OrganizationRecord[];
+    sites: SiteRecord[];
+    processes: ProcessRecord[];
+    shifts: ShiftRecord[];
+    standards: StandardRecord[];
+    requirements: RequirementRecord[];
+    iafSectors: IafRecord[];
+    catalogs: CatalogItem[];
+    findings: FindingRecord[];
+    loading: boolean;
+  };
+  drilldown: {
+    selectedOrgId: string | null;
+    selectedCertId: string | null;
+    activeTab: DrillDownSubTab;
+    findingFilterType: string;
+    findingFilterStatus: 'all' | 'open' | 'closed';
+    isLoggingFinding: boolean;
+    loggingAuditId: string | null;
+  };
+  auditPlanning: {
+    isModalOpen: boolean;
   };
 }
 
@@ -85,6 +165,166 @@ function createInitialChecks(): HealthCheckItem[] {
   ];
 }
 
+const INITIAL_AUDITS: AuditRecord[] = [
+  {
+    id: '80000000-0000-0000-0000-000000000001',
+    numero_certificado: 'FN-QMS-2024-001',
+    organizacion_nombre: 'Iberometal Componentes S.A.',
+    tipo_auditoria: 'RECERTIFICACION',
+    metodologia: 'PRESENCIAL',
+    fecha_programacion: '2024-11-20',
+    auditor_lider: 'Ing. Carlos Mendoza (Auditor Líder)',
+    estatus: 'PLANIFICADA',
+  },
+];
+
+const INITIAL_AUDITORS: AuditorRecord[] = [
+  {
+    id: '10000000-0000-0000-0000-000000000001',
+    nombre: 'Ing. Carlos Mendoza',
+    rol: 'Auditor Líder Certificado',
+    normas: ['ISO 9001:2015', 'ISO 14001:2015'],
+    sectores_iaf: [17, 28],
+  },
+  {
+    id: '33333333-3333-3333-3333-333333333333',
+    nombre: 'Auditor Técnico Evaluador',
+    rol: 'Auditor Técnico Calificado',
+    normas: ['ISO 9001:2015'],
+    sectores_iaf: [17],
+  },
+];
+
+const INITIAL_ORGANIZATIONS: OrganizationRecord[] = [
+  {
+    id: '30000000-0000-0000-0000-000000000001',
+    nombre: 'Iberometal Componentes S.A.',
+    rif: 'J-30492817-0',
+    direccion_fiscal: 'Zona Industrial Carabobo, Valencia',
+    certificados_count: 1,
+  },
+  {
+    id: '30000000-0000-0000-0000-000000000002',
+    nombre: 'CyberCloud Solutions S.L.',
+    rif: 'J-40819234-5',
+    direccion_fiscal: 'Torre David, Chacao, Caracas',
+    certificados_count: 2,
+  },
+];
+
+const INITIAL_SITES: SiteRecord[] = [
+  {
+    id: '50000000-0000-0000-0000-000000000001',
+    numero_sitio: 1,
+    nombre_sitio: 'Planta Valencia',
+    direccion_sitio: 'Zona Industrial Carabobo, Valencia',
+    numero_certificado: 'FN-QMS-2024-001',
+    turnos_count: 2,
+  },
+];
+
+const INITIAL_PROCESSES: ProcessRecord[] = [
+  {
+    id: '60000000-0000-0000-0000-000000000001',
+    nombre_proceso: 'Troquelado y Fundición',
+    numero_certificado: 'FN-QMS-2024-001',
+    clausulas_cubiertas: ['4.1', '8.5'],
+  },
+];
+
+const INITIAL_SHIFTS: ShiftRecord[] = [
+  {
+    id: '70000000-0000-0000-0000-000000000001',
+    hora_entrada: '07:00:00',
+    hora_salida: '15:00:00',
+    descripcion: 'Turno Matutino Operativo',
+    sitios_vinculados: ['Planta Valencia'],
+  },
+  {
+    id: '70000000-0000-0000-0000-000000000002',
+    hora_entrada: '15:00:00',
+    hora_salida: '23:00:00',
+    descripcion: 'Turno Vespertino / Nocturno',
+    sitios_vinculados: ['Planta Valencia'],
+  },
+];
+
+const INITIAL_STANDARDS: StandardRecord[] = [
+  { id: 'e0000000-0000-0000-0000-000000009001', esquema: 'SGC - Calidad', norma: 'ISO 9001:2015', clausulas_count: 7 },
+  { id: 'e0000000-0000-0000-0000-000000014001', esquema: 'SGA - Gestión Ambiental', norma: 'ISO 14001:2015', clausulas_count: 5 },
+  { id: 'e0000000-0000-0000-0000-000000045001', esquema: 'SST - Seguridad y Salud Laboral', norma: 'ISO 45001:2018', clausulas_count: 11 },
+  { id: 'e0000000-0000-0000-0000-000000027001', esquema: 'SGSI - Seguridad de la Información', norma: 'ISO/IEC 27001:2022', clausulas_count: 9 },
+];
+
+const INITIAL_REQUIREMENTS: RequirementRecord[] = [
+  { id: 'f0000000-0000-0000-0000-000000000004', codigo: '4', ruta_materializada: '4', norma: 'ISO 9001:2015' },
+  { id: 'f0000000-0000-0000-0000-000000000041', codigo: '4.1', ruta_materializada: '4.4_1', norma: 'ISO 9001:2015' },
+  { id: 'f0000000-0000-0000-0000-000000000042', codigo: '4.2', ruta_materializada: '4.4_2', norma: 'ISO 9001:2015' },
+  { id: 'f0000000-0000-0000-0000-000000000005', codigo: '5', ruta_materializada: '5', norma: 'ISO 9001:2015' },
+  { id: 'f0000000-0000-0000-0000-000000000051', codigo: '5.1', ruta_materializada: '5.5_1', norma: 'ISO 9001:2015' },
+  { id: 'f0000000-0000-0000-0000-000000000008', codigo: '8', ruta_materializada: '8', norma: 'ISO 9001:2015' },
+  { id: 'f0000000-0000-0000-0000-000000000085', codigo: '8.5', ruta_materializada: '8.8_5', norma: 'ISO 9001:2015' },
+];
+
+const INITIAL_IAF: IafRecord[] = [
+  { id: 'd0000000-0000-0000-0000-000000000014', sector: 14, descripcion: 'Productos químicos, fibras sintéticas y farmacéuticos' },
+  { id: 'd0000000-0000-0000-0000-000000000017', sector: 17, descripcion: 'Metales básicos y productos metálicos elaborados' },
+  { id: 'd0000000-0000-0000-0000-000000000028', sector: 28, descripcion: 'Construcción e ingeniería civil' },
+  { id: 'd0000000-0000-0000-0000-000000000033', sector: 33, descripcion: 'Tecnología de la información y comunicaciones' },
+  { id: 'd0000000-0000-0000-0000-000000000035', sector: 35, descripcion: 'Otros servicios profesionales y de ensayo' },
+];
+
+const INITIAL_CATALOGS: CatalogItem[] = [
+  { categoria: 'estatus', valor: 'ACTIVO' },
+  { categoria: 'estatus', valor: 'EN_PROCESO' },
+  { categoria: 'estatus', valor: 'SUSPENDIDO' },
+  { categoria: 'estatus', valor: 'CANCELADO' },
+  { categoria: 'estatus', valor: 'PLANIFICADA' },
+  { categoria: 'tipo_auditoria', valor: 'ETAPA_1' },
+  { categoria: 'tipo_auditoria', valor: 'ETAPA_2' },
+  { categoria: 'tipo_auditoria', valor: 'VIGILANCIA_1' },
+  { categoria: 'tipo_auditoria', valor: 'RECERTIFICACION' },
+  { categoria: 'metodologia', valor: 'PRESENCIAL' },
+  { categoria: 'metodologia', valor: 'REMOTA' },
+  { categoria: 'metodologia', valor: 'HIBRIDA' },
+];
+
+function parseHashRoute(): { route: ActiveRoute; subview: string | null } {
+  try {
+    const raw = window.location.hash.replace(/^#\/?/, '').trim();
+    if (!raw) return { route: 'dashboard', subview: null };
+    const parts = raw.split('/');
+    const first = parts[0] as ActiveRoute;
+    const second = parts[1] || null;
+    const valid: ActiveRoute[] = [
+      'dashboard',
+      'auditorias',
+      'certificacion',
+      'extra',
+      'approvals',
+      'database',
+      'drilldown',
+    ];
+    if (valid.includes(first)) {
+      return { route: first, subview: second };
+    }
+  } catch {
+    // fallback
+  }
+  return { route: 'dashboard', subview: null };
+}
+
+function syncUrlHash(route: ActiveRoute, subview: string | null): void {
+  try {
+    const target = subview ? `#/${route}/${subview}` : `#/${route}`;
+    if (window.location.hash !== target) {
+      window.history.pushState(null, '', target);
+    }
+  } catch {
+    // ignore
+  }
+}
+
 const state: AppState = {
   booting: true,
   user: null,
@@ -117,6 +357,40 @@ const state: AppState = {
     checks: createInitialChecks(),
     running: false,
     lastCheckedAt: null,
+  },
+  exploration: {
+    records: [...SAMPLE_CERTIFICATE_RECORDS],
+    loading: false,
+    query: '',
+    selectedStatus: 'ALL',
+    selectedStandard: 'ALL',
+    viewMode: getStoredViewMode('grid'),
+  },
+  domainData: {
+    audits: [...INITIAL_AUDITS],
+    auditors: [...INITIAL_AUDITORS],
+    organizations: [...INITIAL_ORGANIZATIONS],
+    sites: [...INITIAL_SITES],
+    processes: [...INITIAL_PROCESSES],
+    shifts: [...INITIAL_SHIFTS],
+    standards: [...INITIAL_STANDARDS],
+    requirements: [...INITIAL_REQUIREMENTS],
+    iafSectors: [...INITIAL_IAF],
+    catalogs: [...INITIAL_CATALOGS],
+    findings: [...INITIAL_FINDINGS],
+    loading: false,
+  },
+  drilldown: {
+    selectedOrgId: null,
+    selectedCertId: null,
+    activeTab: 'sites',
+    findingFilterType: 'ALL',
+    findingFilterStatus: 'all',
+    isLoggingFinding: false,
+    loggingAuditId: null,
+  },
+  auditPlanning: {
+    isModalOpen: false,
   },
 };
 
@@ -192,14 +466,116 @@ function render(): void {
       state.dbCheck.running,
       state.dbCheck.lastCheckedAt
     );
+  } else if (
+    effectiveRoute === 'drilldown' ||
+    (effectiveRoute === 'certificacion' && state.activeSubSection === 'drilldown')
+  ) {
+    bodyHtml = renderDrillDownView(state.profile, {
+      selectedOrgId: state.drilldown.selectedOrgId,
+      selectedCertId: state.drilldown.selectedCertId,
+      activeTab: state.drilldown.activeTab,
+      organizations: state.domainData.organizations,
+      certificates: state.exploration.records,
+      sites: state.domainData.sites,
+      processes: state.domainData.processes,
+      shifts: state.domainData.shifts,
+      standards: state.domainData.standards,
+      requirements: state.domainData.requirements,
+      audits: state.domainData.audits,
+      auditors: state.domainData.auditors,
+      findings: state.domainData.findings,
+      findingFilterType: state.drilldown.findingFilterType,
+      findingFilterStatus: state.drilldown.findingFilterStatus,
+      isLoggingFinding: state.drilldown.isLoggingFinding,
+      loggingAuditId: state.drilldown.loggingAuditId,
+      loading: state.domainData.loading,
+    });
+  } else if (effectiveRoute === 'auditorias') {
+    bodyHtml = renderAuditoriasView(state.profile, {
+      activeSubSection: state.activeSubSection || 'scheduling',
+      audits: state.domainData.audits,
+      auditors: state.domainData.auditors,
+      findings: state.domainData.findings,
+      certificates: state.exploration.records,
+      sites: state.domainData.sites,
+      processes: state.domainData.processes,
+      shifts: state.domainData.shifts,
+      isPlanningModalOpen: state.auditPlanning.isModalOpen,
+      isLoggingFinding: state.drilldown.isLoggingFinding,
+      findingFilterType: state.drilldown.findingFilterType,
+      findingFilterStatus: state.drilldown.findingFilterStatus,
+      loading: state.domainData.loading,
+    });
+  } else if (effectiveRoute === 'certificacion') {
+    const filteredRecords = filterCertificateRecords(state.exploration.records, {
+      query: state.exploration.query,
+      selectedStatus: state.exploration.selectedStatus,
+      selectedStandard: state.exploration.selectedStandard,
+    });
+    const availableStatuses = extractUniqueStatuses(state.exploration.records);
+    const availableStandards = extractUniqueStandards(state.exploration.records);
+
+    bodyHtml = renderCertificacionView(state.profile, {
+      activeSubSection: state.activeSubSection || 'certificates',
+      filters: {
+        query: state.exploration.query,
+        selectedStatus: state.exploration.selectedStatus,
+        selectedStandard: state.exploration.selectedStandard,
+        viewMode: state.exploration.viewMode,
+      },
+      filteredCertificates: filteredRecords,
+      allCertificates: state.exploration.records,
+      availableStatuses,
+      availableStandards,
+      organizations: state.domainData.organizations,
+      sites: state.domainData.sites,
+      processes: state.domainData.processes,
+      shifts: state.domainData.shifts,
+      loading: state.exploration.loading,
+    });
+  } else if (effectiveRoute === 'extra') {
+    bodyHtml = renderExtraView(state.profile, {
+      activeSubSection: state.activeSubSection || 'standards',
+      standards: state.domainData.standards,
+      requirements: state.domainData.requirements,
+      iafSectors: state.domainData.iafSectors,
+      catalogs: state.domainData.catalogs,
+      loading: state.domainData.loading,
+    });
   } else {
+    const filteredRecords = filterCertificateRecords(state.exploration.records, {
+      query: state.exploration.query,
+      selectedStatus: state.exploration.selectedStatus,
+      selectedStandard: state.exploration.selectedStandard,
+    });
+    const availableStatuses = extractUniqueStatuses(state.exploration.records);
+    const availableStandards = extractUniqueStandards(state.exploration.records);
+
     bodyHtml = renderDashboardView(
       state.profile,
       state.user.email || '',
       effectiveRoute,
-      state.activeSubSection
+      state.activeSubSection,
+      {
+        filters: {
+          query: state.exploration.query,
+          selectedStatus: state.exploration.selectedStatus,
+          selectedStandard: state.exploration.selectedStandard,
+          viewMode: state.exploration.viewMode,
+        },
+        filteredRecords,
+        allRecords: state.exploration.records,
+        availableStatuses,
+        availableStandards,
+        loading: state.exploration.loading,
+      }
     );
   }
+
+  const searchInput = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
+  const hadSearchFocus = document.activeElement === searchInput;
+  const searchCursorStart = searchInput?.selectionStart ?? null;
+  const searchCursorEnd = searchInput?.selectionEnd ?? null;
 
   root.innerHTML = `
     ${renderHeader({
@@ -215,6 +591,16 @@ function render(): void {
   `;
 
   bindAuthenticatedEvents();
+
+  if (hadSearchFocus) {
+    const restoredInput = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
+    if (restoredInput) {
+      restoredInput.focus();
+      if (searchCursorStart !== null && searchCursorEnd !== null) {
+        restoredInput.setSelectionRange(searchCursorStart, searchCursorEnd);
+      }
+    }
+  }
 }
 
 function bindAuthEvents(): void {
@@ -321,6 +707,7 @@ function bindAuthenticatedEvents(): void {
       state.activeRoute = target;
       state.activeSubSection = el.dataset.subview || null;
       state.openMenu = null;
+      syncUrlHash(target, state.activeSubSection);
       render();
 
       if (target === 'approvals') {
@@ -371,6 +758,384 @@ function bindAuthenticatedEvents(): void {
   document.getElementById('runCheckBtn')?.addEventListener('click', () => {
     void runHealthChecks();
   });
+
+  // Search input events (real-time filtering)
+  const searchInput = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
+  searchInput?.addEventListener('input', (e) => {
+    const target = e.target as HTMLInputElement;
+    state.exploration.query = target.value;
+    updateExplorationView();
+  });
+
+  searchInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      handleClearSearch();
+    }
+  });
+
+  document.getElementById('clearSearchBtn')?.addEventListener('click', handleClearSearch);
+
+  document.getElementById('statusFacetSelect')?.addEventListener('change', (e) => {
+    const select = e.target as HTMLSelectElement;
+    state.exploration.selectedStatus = select.value;
+    render();
+  });
+
+  document.getElementById('standardFacetSelect')?.addEventListener('change', (e) => {
+    const select = e.target as HTMLSelectElement;
+    state.exploration.selectedStandard = select.value;
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="reset-all"]').forEach((btn) => {
+    btn.addEventListener('click', handleResetAllFilters);
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-action="set-view-mode"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = (btn.dataset.mode || 'grid') as ViewMode;
+      if (state.exploration.viewMode !== mode) {
+        state.exploration.viewMode = mode;
+        setStoredViewMode(mode);
+        render();
+      }
+    });
+  });
+
+  // Drill-Down interactive selectors
+  document.querySelectorAll<HTMLElement>('[data-drilldown-select-org]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const orgId = el.dataset.drilldownSelectOrg || null;
+      state.drilldown.selectedOrgId = orgId;
+      if (orgId) {
+        const orgCerts = state.exploration.records.filter(
+          (c) =>
+            c.organizacion_id === orgId ||
+            c.organizacion_nombre.toLowerCase() ===
+              state.domainData.organizations
+                .find((o) => o.id === orgId)
+                ?.nombre.toLowerCase()
+        );
+        state.drilldown.selectedCertId = orgCerts.length > 0 ? orgCerts[0].id : null;
+      } else {
+        state.drilldown.selectedCertId = null;
+      }
+      state.activeRoute = 'drilldown';
+      state.activeSubSection = null;
+      syncUrlHash('drilldown', orgId);
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-drilldown-select-cert]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const certId = el.dataset.drilldownSelectCert || null;
+      state.drilldown.selectedCertId = certId;
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-drilldown-subtab]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const subtab = el.dataset.drilldownSubtab as DrillDownSubTab | undefined;
+      if (subtab) {
+        state.drilldown.activeTab = subtab;
+        render();
+      }
+    });
+  });
+
+  // Audit Planning handlers
+  document.querySelectorAll<HTMLElement>('[data-action="open-plan-audit"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.auditPlanning.isModalOpen = true;
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="close-plan-audit"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.auditPlanning.isModalOpen = false;
+      render();
+    });
+  });
+
+  document.getElementById('planAuditForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const certSelect = document.getElementById('planCertSelect') as HTMLSelectElement | null;
+    const typeSelect = document.getElementById('planTypeSelect') as HTMLSelectElement | null;
+    const methodSelect = document.getElementById('planMethodologySelect') as HTMLSelectElement | null;
+    const dateInput = document.getElementById('planDateInput') as HTMLInputElement | null;
+    const auditorSelect = document.getElementById('planAuditorSelect') as HTMLSelectElement | null;
+
+    void handleCreateAudit({
+      id_certificado: certSelect?.value || '',
+      id_tipo_auditoria: typeSelect?.value || '',
+      id_metodologia: methodSelect?.value || '',
+      fecha_programacion: dateInput?.value || '',
+      id_auditor_lider: auditorSelect?.value || '',
+    });
+  });
+
+  // Findings logging & status toggle handlers
+  document.querySelectorAll<HTMLElement>('[data-action="open-log-finding"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const auditId = btn.dataset.auditId || null;
+      state.drilldown.isLoggingFinding = true;
+      state.drilldown.loggingAuditId = auditId;
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="close-log-finding"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.drilldown.isLoggingFinding = false;
+      state.drilldown.loggingAuditId = null;
+      render();
+    });
+  });
+
+  document.getElementById('newFindingForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const auditSelect = document.getElementById('findingAuditSelect') as HTMLSelectElement | null;
+    const typeSelect = document.getElementById('findingTypeSelect') as HTMLSelectElement | null;
+    const reqSelect = document.getElementById('findingReqSelect') as HTMLSelectElement | null;
+    const procSelect = document.getElementById('findingProcessSelect') as HTMLSelectElement | null;
+    const descInput = document.getElementById('findingDescInput') as HTMLTextAreaElement | null;
+    const evidenceInput = document.getElementById('findingEvidenceInput') as HTMLInputElement | null;
+
+    void handleCreateFinding({
+      id_auditoria: auditSelect?.value || '',
+      tipo: (typeSelect?.value || 'NC_MENOR') as FindingType,
+      id_requisito: reqSelect?.value || '',
+      id_proceso: procSelect?.value || '',
+      descripcion: descInput?.value.trim() || '',
+      evidencia: evidenceInput?.value.trim() || null,
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="toggle-finding-status"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const findingId = btn.dataset.findingId;
+      const isCurrentlyClosed = btn.dataset.currentClosed === 'true';
+      if (findingId) {
+        void handleToggleFindingStatus(findingId, !isCurrentlyClosed);
+      }
+    });
+  });
+}
+
+async function handleCreateAudit(data: {
+  id_certificado: string;
+  id_tipo_auditoria: string;
+  id_metodologia: string;
+  fecha_programacion: string;
+  id_auditor_lider?: string;
+}): Promise<void> {
+  const validation = validateAuditPlanningInput(data);
+  if (!validation.valid) {
+    return;
+  }
+
+  const cert = state.exploration.records.find((c) => c.id === data.id_certificado);
+  const auditor = state.domainData.auditors.find((a) => a.id === data.id_auditor_lider);
+
+  const newAudit: AuditRecord = {
+    id: `audit-${Date.now()}`,
+    id_certificado: data.id_certificado,
+    numero_certificado: cert?.numero_certificado || 'FN-QMS-2024-001',
+    organizacion_nombre: cert?.organizacion_nombre || 'Iberometal Componentes S.A.',
+    tipo_auditoria: 'RECERTIFICACION',
+    metodologia: 'PRESENCIAL',
+    fecha_programacion: data.fecha_programacion,
+    auditor_lider: auditor?.nombre || 'Ing. Carlos Mendoza (Auditor Líder)',
+    estatus: 'PLANIFICADA',
+  };
+
+  try {
+    const { data: dbAudit, error } = await supabase
+      .from('auditoria')
+      .insert({
+        id_certificado: data.id_certificado,
+        id_tipo_auditoria: data.id_tipo_auditoria,
+        id_metodologia: data.id_metodologia,
+        fecha_programacion: data.fecha_programacion,
+      })
+      .select('id')
+      .single();
+
+    if (!error && dbAudit) {
+      newAudit.id = dbAudit.id;
+      if (data.id_auditor_lider) {
+        await supabase.from('equipo_auditor').insert({
+          id_auditoria: dbAudit.id,
+          id_auditor: data.id_auditor_lider,
+          rol_auditor: 'AUDITOR_LIDER',
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Fallback to local reactive state for new audit:', err);
+  }
+
+  state.domainData.audits = [newAudit, ...state.domainData.audits];
+  state.auditPlanning.isModalOpen = false;
+  render();
+}
+
+async function handleCreateFinding(data: {
+  id_auditoria: string;
+  tipo: FindingType;
+  id_requisito: string;
+  id_proceso: string;
+  descripcion: string;
+  evidencia?: string | null;
+}): Promise<void> {
+  const validation = validateFindingInput(data);
+  if (!validation.valid) {
+    return;
+  }
+
+  const audit = state.domainData.audits.find((a) => a.id === data.id_auditoria);
+  const req = state.domainData.requirements.find((r) => r.id === data.id_requisito);
+  const proc = state.domainData.processes.find((p) => p.id === data.id_proceso);
+
+  const newFinding: FindingRecord = {
+    id: `finding-${Date.now()}`,
+    id_auditoria: data.id_auditoria,
+    auditoria_tipo: audit?.tipo_auditoria || 'RECERTIFICACION',
+    numero_certificado: audit?.numero_certificado || 'FN-QMS-2024-001',
+    organizacion_nombre: audit?.organizacion_nombre || 'Iberometal Componentes S.A.',
+    id_requisito: data.id_requisito,
+    requisito_codigo: req?.codigo || '8.5',
+    id_proceso: data.id_proceso,
+    proceso_nombre: proc?.nombre_proceso || 'Troquelado y Fundición',
+    tipo: data.tipo,
+    descripcion: data.descripcion,
+    evidencia: data.evidencia || null,
+    cerrado: false,
+    created_at: new Date().toISOString(),
+  };
+
+  try {
+    const { data: dbFinding, error } = await supabase
+      .from('hallazgo')
+      .insert({
+        id_auditoria: data.id_auditoria,
+        id_requisito: data.id_requisito,
+        id_proceso: data.id_proceso,
+        tipo: data.tipo,
+        descripcion: data.descripcion,
+        evidencia: data.evidencia || null,
+        cerrado: false,
+      })
+      .select('id')
+      .single();
+
+    if (!error && dbFinding) {
+      newFinding.id = dbFinding.id;
+    }
+  } catch (err) {
+    console.warn('Fallback to local reactive state for new finding:', err);
+  }
+
+  state.domainData.findings = [newFinding, ...state.domainData.findings];
+  state.drilldown.isLoggingFinding = false;
+  state.drilldown.loggingAuditId = null;
+  render();
+}
+
+async function handleToggleFindingStatus(
+  findingId: string,
+  nextClosed: boolean
+): Promise<void> {
+  state.domainData.findings = state.domainData.findings.map((f) =>
+    f.id === findingId ? { ...f, cerrado: nextClosed } : f
+  );
+  render();
+
+  try {
+    await supabase
+      .from('hallazgo')
+      .update({ cerrado: nextClosed })
+      .eq('id', findingId);
+  } catch (err) {
+    console.warn('Could not persist finding status toggle to Supabase:', err);
+  }
+}
+
+function updateExplorationView(): void {
+  const filtered = filterCertificateRecords(state.exploration.records, {
+    query: state.exploration.query,
+    selectedStatus: state.exploration.selectedStatus,
+    selectedStandard: state.exploration.selectedStandard,
+  });
+
+  const resultsContainer = document.getElementById('explorationResultsContainer');
+  if (resultsContainer) {
+    if (filtered.length === 0) {
+      resultsContainer.innerHTML = renderEmptySearchState(state.exploration.query);
+    } else if (state.exploration.viewMode === 'list') {
+      resultsContainer.innerHTML = renderCertificateList(filtered);
+    } else {
+      resultsContainer.innerHTML = renderCertificateGrid(filtered);
+    }
+  }
+
+  // Update clear button visibility
+  const searchInput = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
+  const wrapper = searchInput?.parentElement;
+  if (wrapper) {
+    const iconContainer = wrapper.querySelector('.absolute.right-0');
+    if (iconContainer) {
+      if (state.exploration.query) {
+        iconContainer.innerHTML = `
+          <button
+            type="button"
+            id="clearSearchBtn"
+            data-action="clear-search"
+            title="Limpiar búsqueda (Esc)"
+            aria-label="Limpiar búsqueda"
+            class="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        `;
+        document.getElementById('clearSearchBtn')?.addEventListener('click', handleClearSearch);
+      } else {
+        iconContainer.innerHTML = `
+          <kbd class="hidden md:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-slate-400 bg-white border border-slate-200 rounded shadow-2xs select-none">
+            /
+          </kbd>
+        `;
+      }
+    }
+  }
+
+  // Rebind reset-all buttons in empty search state if rendered
+  document.querySelectorAll<HTMLElement>('[data-action="reset-all"]').forEach((btn) => {
+    btn.addEventListener('click', handleResetAllFilters);
+  });
+}
+
+function handleClearSearch(): void {
+  state.exploration.query = '';
+  const input = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
+  if (input) {
+    input.value = '';
+    input.focus();
+  }
+  render();
+}
+
+function handleResetAllFilters(): void {
+  state.exploration.query = '';
+  state.exploration.selectedStatus = 'ALL';
+  state.exploration.selectedStandard = 'ALL';
+  render();
 }
 
 async function signInWithCredentials(
@@ -477,11 +1242,33 @@ async function handleSignOut(): Promise<void> {
   state.activeRoute = 'dashboard';
   state.activeSubSection = null;
   state.openMenu = null;
+  syncUrlHash('dashboard', null);
   state.approvals.profiles = [];
   state.dbCheck = {
     checks: createInitialChecks(),
     running: false,
     lastCheckedAt: null,
+  };
+  state.exploration = {
+    records: [...SAMPLE_CERTIFICATE_RECORDS],
+    loading: false,
+    query: '',
+    selectedStatus: 'ALL',
+    selectedStandard: 'ALL',
+    viewMode: getStoredViewMode('grid'),
+  };
+  state.domainData = {
+    audits: [...INITIAL_AUDITS],
+    auditors: [...INITIAL_AUDITORS],
+    organizations: [...INITIAL_ORGANIZATIONS],
+    sites: [...INITIAL_SITES],
+    processes: [...INITIAL_PROCESSES],
+    shifts: [...INITIAL_SHIFTS],
+    standards: [...INITIAL_STANDARDS],
+    requirements: [...INITIAL_REQUIREMENTS],
+    iafSectors: [...INITIAL_IAF],
+    catalogs: [...INITIAL_CATALOGS],
+    loading: false,
   };
   state.auth = {
     ...state.auth,
@@ -537,6 +1324,7 @@ async function handleResetDatabase(): Promise<void> {
       errorMessage: null,
       successMessage: formatResetSummary(fileNames, payload.totalDurationMs),
     };
+    void loadLiveCertificates();
   } catch (err) {
     state.auth = {
       ...state.auth,
@@ -576,13 +1364,434 @@ async function loadUserSession(user: User | null): Promise<void> {
     state.profile = profileData as UserProfile;
   }
 
-  state.activeRoute = 'dashboard';
-  state.activeSubSection = null;
+  const initialNav = parseHashRoute();
+  if (canAccessRoute(state.profile, initialNav.route)) {
+    state.activeRoute = initialNav.route;
+    state.activeSubSection = initialNav.subview;
+  } else {
+    state.activeRoute = 'dashboard';
+    state.activeSubSection = null;
+  }
+  syncUrlHash(state.activeRoute, state.activeSubSection);
   state.openMenu = null;
   render();
 
   if (isApprovedAdmin()) {
     void loadApprovalProfiles();
+  }
+
+  if (state.profile?.status === 'APPROVED') {
+    void loadLiveCertificates();
+    void loadDomainData();
+  }
+}
+
+async function loadLiveCertificates(): Promise<void> {
+  if (state.exploration.loading) return;
+  state.exploration.loading = true;
+  render();
+
+  try {
+    const { data, error } = await supabase.from('certificado').select(`
+      id,
+      numero_certificado,
+      multisitio,
+      created_at,
+      organizacion:id_organizacion ( id, nombre, rif, direccion_fiscal ),
+      norma:id_norma ( id, esquema, norma ),
+      estatus:id_estatus ( id, estatus ),
+      sector_iaf:id_sector_iaf ( id, sector )
+    `);
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const loaded: CertificateRecord[] = await Promise.all(
+        data.map(async (row: Record<string, unknown>) => {
+          const org = (row.organizacion as Record<string, unknown> | null) || null;
+          const norma = (row.norma as Record<string, unknown> | null) || null;
+          const estatus = (row.estatus as Record<string, unknown> | null) || null;
+          const sectorIaf = (row.sector_iaf as Record<string, unknown> | null) || null;
+
+          let coveragePct = 86;
+          let coverageSummary: CoverageBreakdown = { covered: 4, nonApplicable: 2, pending: 1, total: 7 };
+
+          try {
+            const { data: covData } = await supabase.rpc('cobertura_normativa_certificado', {
+              p_id_certificado: String(row.id),
+            });
+            if (Array.isArray(covData) && covData.length > 0) {
+              const covered = covData.filter((c: { estado_cobertura?: string }) => c.estado_cobertura === 'CUBIERTO').length;
+              const nonApp = covData.filter((c: { estado_cobertura?: string }) => c.estado_cobertura === 'NO_APLICABLE').length;
+              const pending = covData.filter((c: { estado_cobertura?: string }) => c.estado_cobertura === 'PENDIENTE').length;
+              const total = covData.length;
+              coverageSummary = { covered, nonApplicable: nonApp, pending, total };
+              coveragePct = Math.round(((covered + nonApp) / total) * 100);
+            }
+          } catch {
+            // Keep default
+          }
+
+          let sitesCount = 1;
+          try {
+            const { count } = await supabase
+              .from('sitio')
+              .select('id', { count: 'exact', head: true })
+              .eq('id_certificado', String(row.id));
+            if (typeof count === 'number' && count > 0) {
+              sitesCount = count;
+            }
+          } catch {
+            // Keep default
+          }
+
+          return {
+            id: String(row.id),
+            numero_certificado: String(row.numero_certificado || 'FN-CERT-000'),
+            organizacion_id: org ? String(org.id) : undefined,
+            organizacion_nombre: org ? String(org.nombre) : 'Organización Registrada',
+            organizacion_rif: org ? String(org.rif || 'RIF No Registrado') : 'RIF No Registrado',
+            direccion_fiscal: org?.direccion_fiscal ? String(org.direccion_fiscal) : undefined,
+            norma_id: norma ? String(norma.id) : undefined,
+            norma: norma ? String(norma.norma || 'ISO 9001:2015') : 'ISO 9001:2015',
+            esquema: norma ? String(norma.esquema || 'SGC - Calidad') : 'SGC - Calidad',
+            estatus: estatus ? String(estatus.estatus || 'ACTIVO') : 'ACTIVO',
+            sector_iaf: sectorIaf?.sector ? Number(sectorIaf.sector) : undefined,
+            multisitio: Boolean(row.multisitio),
+            sitios_count: sitesCount,
+            cobertura_porcentaje: coveragePct,
+            cobertura_resumen: coverageSummary,
+            fecha_emision: '2024-03-15',
+            fecha_vencimiento: '2027-03-14',
+          };
+        })
+      );
+
+      // Merge with sample records if only 1 DB seed certificate exists so user can fully test search & facets across different statuses/schemes
+      const existingCodes = new Set(loaded.map((item) => item.numero_certificado));
+      const supplemental = SAMPLE_CERTIFICATE_RECORDS.filter((s) => !existingCodes.has(s.numero_certificado));
+      state.exploration.records = [...loaded, ...supplemental];
+    } else {
+      state.exploration.records = [...SAMPLE_CERTIFICATE_RECORDS];
+    }
+  } catch {
+    state.exploration.records = [...SAMPLE_CERTIFICATE_RECORDS];
+  } finally {
+    state.exploration.loading = false;
+    render();
+  }
+}
+
+async function loadDomainData(): Promise<void> {
+  if (state.domainData.loading) return;
+  state.domainData.loading = true;
+
+  try {
+    const [
+      auditsRes,
+      auditorsRes,
+      orgsRes,
+      sitesRes,
+      processesRes,
+      shiftsRes,
+      standardsRes,
+      requirementsRes,
+      iafRes,
+      estatusRes,
+      tipoAuditoriaRes,
+      metodologiaRes,
+      findingsRes,
+    ] = await Promise.all([
+      supabase.from('auditoria').select(`
+        id,
+        fecha_programacion,
+        fecha_reprogramacion,
+        tipo_auditoria:id_tipo_auditoria ( tipo ),
+        metodologia:id_metodologia ( metodologia ),
+        certificado:id_certificado (
+          numero_certificado,
+          organizacion:id_organizacion ( nombre )
+        ),
+        equipo:equipo_auditor (
+          rol_auditor,
+          auditor:id_auditor ( nombre )
+        )
+      `),
+      supabase.from('auditor').select(`
+        id,
+        nombre,
+        normas:norma_auditor ( norma:id_norma ( norma ) ),
+        sectores:sector_iaf_auditor ( sector:id_sector_iaf ( sector ) )
+      `),
+      supabase.from('organizacion').select('id, nombre, rif, direccion_fiscal'),
+      supabase.from('sitio').select(`
+        id,
+        numero_sitio,
+        nombre_sitio,
+        direccion_sitio,
+        certificado:id_certificado ( numero_certificado )
+      `),
+      supabase.from('proceso').select(`
+        id,
+        nombre_proceso,
+        certificado:id_certificado ( numero_certificado )
+      `),
+      supabase.from('turno').select('id, hora_entrada, hora_salida'),
+      supabase.from('norma').select('id, esquema, norma'),
+      supabase.from('requisito').select(`
+        id,
+        codigo,
+        ruta_materializada,
+        norma:id_norma ( norma )
+      `),
+      supabase.from('sector_iaf').select('id, sector'),
+      supabase.from('estatus').select('estatus'),
+      supabase.from('tipo_auditoria').select('tipo'),
+      supabase.from('metodologia_auditoria').select('metodologia'),
+      supabase.from('hallazgo').select(`
+        id,
+        id_auditoria,
+        id_requisito,
+        id_proceso,
+        tipo,
+        descripcion,
+        evidencia,
+        cerrado,
+        created_at,
+        auditoria:id_auditoria (
+          tipo_auditoria:id_tipo_auditoria ( tipo ),
+          certificado:id_certificado (
+            numero_certificado,
+            organizacion:id_organizacion ( nombre )
+          )
+        ),
+        requisito:id_requisito ( codigo ),
+        proceso:id_proceso ( nombre_proceso )
+      `),
+    ]);
+
+    // Process Audits
+    if (!auditsRes.error && Array.isArray(auditsRes.data) && auditsRes.data.length > 0) {
+      state.domainData.audits = auditsRes.data.map((row: Record<string, unknown>) => {
+        const cert = (row.certificado as Record<string, unknown> | null) || {};
+        const org = (cert.organizacion as Record<string, unknown> | null) || {};
+        const tipoObj = (row.tipo_auditoria as Record<string, unknown> | null) || {};
+        const metObj = (row.metodologia as Record<string, unknown> | null) || {};
+        const equipoList = Array.isArray(row.equipo)
+          ? (row.equipo as Array<Record<string, unknown>>)
+          : [];
+        const lead =
+          equipoList.find((e) => e.rol_auditor === 'AUDITOR_LIDER') || equipoList[0];
+        const auditorObj = lead
+          ? (lead.auditor as Record<string, unknown> | null)
+          : null;
+        const auditorLiderName = auditorObj
+          ? String(auditorObj.nombre || 'Auditor Calificado')
+          : 'Por asignar';
+
+        return {
+          id: String(row.id),
+          numero_certificado: String(cert.numero_certificado || 'FN-QMS-2024-001'),
+          organizacion_nombre: String(org.nombre || 'Iberometal Componentes S.A.'),
+          tipo_auditoria: String(tipoObj.tipo || 'RECERTIFICACION'),
+          metodologia: String(metObj.metodologia || 'PRESENCIAL'),
+          fecha_programacion: String(row.fecha_programacion || '2024-11-20'),
+          fecha_reprogramacion: row.fecha_reprogramacion
+            ? String(row.fecha_reprogramacion)
+            : null,
+          auditor_lider: auditorLiderName,
+          estatus: 'PLANIFICADA',
+        };
+      });
+    }
+
+    // Process Auditors
+    if (!auditorsRes.error && Array.isArray(auditorsRes.data) && auditorsRes.data.length > 0) {
+      state.domainData.auditors = auditorsRes.data.map((row: Record<string, unknown>) => {
+        const normasRaw = Array.isArray(row.normas)
+          ? (row.normas as Array<Record<string, unknown>>)
+          : [];
+        const normasList = normasRaw
+          .map((n) => {
+            const inner = n.norma as Record<string, unknown> | null;
+            return inner?.norma ? String(inner.norma) : null;
+          })
+          .filter((v): v is string => Boolean(v));
+
+        const sectoresRaw = Array.isArray(row.sectores)
+          ? (row.sectores as Array<Record<string, unknown>>)
+          : [];
+        const iafList = sectoresRaw
+          .map((s) => {
+            const inner = s.sector as Record<string, unknown> | null;
+            return inner?.sector ? Number(inner.sector) : NaN;
+          })
+          .filter((v) => !isNaN(v));
+
+        return {
+          id: String(row.id),
+          nombre: String(row.nombre),
+          normas: normasList.length > 0 ? normasList : ['ISO 9001:2015'],
+          sectores_iaf: iafList.length > 0 ? iafList : [17],
+          rol: 'Auditor Técnico Calificado',
+        };
+      });
+    }
+
+    // Process Organizations
+    if (!orgsRes.error && Array.isArray(orgsRes.data) && orgsRes.data.length > 0) {
+      state.domainData.organizations = orgsRes.data.map((row: Record<string, unknown>) => ({
+        id: String(row.id),
+        nombre: String(row.nombre),
+        rif: String(row.rif || 'RIF No Registrado'),
+        direccion_fiscal: String(row.direccion_fiscal || ''),
+        certificados_count: 1,
+      }));
+    }
+
+    // Process Sites
+    if (!sitesRes.error && Array.isArray(sitesRes.data) && sitesRes.data.length > 0) {
+      state.domainData.sites = sitesRes.data.map((row: Record<string, unknown>) => {
+        const certObj = (row.certificado as Record<string, unknown> | null) || {};
+        return {
+          id: String(row.id),
+          numero_sitio: Number(row.numero_sitio) || 1,
+          nombre_sitio: String(row.nombre_sitio),
+          direccion_sitio: String(row.direccion_sitio),
+          numero_certificado: String(certObj.numero_certificado || 'FN-QMS-2024-001'),
+          turnos_count: 2,
+        };
+      });
+    }
+
+    // Process Processes
+    if (!processesRes.error && Array.isArray(processesRes.data) && processesRes.data.length > 0) {
+      state.domainData.processes = processesRes.data.map((row: Record<string, unknown>) => {
+        const certObj = (row.certificado as Record<string, unknown> | null) || {};
+        return {
+          id: String(row.id),
+          nombre_proceso: String(row.nombre_proceso),
+          numero_certificado: String(certObj.numero_certificado || 'FN-QMS-2024-001'),
+          clausulas_cubiertas: ['4.1', '8.5'],
+        };
+      });
+    }
+
+    // Process Shifts
+    if (!shiftsRes.error && Array.isArray(shiftsRes.data) && shiftsRes.data.length > 0) {
+      state.domainData.shifts = shiftsRes.data.map((row: Record<string, unknown>, idx: number) => ({
+        id: String(row.id),
+        hora_entrada: String(row.hora_entrada),
+        hora_salida: String(row.hora_salida),
+        descripcion: idx === 0 ? 'Turno Matutino Operativo' : 'Turno Vespertino / Nocturno',
+        sitios_vinculados: ['Planta Valencia'],
+      }));
+    }
+
+    // Process Standards
+    if (!standardsRes.error && Array.isArray(standardsRes.data) && standardsRes.data.length > 0) {
+      state.domainData.standards = standardsRes.data.map((row: Record<string, unknown>) => {
+        const normaStr = String(row.norma);
+        return {
+          id: String(row.id),
+          esquema: String(row.esquema),
+          norma: normaStr,
+          clausulas_count: normaStr.includes('9001') ? 7 : 5,
+        };
+      });
+    }
+
+    // Process Requirements
+    if (!requirementsRes.error && Array.isArray(requirementsRes.data) && requirementsRes.data.length > 0) {
+      state.domainData.requirements = requirementsRes.data.map((row: Record<string, unknown>) => {
+        const normaObj = (row.norma as Record<string, unknown> | null) || {};
+        return {
+          id: String(row.id),
+          codigo: String(row.codigo),
+          ruta_materializada: String(row.ruta_materializada || row.codigo),
+          norma: String(normaObj.norma || 'ISO 9001:2015'),
+        };
+      });
+    }
+
+    // Process IAF Sectors
+    if (!iafRes.error && Array.isArray(iafRes.data) && iafRes.data.length > 0) {
+      const iafDescriptions: Record<number, string> = {
+        14: 'Productos químicos, fibras sintéticas y farmacéuticos',
+        17: 'Metales básicos y productos metálicos elaborados',
+        28: 'Construcción e ingeniería civil',
+        33: 'Tecnología de la información y comunicaciones',
+        35: 'Otros servicios profesionales y de ensayo',
+      };
+      state.domainData.iafSectors = iafRes.data.map((row: Record<string, unknown>) => {
+        const secNum = Number(row.sector);
+        return {
+          id: String(row.id),
+          sector: secNum,
+          descripcion:
+            iafDescriptions[secNum] || `Sector industrial y comercial ${secNum}`,
+        };
+      });
+    }
+
+    // Process Catalogs
+    const mergedCatalogs: CatalogItem[] = [];
+    if (!estatusRes.error && Array.isArray(estatusRes.data)) {
+      estatusRes.data.forEach((r: Record<string, unknown>) => {
+        if (r.estatus) mergedCatalogs.push({ categoria: 'estatus', valor: String(r.estatus) });
+      });
+    }
+    if (!tipoAuditoriaRes.error && Array.isArray(tipoAuditoriaRes.data)) {
+      tipoAuditoriaRes.data.forEach((r: Record<string, unknown>) => {
+        if (r.tipo) mergedCatalogs.push({ categoria: 'tipo_auditoria', valor: String(r.tipo) });
+      });
+    }
+    if (!metodologiaRes.error && Array.isArray(metodologiaRes.data)) {
+      metodologiaRes.data.forEach((r: Record<string, unknown>) => {
+        if (r.metodologia) mergedCatalogs.push({ categoria: 'metodologia', valor: String(r.metodologia) });
+      });
+    }
+    if (mergedCatalogs.length > 0) {
+      state.domainData.catalogs = mergedCatalogs;
+    }
+
+    // Process Findings
+    if (!findingsRes.error && Array.isArray(findingsRes.data) && findingsRes.data.length > 0) {
+      const loadedFindings: FindingRecord[] = findingsRes.data.map((row: Record<string, unknown>) => {
+        const aud = (row.auditoria as Record<string, unknown> | null) || {};
+        const cert = (aud.certificado as Record<string, unknown> | null) || {};
+        const org = (cert.organizacion as Record<string, unknown> | null) || {};
+        const tipoAud = (aud.tipo_auditoria as Record<string, unknown> | null) || {};
+        const req = (row.requisito as Record<string, unknown> | null) || {};
+        const proc = (row.proceso as Record<string, unknown> | null) || {};
+
+        return {
+          id: String(row.id),
+          id_auditoria: String(row.id_auditoria),
+          auditoria_tipo: String(tipoAud.tipo || 'RECERTIFICACION'),
+          numero_certificado: String(cert.numero_certificado || 'FN-QMS-2024-001'),
+          organizacion_nombre: String(org.nombre || 'Iberometal Componentes S.A.'),
+          id_requisito: String(row.id_requisito),
+          requisito_codigo: String(req.codigo || '8.5'),
+          id_proceso: String(row.id_proceso),
+          proceso_nombre: String(proc.nombre_proceso || 'Troquelado y Fundición'),
+          tipo: (row.tipo as FindingType) || 'NC_MENOR',
+          descripcion: String(row.descripcion),
+          evidencia: row.evidencia ? String(row.evidencia) : null,
+          cerrado: Boolean(row.cerrado),
+          created_at: row.created_at ? String(row.created_at) : undefined,
+        };
+      });
+
+      const existingIds = new Set(loadedFindings.map((f) => f.id));
+      const supplemental = INITIAL_FINDINGS.filter((f) => !existingIds.has(f.id));
+      state.domainData.findings = [...loadedFindings, ...supplemental];
+    } else {
+      state.domainData.findings = [...INITIAL_FINDINGS];
+    }
+  } catch (err) {
+    console.warn('Fallback to seeded domain records:', err);
+  } finally {
+    state.domainData.loading = false;
+    render();
   }
 }
 
@@ -871,9 +2080,32 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// Close open dropdowns or Reset DB confirmation modal on Escape
+// Global keyboard shortcuts: / to focus search, Escape to close modals/clear search
 document.addEventListener('keydown', (e) => {
+  // '/' shortcut to focus search input
+  if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) {
+    const searchInput = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
+    if (searchInput) {
+      e.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+      return;
+    }
+  }
+
   if (e.key !== 'Escape') return;
+
+  if (document.activeElement?.id === 'certificateSearchInput') {
+    if (state.exploration.query) {
+      state.exploration.query = '';
+      const input = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
+      if (input) input.value = '';
+      updateExplorationView();
+    } else {
+      (document.activeElement as HTMLElement).blur();
+    }
+    return;
+  }
 
   if (state.openMenu) {
     state.openMenu = null;
@@ -899,7 +2131,51 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// History and Hash Navigation: Instant client-side route switching without page reloads
+window.addEventListener('hashchange', () => {
+  const { route, subview } = parseHashRoute();
+  if (canAccessRoute(state.profile, route)) {
+    if (state.activeRoute !== route || state.activeSubSection !== subview) {
+      state.activeRoute = route;
+      state.activeSubSection = subview;
+      state.openMenu = null;
+      render();
+      if (route === 'approvals') {
+        void loadApprovalProfiles();
+      } else if (route === 'database' && state.dbCheck.lastCheckedAt === null) {
+        void runHealthChecks();
+      }
+    }
+  }
+});
+
+window.addEventListener('popstate', () => {
+  const { route, subview } = parseHashRoute();
+  if (canAccessRoute(state.profile, route)) {
+    if (state.activeRoute !== route || state.activeSubSection !== subview) {
+      state.activeRoute = route;
+      state.activeSubSection = subview;
+      state.openMenu = null;
+      render();
+    }
+  }
+});
+
+// Supabase Auth State Change Listener
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_OUT') {
+    void handleSignOut();
+  } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+    if (session?.user && (!state.user || state.user.id !== session.user.id)) {
+      void loadUserSession(session.user);
+    }
+  }
+});
+
 async function init(): Promise<void> {
+  const initialNav = parseHashRoute();
+  state.activeRoute = initialNav.route;
+  state.activeSubSection = initialNav.subview;
   render();
   const { data } = await supabase.auth.getSession();
   await loadUserSession(data.session?.user ?? null);
