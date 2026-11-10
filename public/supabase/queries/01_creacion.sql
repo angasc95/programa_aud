@@ -117,7 +117,8 @@ CREATE TABLE IF NOT EXISTS requisito (
     codigo VARCHAR(30) NOT NULL,
     ruta_materializada LTREE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT unique_norma_requisito_codigo UNIQUE (id_norma, codigo)
 );
 
 CREATE TABLE IF NOT EXISTS sector_iaf (
@@ -217,7 +218,8 @@ CREATE TABLE IF NOT EXISTS proceso (
     id_certificado UUID NOT NULL REFERENCES certificado(id) ON DELETE CASCADE,
     nombre_proceso VARCHAR(150) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT unique_proceso_certificado UNIQUE (id_certificado, nombre_proceso)
 );
 
 CREATE TABLE IF NOT EXISTS requisitos_por_proceso (
@@ -311,7 +313,7 @@ CREATE TABLE IF NOT EXISTS public.hallazgo (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Triggers de Integridad Subconjunto ISO
+-- Triggers de Integridad Subconjunto ISO/IEC 17021-1
 CREATE OR REPLACE FUNCTION public.fn_validar_sitio_auditoria_certificado()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
@@ -321,7 +323,7 @@ BEGIN
     SELECT id_certificado INTO v_cert_auditoria FROM public.auditoria WHERE id = NEW.id_auditoria;
     SELECT id_certificado INTO v_cert_sitio FROM public.sitio WHERE id = NEW.id_sitio;
 
-    IF v_cert_auditoria <> v_cert_sitio THEN
+    IF v_cert_auditoria IS NULL OR v_cert_sitio IS NULL OR v_cert_auditoria IS DISTINCT FROM v_cert_sitio THEN
         RAISE EXCEPTION 'Violación de Integridad ISO/IEC 17021-1: El sitio % pertenece al certificado %, incoherente con el certificado % de la auditoría.',
             NEW.id_sitio, v_cert_sitio, v_cert_auditoria;
     END IF;
@@ -334,11 +336,34 @@ CREATE TRIGGER trg_validar_sitio_auditoria_certificado
     BEFORE INSERT OR UPDATE ON public.sitios_por_auditoria
     FOR EACH ROW EXECUTE FUNCTION public.fn_validar_sitio_auditoria_certificado();
 
+CREATE OR REPLACE FUNCTION public.fn_validar_turno_sitio_auditoria()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+    v_sitio_aud UUID;
+    v_sitio_turno UUID;
+BEGIN
+    SELECT id_sitio INTO v_sitio_aud FROM public.sitios_por_auditoria WHERE id = NEW.id_sitios_por_auditoria;
+    SELECT id_sitio INTO v_sitio_turno FROM public.turnos_por_sitio WHERE id = NEW.id_turnos_por_sitio;
+
+    IF v_sitio_aud IS NULL OR v_sitio_turno IS NULL OR v_sitio_aud IS DISTINCT FROM v_sitio_turno THEN
+        RAISE EXCEPTION 'Violación de Integridad ISO/IEC 17021-1: El turno por sitio % pertenece al sitio %, incoherente con el sitio % asignado a la auditoría.',
+            NEW.id_turnos_por_sitio, v_sitio_turno, v_sitio_aud;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_validar_turno_sitio_auditoria ON public.turnos_sitio_auditoria;
+CREATE TRIGGER trg_validar_turno_sitio_auditoria
+    BEFORE INSERT OR UPDATE ON public.turnos_sitio_auditoria
+    FOR EACH ROW EXECUTE FUNCTION public.fn_validar_turno_sitio_auditoria();
+
 CREATE OR REPLACE FUNCTION public.fn_validar_proceso_sitio_auditoria_certificado()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
     v_cert_auditoria UUID;
     v_cert_proceso UUID;
+    v_sitio_aud_turno UUID;
 BEGIN
     SELECT a.id_certificado INTO v_cert_auditoria
     FROM public.sitios_por_auditoria sa
@@ -347,10 +372,20 @@ BEGIN
 
     SELECT id_certificado INTO v_cert_proceso FROM public.proceso WHERE id = NEW.id_proceso;
 
-    IF v_cert_auditoria <> v_cert_proceso THEN
+    IF v_cert_auditoria IS NULL OR v_cert_proceso IS NULL OR v_cert_auditoria IS DISTINCT FROM v_cert_proceso THEN
         RAISE EXCEPTION 'Violación de Integridad ISO/IEC 17021-1: El proceso % pertenece al certificado %, incoherente con el certificado % de la auditoría.',
             NEW.id_proceso, v_cert_proceso, v_cert_auditoria;
     END IF;
+
+    SELECT id_sitios_por_auditoria INTO v_sitio_aud_turno
+    FROM public.turnos_sitio_auditoria
+    WHERE id = NEW.id_turnos_sitio_auditoria;
+
+    IF v_sitio_aud_turno IS DISTINCT FROM NEW.id_sitios_por_auditoria THEN
+        RAISE EXCEPTION 'Violación de Integridad ISO/IEC 17021-1: El turno de auditoría % no corresponde al sitio de auditoría %.',
+            NEW.id_turnos_sitio_auditoria, NEW.id_sitios_por_auditoria;
+    END IF;
+
     RETURN NEW;
 END;
 $$;
@@ -452,6 +487,21 @@ CREATE TRIGGER update_norma_modtime BEFORE UPDATE ON public.norma FOR EACH ROW E
 DROP TRIGGER IF EXISTS update_requisito_modtime ON public.requisito;
 CREATE TRIGGER update_requisito_modtime BEFORE UPDATE ON public.requisito FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_sector_iaf_modtime ON public.sector_iaf;
+CREATE TRIGGER update_sector_iaf_modtime BEFORE UPDATE ON public.sector_iaf FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_estatus_modtime ON public.estatus;
+CREATE TRIGGER update_estatus_modtime BEFORE UPDATE ON public.estatus FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_tipo_auditoria_modtime ON public.tipo_auditoria;
+CREATE TRIGGER update_tipo_auditoria_modtime BEFORE UPDATE ON public.tipo_auditoria FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_metodologia_auditoria_modtime ON public.metodologia_auditoria;
+CREATE TRIGGER update_metodologia_auditoria_modtime BEFORE UPDATE ON public.metodologia_auditoria FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_auditor_modtime ON public.auditor;
+CREATE TRIGGER update_auditor_modtime BEFORE UPDATE ON public.auditor FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
 DROP TRIGGER IF EXISTS update_certificado_modtime ON public.certificado;
 CREATE TRIGGER update_certificado_modtime BEFORE UPDATE ON public.certificado FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
@@ -460,6 +510,9 @@ CREATE TRIGGER update_sitio_modtime BEFORE UPDATE ON public.sitio FOR EACH ROW E
 
 DROP TRIGGER IF EXISTS update_proceso_modtime ON public.proceso;
 CREATE TRIGGER update_proceso_modtime BEFORE UPDATE ON public.proceso FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_turno_modtime ON public.turno;
+CREATE TRIGGER update_turno_modtime BEFORE UPDATE ON public.turno FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 DROP TRIGGER IF EXISTS update_auditoria_modtime ON public.auditoria;
 CREATE TRIGGER update_auditoria_modtime BEFORE UPDATE ON public.auditoria FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();

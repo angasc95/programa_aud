@@ -57,6 +57,18 @@ INSERT INTO public.auditor (id, nombre) VALUES
     ('10000000-0000-0000-0000-000000000001', 'Ing. Carlos Mendoza (Auditor Líder)')
 ON CONFLICT (id) DO NOTHING;
 
+INSERT INTO public.norma_auditor (id_auditor, id_norma) VALUES
+    ('33333333-3333-3333-3333-333333333333', 'e0000000-0000-0000-0000-000000009001'),
+    ('10000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000009001'),
+    ('10000000-0000-0000-0000-000000000001', 'e0000000-0000-0000-0000-000000014001')
+ON CONFLICT (id_auditor, id_norma) DO NOTHING;
+
+INSERT INTO public.sector_iaf_auditor (id_auditor, id_sector_iaf) VALUES
+    ('33333333-3333-3333-3333-333333333333', 'd0000000-0000-0000-0000-000000000017'),
+    ('10000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000017'),
+    ('10000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000028')
+ON CONFLICT (id_auditor, id_sector_iaf) DO NOTHING;
+
 INSERT INTO public.organizacion (id, nombre, rif, direccion_fiscal) VALUES
     ('30000000-0000-0000-0000-000000000001', 'Iberometal Componentes S.A.', 'J-30492817-0', 'Zona Industrial Carabobo, Valencia'),
     ('30000000-0000-0000-0000-000000000002', 'CyberCloud Solutions S.L.', 'J-40819234-5', 'Torre David, Chacao, Caracas')
@@ -90,9 +102,29 @@ INSERT INTO public.sitio (id, id_certificado, numero_sitio, nombre_sitio, direcc
     ('50000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 1, 'Planta Valencia', 'Zona Industrial Carabobo')
 ON CONFLICT (id_certificado, numero_sitio) DO NOTHING;
 
+INSERT INTO public.turno (id, hora_entrada, hora_salida) VALUES
+    ('70000000-0000-0000-0000-000000000001', '07:00:00', '15:00:00'),
+    ('70000000-0000-0000-0000-000000000002', '15:00:00', '23:00:00')
+ON CONFLICT (hora_entrada, hora_salida) DO NOTHING;
+
+INSERT INTO public.turnos_por_sitio (id, id_sitio, id_turno) VALUES
+    ('71000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001'),
+    ('71000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000002')
+ON CONFLICT (id_sitio, id_turno) DO NOTHING;
+
 INSERT INTO public.proceso (id, id_certificado, nombre_proceso) VALUES
     ('60000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'Troquelado y Fundición')
 ON CONFLICT (id) DO NOTHING;
+
+-- Mapeo de requisitos cubiertos (propaga a cláusulas padre 4 y 8) y exclusión formal (5.1)
+INSERT INTO public.requisitos_por_proceso (id_proceso, id_requisito) VALUES
+    ('60000000-0000-0000-0000-000000000001', 'f0000000-0000-0000-0000-000000000041'),
+    ('60000000-0000-0000-0000-000000000001', 'f0000000-0000-0000-0000-000000000085')
+ON CONFLICT (id_proceso, id_requisito) DO NOTHING;
+
+INSERT INTO public.requisitos_no_aplicables_certificado (id_certificado, id_requisito) VALUES
+    ('40000000-0000-0000-0000-000000000001', 'f0000000-0000-0000-0000-000000000051')
+ON CONFLICT (id_certificado, id_requisito) DO NOTHING;
 
 INSERT INTO public.auditoria (id, id_certificado, id_tipo_auditoria, id_metodologia, fecha_programacion) VALUES
     (

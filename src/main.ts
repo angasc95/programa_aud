@@ -2,19 +2,21 @@ import './index.css';
 import type { User } from '@supabase/supabase-js';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './lib/supabase';
 import {
+  canAccessRoute,
   canModifyProfileRole,
   evaluateAdminAccess,
   formatResetSummary,
   shouldUpdateProfileRole,
   TEST_ACCOUNTS,
   translateDatabaseError,
+  type ActiveRoute,
   type HealthCheckItem,
   type ProfileFilter,
   type UserProfile,
   type UserRole,
   type UserStatus,
 } from './lib/healthCheck';
-import { renderHeader, type ActiveRoute } from './views/header';
+import { renderHeader, type HeaderDropdownId } from './views/header';
 import { renderAuthView, type AuthViewState } from './views/authView';
 import { renderDashboardView } from './views/dashboardView';
 import { renderApprovalsView } from './views/approvalsView';
@@ -25,7 +27,8 @@ interface AppState {
   user: User | null;
   profile: UserProfile | null;
   activeRoute: ActiveRoute;
-  menuOpen: boolean;
+  activeSubSection: string | null;
+  openMenu: HeaderDropdownId | null;
   auth: AuthViewState;
   approvals: {
     profiles: UserProfile[];
@@ -87,7 +90,8 @@ const state: AppState = {
   user: null,
   profile: null,
   activeRoute: 'dashboard',
-  menuOpen: false,
+  activeSubSection: null,
+  openMenu: null,
   auth: {
     mode: 'login',
     errorMessage: null,
@@ -131,8 +135,9 @@ function render(): void {
         email: null,
         isAdmin: false,
         activeRoute: 'dashboard',
+        activeSubSection: null,
         pendingCount: 0,
-        menuOpen: false,
+        openMenu: null,
       })}
       <main class="flex-1 flex items-center justify-center px-4 py-12">
         <div class="w-full max-w-md bg-white border border-slate-200 rounded-xl p-8 text-center">
@@ -150,8 +155,9 @@ function render(): void {
         email: null,
         isAdmin: false,
         activeRoute: 'dashboard',
+        activeSubSection: null,
         pendingCount: 0,
-        menuOpen: false,
+        openMenu: null,
       })}
       ${renderAuthView(state.auth)}
     `;
@@ -163,9 +169,10 @@ function render(): void {
   const pendingCount = state.approvals.profiles.filter((p) => p.status === 'PENDING').length;
 
   let effectiveRoute: ActiveRoute = state.activeRoute;
-  if (!admin && effectiveRoute !== 'dashboard') {
+  if (!canAccessRoute(state.profile, effectiveRoute)) {
     effectiveRoute = 'dashboard';
     state.activeRoute = 'dashboard';
+    state.activeSubSection = null;
   }
 
   let bodyHtml = '';
@@ -186,7 +193,12 @@ function render(): void {
       state.dbCheck.lastCheckedAt
     );
   } else {
-    bodyHtml = renderDashboardView(state.profile, state.user.email || '');
+    bodyHtml = renderDashboardView(
+      state.profile,
+      state.user.email || '',
+      effectiveRoute,
+      state.activeSubSection
+    );
   }
 
   root.innerHTML = `
@@ -195,8 +207,9 @@ function render(): void {
       email: state.user.email || '',
       isAdmin: admin,
       activeRoute: effectiveRoute,
+      activeSubSection: state.activeSubSection,
       pendingCount,
-      menuOpen: state.menuOpen,
+      openMenu: state.openMenu,
     })}
     ${bodyHtml}
   `;
@@ -287,11 +300,14 @@ function bindAuthEvents(): void {
 }
 
 function bindAuthenticatedEvents(): void {
-  const trigger = document.getElementById('userMenuTrigger');
-  trigger?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    state.menuOpen = !state.menuOpen;
-    render();
+  document.querySelectorAll<HTMLButtonElement>('[data-menu-toggle]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const targetMenu = btn.dataset.menuToggle as HeaderDropdownId | undefined;
+      if (!targetMenu) return;
+      state.openMenu = state.openMenu === targetMenu ? null : targetMenu;
+      render();
+    });
   });
 
   document.getElementById('signOutBtn')?.addEventListener('click', () => {
@@ -301,10 +317,10 @@ function bindAuthenticatedEvents(): void {
   document.querySelectorAll<HTMLElement>('[data-nav]').forEach((el) => {
     el.addEventListener('click', () => {
       const target = el.dataset.nav as ActiveRoute | undefined;
-      if (!target) return;
-      if (target !== 'dashboard' && !isApprovedAdmin()) return;
+      if (!target || !canAccessRoute(state.profile, target)) return;
       state.activeRoute = target;
-      state.menuOpen = false;
+      state.activeSubSection = el.dataset.subview || null;
+      state.openMenu = null;
       render();
 
       if (target === 'approvals') {
@@ -459,7 +475,8 @@ async function handleSignOut(): Promise<void> {
   state.user = null;
   state.profile = null;
   state.activeRoute = 'dashboard';
-  state.menuOpen = false;
+  state.activeSubSection = null;
+  state.openMenu = null;
   state.approvals.profiles = [];
   state.dbCheck = {
     checks: createInitialChecks(),
@@ -560,7 +577,8 @@ async function loadUserSession(user: User | null): Promise<void> {
   }
 
   state.activeRoute = 'dashboard';
-  state.menuOpen = false;
+  state.activeSubSection = null;
+  state.openMenu = null;
   render();
 
   if (isApprovedAdmin()) {
@@ -843,19 +861,35 @@ async function runHealthChecks(): Promise<void> {
   render();
 }
 
-// Close click-toggled dropdown when clicking outside the menu container
+// Close click-toggled dropdown when clicking outside header dropdown containers
 document.addEventListener('click', (e) => {
-  if (!state.menuOpen) return;
-  const container = document.getElementById('userMenuContainer');
-  if (container && !container.contains(e.target as Node)) {
-    state.menuOpen = false;
+  if (!state.openMenu) return;
+  const target = e.target as HTMLElement | null;
+  if (!target?.closest('[data-header-dropdown]')) {
+    state.openMenu = null;
     render();
   }
 });
 
-// Close Reset DB confirmation modal on Escape when idle
+// Close open dropdowns or Reset DB confirmation modal on Escape
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && state.auth.resetModalOpen && !state.auth.resettingDb) {
+  if (e.key !== 'Escape') return;
+
+  if (state.openMenu) {
+    state.openMenu = null;
+    if (document.activeElement instanceof HTMLElement && document.activeElement.closest('header')) {
+      document.activeElement.blur();
+    }
+    render();
+    return;
+  }
+
+  if (document.activeElement instanceof HTMLElement && document.activeElement.closest('[data-header-dropdown]')) {
+    document.activeElement.blur();
+    return;
+  }
+
+  if (state.auth.resetModalOpen && !state.auth.resettingDb) {
     state.auth = {
       ...state.auth,
       resetModalOpen: false,

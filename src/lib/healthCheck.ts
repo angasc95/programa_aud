@@ -72,6 +72,249 @@ export interface HealthSummary {
 
 export type ProfileFilter = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL';
 
+export type DomainRoute = 'auditorias' | 'certificacion' | 'extra';
+export type ActiveRoute = 'dashboard' | 'approvals' | 'database' | DomainRoute;
+
+export interface RoleVisualMeta {
+  role: UserRole;
+  label: string;
+  symbol: string;
+  tooltip: string;
+  badgeClass: string;
+}
+
+export interface StatusVisualMeta {
+  status: UserStatus;
+  label: string;
+  symbol: string;
+  tooltip: string;
+  badgeClass: string;
+}
+
+export interface DomainNavItem {
+  id: string;
+  label: string;
+  symbol: string;
+  tooltip: string;
+}
+
+export interface DomainMenuSpec {
+  id: DomainRoute;
+  label: string;
+  symbol: string;
+  tooltip: string;
+  items: DomainNavItem[];
+}
+
+export function getRoleVisualMeta(role: UserRole): RoleVisualMeta {
+  switch (role) {
+    case 'ADMIN':
+      return {
+        role,
+        label: 'ADMIN',
+        symbol: '🛡️',
+        tooltip: 'ADMIN — Full administrative control over users, catalogs, and system data',
+        badgeClass: 'bg-slate-900 text-white border-slate-900',
+      };
+    case 'WORKER':
+      return {
+        role,
+        label: 'WORKER',
+        symbol: '⚙️',
+        tooltip: 'WORKER — Operational coordinator for organizations, certificates, and audits',
+        badgeClass: 'bg-sky-50 text-sky-800 border-sky-200',
+      };
+    case 'AUDITOR':
+      return {
+        role,
+        label: 'AUDITOR',
+        symbol: '📋',
+        tooltip: 'AUDITOR — Technical evaluator assigned to field audits and findings',
+        badgeClass: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+      };
+    case 'CLIENT':
+    default:
+      return {
+        role: 'CLIENT',
+        label: 'CLIENT',
+        symbol: '🏢',
+        tooltip: 'CLIENT — Client organization portal with scoped read access',
+        badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
+      };
+  }
+}
+
+export function getStatusVisualMeta(status: UserStatus): StatusVisualMeta {
+  switch (status) {
+    case 'APPROVED':
+      return {
+        status,
+        label: 'APPROVED',
+        symbol: '✓',
+        tooltip: 'APPROVED — Account verified with active workspace access',
+        badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      };
+    case 'REJECTED':
+      return {
+        status,
+        label: 'REJECTED',
+        symbol: '❌',
+        tooltip: 'REJECTED — Account request declined by an administrator',
+        badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
+      };
+    case 'PENDING':
+    default:
+      return {
+        status: 'PENDING',
+        label: 'PENDING',
+        symbol: '⏳',
+        tooltip: 'PENDING — Awaiting administrator review and approval',
+        badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
+      };
+  }
+}
+
+export function getVisibleDomainMenus(
+  profile: UserProfile | null | undefined
+): DomainMenuSpec[] {
+  if (!profile || profile.status !== 'APPROVED') {
+    return [];
+  }
+
+  const isStaff = profile.role === 'ADMIN' || profile.role === 'WORKER';
+  const isAuditor = profile.role === 'AUDITOR';
+  const isClient = profile.role === 'CLIENT';
+
+  const menus: DomainMenuSpec[] = [];
+
+  if (isStaff || isAuditor || isClient) {
+    const auditItems: DomainNavItem[] = [
+      {
+        id: 'scheduling',
+        label: 'Event Scheduling',
+        symbol: '🗓️',
+        tooltip: 'Programación y seguimiento de auditorías de certificación',
+      },
+      {
+        id: 'calendar',
+        label: 'Calendar Selection',
+        symbol: '📆',
+        tooltip: 'Calendario de fechas programadas y reprogramaciones',
+      },
+    ];
+
+    if (isStaff || isAuditor) {
+      auditItems.push({
+        id: 'team',
+        label: 'Evaluator Team',
+        symbol: '👥',
+        tooltip: 'Equipo auditor asignado y calificación por auditoría',
+      });
+    }
+
+    menus.push({
+      id: 'auditorias',
+      label: 'Dominio Auditorías',
+      symbol: '📅',
+      tooltip: 'Gestión de auditorías, calendario y equipo evaluador',
+      items: auditItems,
+    });
+  }
+
+  if (isStaff || isClient) {
+    const certItems: DomainNavItem[] = [
+      {
+        id: 'organizations',
+        label: 'Client Organizations',
+        symbol: '🏢',
+        tooltip: 'Organizaciones clientes titulares y acceso autorizado',
+      },
+      {
+        id: 'certificates',
+        label: 'Issued Certificates',
+        symbol: '📜',
+        tooltip: 'Certificados emitidos y avance de cobertura normativa',
+      },
+      {
+        id: 'sites',
+        label: 'Multi-site Locations',
+        symbol: '📍',
+        tooltip: 'Sedes físicas y esquemas multisitio por certificado',
+      },
+      {
+        id: 'processes',
+        label: 'Process Mapping',
+        symbol: '⚙️',
+        tooltip: 'Mapa de procesos y cláusulas normativas vinculadas',
+      },
+    ];
+
+    if (isStaff) {
+      certItems.push({
+        id: 'shifts',
+        label: 'Work Shifts',
+        symbol: '🕒',
+        tooltip: 'Turnos productivos y horarios operativos por sede',
+      });
+    }
+
+    menus.push({
+      id: 'certificacion',
+      label: 'Dominio Certificación',
+      symbol: '🏛️',
+      tooltip: 'Organizaciones, certificados, sedes, procesos y turnos',
+      items: certItems,
+    });
+  }
+
+  menus.push({
+    id: 'extra',
+    label: 'Dominio Extra',
+    symbol: '📚',
+    tooltip: 'Catálogos maestros: normas, requisitos ltree, sectores IAF y metodologías',
+    items: [
+      {
+        id: 'standards',
+        label: 'ISO Standards',
+        symbol: '📘',
+        tooltip: 'Esquemas y normas certificables ISO',
+      },
+      {
+        id: 'requirements',
+        label: 'LTREE Requirements',
+        symbol: '🌳',
+        tooltip: 'Jerarquía de cláusulas y sub-requisitos normativos',
+      },
+      {
+        id: 'iaf',
+        label: 'IAF Sectors',
+        symbol: '🏭',
+        tooltip: 'Sectores técnicos de acreditación IAF',
+      },
+      {
+        id: 'catalogs',
+        label: 'Statuses & Methodologies',
+        symbol: '🏷️',
+        tooltip: 'Estatus operativos, tipos de auditoría y metodologías',
+      },
+    ],
+  });
+
+  return menus;
+}
+
+export function canAccessRoute(
+  profile: UserProfile | null | undefined,
+  route: ActiveRoute
+): boolean {
+  if (!profile) return false;
+  if (route === 'dashboard') return true;
+  if (route === 'approvals' || route === 'database') {
+    return evaluateAdminAccess(profile).allowed;
+  }
+  return getVisibleDomainMenus(profile).some((menu) => menu.id === route);
+}
+
 /**
  * Verifies that the authenticated user has an APPROVED ADMIN profile.
  */

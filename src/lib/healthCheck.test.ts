@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  canAccessRoute,
   canModifyProfileRole,
   canModifyProfileStatus,
   evaluateAdminAccess,
   extractSupabaseProjectRef,
   filterProfilesByStatus,
   formatResetSummary,
+  getRoleVisualMeta,
+  getStatusVisualMeta,
+  getVisibleDomainMenus,
   isValidUserRole,
   shouldUpdateProfileRole,
   sortSqlFiles,
@@ -65,6 +69,59 @@ test('evaluateAdminAccess allows only APPROVED ADMIN profiles', () => {
     }).allowed,
     false
   );
+});
+
+test('role and status visual metadata include required symbols and tooltips', () => {
+  assert.equal(getRoleVisualMeta('ADMIN').symbol, '🛡️');
+  assert.equal(getRoleVisualMeta('AUDITOR').symbol, '📋');
+  assert.equal(getStatusVisualMeta('APPROVED').symbol, '✓');
+  assert.equal(getStatusVisualMeta('REJECTED').symbol, '❌');
+  assert.match(getStatusVisualMeta('APPROVED').tooltip, /APPROVED/);
+  assert.match(getRoleVisualMeta('WORKER').tooltip, /WORKER/);
+});
+
+test('getVisibleDomainMenus and canAccessRoute enforce role and approval boundaries', () => {
+  const pendingAdmin: UserProfile = {
+    id: 'p1',
+    nombre: 'Pending',
+    role: 'ADMIN',
+    status: 'PENDING',
+  };
+  assert.equal(getVisibleDomainMenus(pendingAdmin).length, 0);
+  assert.equal(canAccessRoute(pendingAdmin, 'auditorias'), false);
+  assert.equal(canAccessRoute(pendingAdmin, 'dashboard'), true);
+
+  const approvedAuditor: UserProfile = {
+    id: 'a1',
+    nombre: 'Auditor',
+    role: 'AUDITOR',
+    status: 'APPROVED',
+  };
+  const auditorDomains = getVisibleDomainMenus(approvedAuditor).map((m) => m.id);
+  assert.deepEqual(auditorDomains, ['auditorias', 'extra']);
+  assert.equal(canAccessRoute(approvedAuditor, 'certificacion'), false);
+  assert.equal(canAccessRoute(approvedAuditor, 'approvals'), false);
+
+  const approvedClient: UserProfile = {
+    id: 'c1',
+    nombre: 'Client',
+    role: 'CLIENT',
+    status: 'APPROVED',
+  };
+  const clientDomains = getVisibleDomainMenus(approvedClient).map((m) => m.id);
+  assert.deepEqual(clientDomains, ['auditorias', 'certificacion', 'extra']);
+  const certMenu = getVisibleDomainMenus(approvedClient).find((m) => m.id === 'certificacion');
+  assert.equal(certMenu?.items.some((i) => i.id === 'shifts'), false);
+
+  const approvedAdmin: UserProfile = {
+    id: 'ad1',
+    nombre: 'Admin',
+    role: 'ADMIN',
+    status: 'APPROVED',
+  };
+  assert.equal(canAccessRoute(approvedAdmin, 'approvals'), true);
+  assert.equal(canAccessRoute(approvedAdmin, 'database'), true);
+  assert.equal(canAccessRoute(approvedAdmin, 'certificacion'), true);
 });
 
 test('filterProfilesByStatus filters pending, approved, rejected, and all profiles', () => {
