@@ -28,7 +28,33 @@ loadJsonFallbackConfig(path.resolve(__dirname, 'supabase.config.json'));
 dotenv.config({ path: path.resolve(__dirname, 'supabase.env') });
 dotenv.config({ path: path.resolve(__dirname, '.env'), override: true });
 
-const PORT = Number(process.env.PORT || 3000);
+function resolvePort(): number {
+  const portArgIndex = process.argv.indexOf('--port');
+  if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
+    const val = Number(process.argv[portArgIndex + 1]);
+    if (!isNaN(val) && val > 0) return val;
+  }
+  // If running in development (e.g. tsx server.ts / dev script), always use 3000
+  // because nginx is already running on port 8080 in the container environment
+  const isStartScript = process.env.npm_lifecycle_event === 'start';
+  const isProd = process.env.NODE_ENV === 'production' && isStartScript;
+  if (!isProd) {
+    return 3000;
+  }
+  const envPort = Number(process.env.PORT);
+  return !isNaN(envPort) && envPort > 0 ? envPort : 3000;
+}
+
+function resolveHost(): string {
+  const hostArgIndex = process.argv.indexOf('--host');
+  if (hostArgIndex !== -1 && process.argv[hostArgIndex + 1]) {
+    return process.argv[hostArgIndex + 1];
+  }
+  return '0.0.0.0';
+}
+
+const PORT = resolvePort();
+const HOST = resolveHost();
 const QUERIES_DIR = path.resolve(__dirname, 'public', 'supabase', 'queries');
 
 interface ExecutedScript {
@@ -224,8 +250,16 @@ async function createServer(): Promise<void> {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server listening on http://0.0.0.0:${PORT}`);
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`Server listening on http://${HOST}:${PORT}`);
+  });
+
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use by another process.`);
+    } else {
+      console.error('Server error:', err);
+    }
   });
 }
 
