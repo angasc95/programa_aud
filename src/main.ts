@@ -316,16 +316,23 @@ function parseHashRoute(): { route: ActiveRoute; subview: string | null } {
   return { route: 'dashboard', subview: null };
 }
 
-function syncUrlHash(route: ActiveRoute, subview: string | null): void {
+function syncUrlHash(route: ActiveRoute, subview: string | null, replace = false): void {
   try {
     const target = subview ? `#/${route}/${subview}` : `#/${route}`;
     if (window.location.hash !== target) {
-      window.history.pushState(null, '', target);
+      if (replace) {
+        window.history.replaceState(null, '', target);
+      } else {
+        window.history.pushState(null, '', target);
+      }
     }
   } catch {
     // ignore
   }
 }
+
+let isSigningOut = false;
+let activeSessionLoadKey: string | null = null;
 
 const state: AppState = {
   booting: true,
@@ -1350,14 +1357,17 @@ async function handleSignUp(
   render();
 }
 
-async function handleSignOut(): Promise<void> {
-  await supabase.auth.signOut();
+function resetClientSessionState(): void {
+  const hadSession =
+    state.booting || state.user !== null || state.profile !== null;
+  state.booting = false;
+  activeSessionLoadKey = null;
   state.user = null;
   state.profile = null;
   state.activeRoute = 'dashboard';
   state.activeSubSection = null;
   state.openMenu = null;
-  syncUrlHash('dashboard', null);
+  syncUrlHash('dashboard', null, true);
   state.approvals.profiles = [];
   state.dbCheck = {
     checks: createInitialChecks(),
@@ -1397,7 +1407,22 @@ async function handleSignOut(): Promise<void> {
     resettingDb: false,
     resetErrorMessage: null,
   };
-  render();
+  if (hadSession) {
+    render();
+  }
+}
+
+async function handleSignOut(): Promise<void> {
+  if (isSigningOut) return;
+  isSigningOut = true;
+  try {
+    resetClientSessionState();
+    await supabase.auth.signOut({ scope: 'local' });
+  } catch (err) {
+    console.warn('Error during signOut cleanup:', err);
+  } finally {
+    isSigningOut = false;
+  }
 }
 
 async function handleResetDatabase(): Promise<void> {
@@ -1455,50 +1480,64 @@ async function handleResetDatabase(): Promise<void> {
 async function loadUserSession(user: User | null): Promise<void> {
   state.booting = false;
   if (!user) {
+    activeSessionLoadKey = null;
     state.user = null;
     state.profile = null;
     render();
     return;
   }
 
-  const { data: profileData, error } = await supabase
-    .from('profiles')
-    .select('id, nombre, role, status, created_at')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  if (error || !profileData) {
-    state.user = user;
-    state.profile = {
-      id: user.id,
-      nombre: (user.user_metadata?.nombre as string | undefined) || user.email || 'User',
-      role: ((user.user_metadata?.role as UserRole | undefined) || 'CLIENT'),
-      status: 'PENDING',
-    };
-  } else {
-    state.user = user;
-    state.profile = profileData as UserProfile;
+  if (activeSessionLoadKey === user.id || state.user?.id === user.id) {
+    return;
   }
+  activeSessionLoadKey = user.id;
 
-  const initialNav = parseHashRoute();
-  if (canAccessRoute(state.profile, initialNav.route)) {
-    state.activeRoute = initialNav.route;
-    state.activeSubSection = initialNav.subview;
-  } else {
-    state.activeRoute = 'dashboard';
-    state.activeSubSection = null;
-  }
-  syncUrlHash(state.activeRoute, state.activeSubSection);
-  state.openMenu = null;
-  render();
+  try {
+    const { data: profileData, error } = await supabase
+      .from('profiles')
+      .select('id, nombre, role, status, created_at')
+      .eq('id', user.id)
+      .maybeSingle();
 
-  if (isApprovedAdmin()) {
-    void loadApprovalProfiles();
-  }
+    if (isSigningOut) return;
 
-  if (state.profile?.status === 'APPROVED') {
-    void loadLiveCertificates();
-    void loadDomainData();
+    if (error || !profileData) {
+      state.user = user;
+      state.profile = {
+        id: user.id,
+        nombre: (user.user_metadata?.nombre as string | undefined) || user.email || 'User',
+        role: ((user.user_metadata?.role as UserRole | undefined) || 'CLIENT'),
+        status: 'PENDING',
+      };
+    } else {
+      state.user = user;
+      state.profile = profileData as UserProfile;
+    }
+
+    const initialNav = parseHashRoute();
+    if (canAccessRoute(state.profile, initialNav.route)) {
+      state.activeRoute = initialNav.route;
+      state.activeSubSection = initialNav.subview;
+    } else {
+      state.activeRoute = 'dashboard';
+      state.activeSubSection = null;
+    }
+    syncUrlHash(state.activeRoute, state.activeSubSection, true);
+    state.openMenu = null;
+    render();
+
+    if (isApprovedAdmin()) {
+      void loadApprovalProfiles();
+    }
+
+    if (state.profile?.status === 'APPROVED') {
+      void loadLiveCertificates();
+      void loadDomainData();
+    }
+  } finally {
+    if (activeSessionLoadKey === user.id) {
+      activeSessionLoadKey = null;
+    }
   }
 }
 
@@ -2291,9 +2330,12 @@ window.addEventListener('popstate', () => {
 // Supabase Auth State Change Listener
 supabase.auth.onAuthStateChange((event, session) => {
   if (event === 'SIGNED_OUT') {
-    void handleSignOut();
-  } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-    if (session?.user && (!state.user || state.user.id !== session.user.id)) {
+    resetClientSessionState();
+  } else if (
+    (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') &&
+    !isSigningOut
+  ) {
+    if (session?.user && state.user?.id !== session.user.id) {
       void loadUserSession(session.user);
     }
   }
@@ -2304,8 +2346,18 @@ async function init(): Promise<void> {
   state.activeRoute = initialNav.route;
   state.activeSubSection = initialNav.subview;
   render();
-  const { data } = await supabase.auth.getSession();
-  await loadUserSession(data.session?.user ?? null);
+  try {
+    const { data } = await supabase.auth.getSession();
+    if (!state.user && !isSigningOut) {
+      await loadUserSession(data.session?.user ?? null);
+    }
+  } catch (err) {
+    console.warn('Failed restoring initial session:', err);
+    state.booting = false;
+    state.user = null;
+    state.profile = null;
+    render();
+  }
 }
 
 void init();

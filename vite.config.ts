@@ -1,7 +1,22 @@
 import { defineConfig, loadEnv } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 import dotenv from 'dotenv';
+import fs from 'node:fs';
 import path from 'node:path';
+
+try {
+  const jsonConfigPath = path.resolve(process.cwd(), 'supabase.config.json');
+  if (fs.existsSync(jsonConfigPath)) {
+    const parsed = JSON.parse(fs.readFileSync(jsonConfigPath, 'utf8')) as Record<string, unknown>;
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === 'string' && value.trim() && !process.env[key]) {
+        process.env[key] = value.trim();
+      }
+    }
+  }
+} catch {
+  // ignore
+}
 
 dotenv.config({ path: path.resolve(process.cwd(), 'supabase.env') });
 dotenv.config({ override: true });

@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import fsSync from 'node:fs';
 import dotenv from 'dotenv';
 import fs from 'node:fs/promises';
 import express from 'express';
@@ -9,6 +10,21 @@ import { Client as PgClient } from 'pg';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function loadJsonFallbackConfig(filePath: string): void {
+  try {
+    if (!fsSync.existsSync(filePath)) return;
+    const parsed = JSON.parse(fsSync.readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === 'string' && value.trim() && !process.env[key]) {
+        process.env[key] = value.trim();
+      }
+    }
+  } catch {
+    // ignore malformed optional config
+  }
+}
+
+loadJsonFallbackConfig(path.resolve(__dirname, 'supabase.config.json'));
 dotenv.config({ path: path.resolve(__dirname, 'supabase.env') });
 dotenv.config({ path: path.resolve(__dirname, '.env'), override: true });
 
