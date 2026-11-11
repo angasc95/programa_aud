@@ -1,14 +1,17 @@
-import dotenv from 'dotenv';
-dotenv.config({ override: true });
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
+import fs from 'node:fs/promises';
 import express from 'express';
 import type { Request, Response } from 'express';
 import { Client as PgClient } from 'pg';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, 'supabase.env') });
+dotenv.config({ path: path.resolve(__dirname, '.env'), override: true });
+
 const PORT = Number(process.env.PORT || 3000);
 const QUERIES_DIR = path.resolve(__dirname, 'public', 'supabase', 'queries');
 
@@ -78,12 +81,12 @@ async function runAllQueriesInOrder(): Promise<{
   const projectRef = extractProjectRef(supabaseUrl);
 
   if (!projectRef) {
-    throw new Error('VITE_SUPABASE_URL is missing or invalid in .env.');
+    throw new Error('VITE_SUPABASE_URL is missing or invalid in .env / supabase.env.');
   }
 
   if (!supabaseToken && !databaseKey) {
     throw new Error(
-      'Missing Supabase database credentials in .env (VITE_SUPABASE_TOKEN or VITE_SUPABASE_DATABASE_KEY).'
+      'Missing Supabase database credentials in .env / supabase.env (VITE_SUPABASE_TOKEN or VITE_SUPABASE_DATABASE_KEY).'
     );
   }
 
