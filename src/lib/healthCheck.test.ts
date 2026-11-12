@@ -192,6 +192,18 @@ test('getVisibleDomainMenus and canAccessRoute enforce role and approval boundar
   assert.equal(canAccessRoute(approvedAdmin, 'approvals'), true);
   assert.equal(canAccessRoute(approvedAdmin, 'database'), true);
   assert.equal(canAccessRoute(approvedAdmin, 'certificacion'), true);
+
+  const approvedWorker: UserProfile = {
+    id: 'w1',
+    nombre: 'Worker',
+    role: 'WORKER',
+    status: 'APPROVED',
+  };
+  assert.equal(canAccessRoute(approvedWorker, 'approvals'), true);
+  assert.equal(canAccessRoute(approvedWorker, 'database'), false);
+  assert.equal(canAccessRoute(approvedWorker, 'certificacion'), true);
+  assert.equal(canAccessRoute(approvedClient, 'approvals'), false);
+  assert.equal(canAccessRoute(approvedClient, 'database'), false);
 });
 
 test('filterProfilesByStatus filters pending, approved, rejected, and all profiles', () => {

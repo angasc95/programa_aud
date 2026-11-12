@@ -427,7 +427,10 @@ export function canAccessRoute(
   if (!profile) return false;
   if (route === 'dashboard') return true;
   if (route === 'drilldown') return profile.status === 'APPROVED';
-  if (route === 'approvals' || route === 'database') {
+  if (route === 'approvals') {
+    return profile.status === 'APPROVED' && (profile.role === 'ADMIN' || profile.role === 'WORKER');
+  }
+  if (route === 'database') {
     return evaluateAdminAccess(profile).allowed;
   }
   return getVisibleDomainMenus(profile).some((menu) => menu.id === route);

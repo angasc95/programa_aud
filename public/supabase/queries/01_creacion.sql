@@ -536,6 +536,9 @@ CREATE TRIGGER audit_sitio_trigger AFTER INSERT OR UPDATE OR DELETE ON public.si
 DROP TRIGGER IF EXISTS audit_proceso_trigger ON public.proceso;
 CREATE TRIGGER audit_proceso_trigger AFTER INSERT OR UPDATE OR DELETE ON public.proceso FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
 
+DROP TRIGGER IF EXISTS audit_turno_trigger ON public.turno;
+CREATE TRIGGER audit_turno_trigger AFTER INSERT OR UPDATE OR DELETE ON public.turno FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
 DROP TRIGGER IF EXISTS audit_auditoria_trigger ON public.auditoria;
 CREATE TRIGGER audit_auditoria_trigger AFTER INSERT OR UPDATE OR DELETE ON public.auditoria FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
 

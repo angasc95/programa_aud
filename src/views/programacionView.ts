@@ -4,6 +4,10 @@ import type { CertificateRecord } from '../lib/searchControls';
 import { sortSitesWithPrincipalFirst } from '../lib/multisiteSampling';
 import type { AuditorDetailEntity } from '../lib/competencyMatrix';
 import {
+  canEditAuditScheduleOrTeam,
+  canMutateAuditExecution,
+} from '../lib/accessControl';
+import {
   filterAndSortProgramacionAudits,
   getAuditStatusVisualStyle,
   getMethodologyVisualStyle,
@@ -45,7 +49,7 @@ function renderProgramacionDirectoryView(
   certificates: CertificateRecord[],
   loading: boolean
 ): string {
-  const canPlan = ['ADMIN', 'WORKER'].includes(profile.role);
+  const canPlan = canEditAuditScheduleOrTeam(profile);
 
   const filtered = filterAndSortProgramacionAudits(allAudits, {
     query: state.query,
@@ -673,8 +677,9 @@ function renderProgramacionDetailView(
   audit: ProgramacionAuditEntity,
   allAuditors: AuditorDetailEntity[]
 ): string {
-  const canEdit = ['ADMIN', 'WORKER', 'AUDITOR'].includes(profile.role);
-  const canAssignTeam = ['ADMIN', 'WORKER'].includes(profile.role);
+  const canEditSchedule = canEditAuditScheduleOrTeam(profile);
+  const canAssignTeam = canEditSchedule;
+  const canEditMatrix = canMutateAuditExecution(audit, profile);
   const mod = getModalityVisualStyle(audit.tipo_auditoria);
   const met = getMethodologyVisualStyle(audit.metodologia);
   const st = getAuditStatusVisualStyle(audit.estatus);
@@ -692,9 +697,9 @@ function renderProgramacionDetailView(
   if (activeTab === 'equipo') {
     tabContentHtml = renderTeamChildTab(audit, allAuditors, canAssignTeam, state.isAddingTeamMember);
   } else if (activeTab === 'muestreo') {
-    tabContentHtml = renderSamplingChildTab(audit, sortedSites, canEdit);
+    tabContentHtml = renderSamplingChildTab(audit, sortedSites, canEditSchedule);
   } else {
-    tabContentHtml = renderVerificationMatrixTab(audit, canEdit);
+    tabContentHtml = renderVerificationMatrixTab(audit, canEditMatrix);
   }
 
   return `
@@ -824,7 +829,7 @@ function renderProgramacionDetailView(
             Atributos Directos de Planificación
           </h3>
           ${
-            canEdit && !state.isEditingAttributes
+            canEditSchedule && !state.isEditingAttributes
               ? `
                 <button
                   type="button"
@@ -850,7 +855,7 @@ function renderProgramacionDetailView(
         }
 
         ${
-          state.isEditingAttributes && canEdit
+          state.isEditingAttributes && canEditSchedule
             ? renderEditAuditAttributesForm(audit, allAuditors)
             : `
               <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

@@ -71,7 +71,7 @@ export function renderDashboardView(
     statusNotice = `
       <div class="p-4 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 leading-relaxed">
         <span class="font-semibold block mb-1">Aprobación administrativa pendiente</span>
-        Su solicitud de cuenta con rol <span class="font-semibold">${escapeHtml(profile.role)}</span> está en espera de revisión por un administrador del sistema.
+        Su solicitud de cuenta está en espera de revisión y autorización por un administrador del sistema antes de habilitar los módulos operativos.
       </div>
     `;
   } else if (profile.status === 'REJECTED') {
@@ -171,13 +171,19 @@ export function renderDashboardView(
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div class="space-y-1">
             <div class="flex flex-wrap items-center gap-2">
-              <span
-                title="${escapeHtml(roleMeta.tooltip)}"
-                class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-semibold ${roleMeta.badgeClass}"
-              >
-                <span aria-hidden="true">${roleMeta.symbol}</span>
-                <span>${escapeHtml(roleMeta.label)}</span>
-              </span>
+              ${
+                profile.status === 'APPROVED'
+                  ? `
+                    <span
+                      title="${escapeHtml(roleMeta.tooltip)}"
+                      class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-semibold ${roleMeta.badgeClass}"
+                    >
+                      <span aria-hidden="true">${roleMeta.symbol}</span>
+                      <span>${escapeHtml(roleMeta.label)}</span>
+                    </span>
+                  `
+                  : ''
+              }
               <span
                 title="${escapeHtml(statusMeta.tooltip)}"
                 class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-semibold ${statusMeta.badgeClass}"
@@ -195,16 +201,22 @@ export function renderDashboardView(
           </div>
 
           <!-- Shortcuts or quick actions -->
-          <div class="flex items-center gap-2 self-start sm:self-auto">
-            <button
-              type="button"
-              data-nav="database"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
-            >
-              <span>📊</span>
-              <span>Estado del Sistema</span>
-            </button>
-          </div>
+          ${
+            profile.status === 'APPROVED' && profile.role === 'ADMIN'
+              ? `
+                <div class="flex items-center gap-2 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    data-nav="database"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    <span>📊</span>
+                    <span>Estado del Sistema</span>
+                  </button>
+                </div>
+              `
+              : ''
+          }
         </div>
 
         <div class="pt-3 border-t border-slate-100">
