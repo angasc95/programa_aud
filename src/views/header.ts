@@ -14,6 +14,7 @@ export interface HeaderOptions {
   profile: UserProfile | null;
   email: string | null;
   isAdmin: boolean;
+  canViewApprovals?: boolean;
   activeRoute: ActiveRoute;
   activeSubSection: string | null;
   pendingCount: number;
@@ -31,6 +32,7 @@ export function renderHeader(opts: HeaderOptions): string {
     profile,
     email,
     isAdmin,
+    canViewApprovals = false,
     activeRoute,
     activeSubSection,
     pendingCount,
@@ -154,7 +156,10 @@ export function renderHeader(opts: HeaderOptions): string {
       `
       : '';
 
-  const adminItems = isAdmin
+  const showStaffApprovals =
+    profile.status === 'APPROVED' && (isAdmin || canViewApprovals);
+
+  const adminItems = showStaffApprovals
     ? `
       <div class="py-1 border-b border-slate-100">
         <button
@@ -179,7 +184,7 @@ export function renderHeader(opts: HeaderOptions): string {
           role="menuitem"
           data-nav="approvals"
           data-nav-reset="true"
-          title="Panel de Aprobaciones de Usuarios"
+          title="${isAdmin ? 'Panel de Aprobaciones de Usuarios' : 'Consulta de Usuarios y Aprobaciones (Solo lectura)'}"
           class="w-full text-left px-4 py-2 text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer whitespace-nowrap ${
             activeRoute === 'approvals'
               ? 'bg-slate-100 font-semibold text-slate-900'
@@ -188,7 +193,7 @@ export function renderHeader(opts: HeaderOptions): string {
         >
           <span class="inline-flex items-center gap-2">
             <span aria-hidden="true">✅</span>
-            <span>Panel Aprobaciones</span>
+            <span>${isAdmin ? 'Panel Aprobaciones' : 'Usuarios (Solo lectura)'}</span>
           </span>
           ${
             pendingCount > 0
@@ -196,23 +201,29 @@ export function renderHeader(opts: HeaderOptions): string {
               : ''
           }
         </button>
-        <button
-          type="button"
-          role="menuitem"
-          data-nav="database"
-          data-nav-reset="true"
-          title="Estado y conectividad de base de datos"
-          class="w-full text-left px-4 py-2 text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer whitespace-nowrap ${
-            activeRoute === 'database'
-              ? 'bg-slate-100 font-semibold text-slate-900'
-              : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
-          }"
-        >
-          <span class="inline-flex items-center gap-2">
-            <span aria-hidden="true">🩺</span>
-            <span>Estado DB</span>
-          </span>
-        </button>
+        ${
+          isAdmin
+            ? `
+              <button
+                type="button"
+                role="menuitem"
+                data-nav="database"
+                data-nav-reset="true"
+                title="Estado y conectividad de base de datos"
+                class="w-full text-left px-4 py-2 text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer whitespace-nowrap ${
+                  activeRoute === 'database'
+                    ? 'bg-slate-100 font-semibold text-slate-900'
+                    : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                }"
+              >
+                <span class="inline-flex items-center gap-2">
+                  <span aria-hidden="true">🩺</span>
+                  <span>Estado DB</span>
+                </span>
+              </button>
+            `
+            : ''
+        }
       </div>
     `
     : '';
@@ -253,7 +264,7 @@ export function renderHeader(opts: HeaderOptions): string {
               </div>
             </div>
             ${
-              isAdmin && pendingCount > 0
+              showStaffApprovals && pendingCount > 0
                 ? `<span title="${pendingCount} solicitudes pendientes" class="inline-flex items-center justify-center min-w-4 px-1 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-bold shrink-0">${pendingCount}</span>`
                 : ''
             }

@@ -415,6 +415,13 @@ CREATE POLICY "comentarios_auditoria_write_worker_or_auditor" ON public.comentar
     USING (public.is_approved_worker() OR public.is_assigned_auditor(id_auditoria))
     WITH CHECK (public.is_approved_worker() OR public.is_assigned_auditor(id_auditoria));
 
--- Políticas para AUDIT_LOG (Acceso de lectura forense para ADMIN y WORKER)
+-- Políticas para AUDIT_LOG (Acceso de lectura forense para ADMIN, WORKER y AUDITOR asignado)
 CREATE POLICY "audit_log_select_authorized" ON public.audit_log FOR SELECT TO authenticated
-    USING (public.is_approved_worker());
+    USING (
+        public.is_approved_worker() OR
+        (table_name = 'auditoria' AND public.is_assigned_auditor(record_id)) OR
+        (table_name = 'hallazgo' AND EXISTS (
+            SELECT 1 FROM public.hallazgo h
+            WHERE h.id = audit_log.record_id AND public.is_assigned_auditor(h.id_auditoria)
+        ))
+    );

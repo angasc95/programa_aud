@@ -18,6 +18,7 @@ export interface ApprovalsViewState {
   errorMessage: string | null;
   successMessage: string | null;
   currentAdminId: string;
+  readOnly?: boolean;
 }
 
 function renderStatusText(status: UserStatus): string {
@@ -91,10 +92,13 @@ export function renderApprovalsView(state: ApprovalsViewState): string {
     bodyHtml = filtered
       .map((item) => {
         const isUpdating = state.updatingId === item.id;
-        const canModify = canModifyProfileStatus(item.id, state.currentAdminId);
-        const canChangeRole = canModifyProfileRole(item.id, state.currentAdminId, item.status);
+        const canModify = !state.readOnly && canModifyProfileStatus(item.id, state.currentAdminId);
+        const canChangeRole =
+          !state.readOnly && canModifyProfileRole(item.id, state.currentAdminId, item.status);
 
-        let actions = `<span class="text-xs text-slate-400 whitespace-nowrap">Current account</span>`;
+        let actions = state.readOnly
+          ? `<span class="text-xs text-slate-400 whitespace-nowrap">Solo lectura</span>`
+          : `<span class="text-xs text-slate-400 whitespace-nowrap">Current account</span>`;
         if (canModify) {
           const roleSelect = canChangeRole
             ? `<label class="inline-flex items-center gap-1.5 text-xs text-slate-500">
@@ -181,9 +185,20 @@ export function renderApprovalsView(state: ApprovalsViewState): string {
       <section class="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
         <div class="p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div class="space-y-1">
-            <h1 class="text-xl font-bold tracking-tight text-slate-900">User Approvals</h1>
+            <div class="flex items-center gap-2 flex-wrap">
+              <h1 class="text-xl font-bold tracking-tight text-slate-900">User Approvals</h1>
+              ${
+                state.readOnly
+                  ? `<span class="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-semibold">Solo lectura (WORKER)</span>`
+                  : ''
+              }
+            </div>
             <p class="text-xs text-slate-500">
-              Approve, reject, or manage roles for user accounts.
+              ${
+                state.readOnly
+                  ? 'Consulta de solicitudes y cuentas registradas. Solo un Administrador puede aprobar, rechazar o cambiar roles.'
+                  : 'Approve, reject, or manage roles for user accounts.'
+              }
             </p>
           </div>
 
