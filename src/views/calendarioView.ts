@@ -1,22 +1,29 @@
 import { escapeHtml } from '../lib/html';
 import type { UserProfile } from '../lib/healthCheck';
+import type { AuditorDetailEntity } from '../lib/competencyMatrix';
 import {
-  type AuditEventEntity,
-  type AuditorScheduleConflict,
-  getModalityVisual,
-  getMethodologyVisual,
-  getAuditStatusVisual,
-  detectAuditorScheduleConflicts,
-} from '../lib/auditDomain';
+  buildCalendarMonthGrid,
+  detectAuditorConflicts,
+  filterCalendarAudits,
+  formatIsoDateParts,
+  getAuditStatusVisualStyle,
+  getMethodologyVisualStyle,
+  getModalityVisualStyle,
+  getQuarterMonthsForMonth,
+  type AuditScheduleConflict,
+  type CalendarioViewState,
+  type CalendarDisplayMode,
+  type ProgramacionAuditEntity,
+} from '../lib/auditExecution';
 
-export interface CalendarioViewState {
-  calendarMonth: number; // 0 to 11 (e.g. 10 = Noviembre)
-  calendarYear: number; // e.g. 2024
-  calendarViewMode: 'month' | 'timeline';
-  filterAuditor: string;
-  filterStandard: string;
-  filterMethodology: string;
-  drawerAuditId: string | null;
+export type { CalendarioViewState, CalendarDisplayMode };
+
+export interface CalendarioViewProps {
+  profile: UserProfile;
+  state: CalendarioViewState;
+  audits: ProgramacionAuditEntity[];
+  auditors: AuditorDetailEntity[];
+  standards: Array<{ norma: string }>;
 }
 
 const MONTH_NAMES_ES = [
@@ -34,168 +41,241 @@ const MONTH_NAMES_ES = [
   'Diciembre',
 ];
 
-const WEEKDAY_NAMES_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+const WEEKDAYS_ES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
-export function renderCalendarioView(
-  profile: UserProfile,
-  allAudits: AuditEventEntity[],
-  state: CalendarioViewState
-): string {
-  // Conflict detection
-  const conflicts: AuditorScheduleConflict[] = detectAuditorScheduleConflicts(allAudits);
+const GRID_COLS_BY_DAYS: Record<number, string> = {
+  28: 'grid-cols-[repeat(28,minmax(0,1fr))]',
+  29: 'grid-cols-[repeat(29,minmax(0,1fr))]',
+  30: 'grid-cols-[repeat(30,minmax(0,1fr))]',
+  31: 'grid-cols-[repeat(31,minmax(0,1fr))]',
+};
 
-  // Apply filters
-  const filteredAudits = allAudits.filter((audit) => {
-    if (state.filterAuditor && state.filterAuditor !== 'ALL') {
-      const isLead =
-        audit.auditor_lider_id === state.filterAuditor ||
-        audit.auditor_lider_nombre.toLowerCase().includes(state.filterAuditor.toLowerCase());
-      const inTeam = audit.equipo.some(
-        (m) =>
-          m.id_auditor === state.filterAuditor ||
-          m.nombre.toLowerCase().includes(state.filterAuditor.toLowerCase())
-      );
-      if (!isLead && !inTeam) return false;
-    }
+const COL_START_CLASSES: Record<number, string> = {
+  1: 'col-start-1',
+  2: 'col-start-2',
+  3: 'col-start-3',
+  4: 'col-start-4',
+  5: 'col-start-5',
+  6: 'col-start-6',
+  7: 'col-start-7',
+  8: 'col-start-8',
+  9: 'col-start-9',
+  10: 'col-start-10',
+  11: 'col-start-11',
+  12: 'col-start-12',
+  13: 'col-start-13',
+  14: 'col-start-14',
+  15: 'col-start-15',
+  16: 'col-start-16',
+  17: 'col-start-17',
+  18: 'col-start-18',
+  19: 'col-start-19',
+  20: 'col-start-20',
+  21: 'col-start-21',
+  22: 'col-start-22',
+  23: 'col-start-23',
+  24: 'col-start-24',
+  25: 'col-start-25',
+  26: 'col-start-26',
+  27: 'col-start-27',
+  28: 'col-start-28',
+  29: 'col-start-29',
+  30: 'col-start-30',
+  31: 'col-start-31',
+};
 
-    if (state.filterStandard && state.filterStandard !== 'ALL') {
-      if (!audit.norma_codigo.toLowerCase().includes(state.filterStandard.toLowerCase())) {
-        return false;
-      }
-    }
+const COL_SPAN_CLASSES: Record<number, string> = {
+  1: 'col-span-1',
+  2: 'col-span-2',
+  3: 'col-span-3',
+  4: 'col-span-4',
+  5: 'col-span-5',
+  6: 'col-span-6',
+  7: 'col-span-7',
+  8: 'col-span-8',
+  9: 'col-span-9',
+  10: 'col-span-10',
+  11: 'col-span-11',
+  12: 'col-span-12',
+  13: 'col-span-13',
+  14: 'col-span-14',
+  15: 'col-span-15',
+  16: 'col-span-16',
+  17: 'col-span-17',
+  18: 'col-span-18',
+  19: 'col-span-19',
+  20: 'col-span-20',
+  21: 'col-span-21',
+  22: 'col-span-22',
+  23: 'col-span-23',
+  24: 'col-span-24',
+  25: 'col-span-25',
+  26: 'col-span-26',
+  27: 'col-span-27',
+  28: 'col-span-28',
+  29: 'col-span-29',
+  30: 'col-span-30',
+  31: 'col-span-31',
+};
 
-    if (state.filterMethodology && state.filterMethodology !== 'ALL') {
-      if (audit.metodologia.toLowerCase() !== state.filterMethodology.toLowerCase()) {
-        return false;
-      }
-    }
+export function renderCalendarioView(props: CalendarioViewProps): string {
+  const { state, audits, auditors, standards } = props;
 
-    return true;
+  const filteredAudits = filterCalendarAudits(audits, {
+    auditorId: state.filterAuditorId,
+    standard: state.filterStandard,
+    methodology: state.filterMethodology,
   });
 
-  const selectedDrawerAudit = state.drawerAuditId
-    ? allAudits.find((a) => a.id === state.drawerAuditId) || null
+  const conflicts = detectAuditorConflicts(filteredAudits);
+  const conflictingAuditIds = new Set<string>();
+  for (const c of conflicts) {
+    conflictingAuditIds.add(c.audit_a_id);
+    conflictingAuditIds.add(c.audit_b_id);
+  }
+
+  const monthLabel = `${MONTH_NAMES_ES[(state.referenceMonth - 1 + 12) % 12]} ${state.referenceYear}`;
+  const quarterNum = Math.floor((state.referenceMonth - 1) / 3) + 1;
+  const periodTitle =
+    state.displayMode === 'quarter'
+      ? `Trimestre Q${quarterNum} · ${state.referenceYear}`
+      : monthLabel;
+
+  const uniqueStandards = Array.from(
+    new Set([
+      ...standards.map((s) => s.norma),
+      ...audits.map((a) => a.norma_codigo),
+    ])
+  ).sort();
+
+  const drawerAudit = state.drawerAuditId
+    ? audits.find((a) => a.id === state.drawerAuditId) || null
     : null;
 
-  const currentMonthName = MONTH_NAMES_ES[state.calendarMonth] || 'Noviembre';
-
   return `
-    <div class="space-y-6 relative">
-      <!-- Semantic Domain Header -->
-      <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div class="flex items-center gap-2">
-            <span class="text-xl">📆</span>
-            <h2 class="text-lg font-bold text-slate-900 tracking-tight">Calendario Operativo de Evaluaciones</h2>
-          </div>
-          <p class="text-xs text-slate-500 mt-0.5">
-            Cronograma mensual y matriz de asignación temporal de auditores conforme a ISO 19011:2018
-          </p>
-        </div>
-
-        <!-- View Switcher & Month Navigation -->
-        <div class="flex flex-wrap items-center gap-2.5">
-          <!-- Month Controls -->
-          <div class="inline-flex items-center rounded-lg border border-slate-200 bg-white shadow-2xs p-0.5 text-xs font-semibold">
-            <button
-              type="button"
-              data-action="prev-calendar-month"
-              class="px-2.5 py-1 hover:bg-slate-100 rounded text-slate-700 cursor-pointer"
-              title="Mes Anterior"
-            >
-              ‹
-            </button>
-            <span class="px-3 py-1 font-bold text-slate-900 min-w-36 text-center">
-              ${escapeHtml(currentMonthName)} ${state.calendarYear}
-            </span>
-            <button
-              type="button"
-              data-action="next-calendar-month"
-              class="px-2.5 py-1 hover:bg-slate-100 rounded text-slate-700 cursor-pointer"
-              title="Mes Siguiente"
-            >
-              ›
-            </button>
+    <div class="space-y-5">
+      <!-- Header & Multi-Criteria Filter Bar -->
+      <header class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs space-y-4">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div class="space-y-1">
+            <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-800 text-[11px] font-bold border border-indigo-200">
+              <span aria-hidden="true">📆</span>
+              <span>DOMINIO AUDITORÍAS · CALENDARIO OPERATIVO</span>
+            </div>
+            <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+              Calendario Operativo y Línea de Tiempo de Evaluaciones
+            </h2>
+            <p class="text-xs text-slate-500">
+              Agenda cronológica codificada por modalidad/metodología y detección de solapamientos de recursos auditores
+            </p>
           </div>
 
-          <!-- Mode Switcher: Month Grid vs Timeline -->
-          <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="group">
-            <button
-              type="button"
-              data-action="set-calendar-mode"
-              data-mode="month"
-              class="px-3 py-1 text-xs rounded-md font-semibold transition-colors cursor-pointer inline-flex items-center gap-1.5 ${
-                state.calendarViewMode === 'month'
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }"
-            >
-              <span>📅</span>
-              <span>Matriz Mensual</span>
-            </button>
-            <button
-              type="button"
-              data-action="set-calendar-mode"
-              data-mode="timeline"
-              class="px-3 py-1 text-xs rounded-md font-semibold transition-colors cursor-pointer inline-flex items-center gap-1.5 ${
-                state.calendarViewMode === 'timeline'
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }"
-            >
-              <span>📊</span>
-              <span>Línea de Tiempo / Gantt</span>
-            </button>
+          <!-- View Switcher: Mensual | Trimestral | Timeline / Gantt -->
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 shadow-2xs" role="group" aria-label="Modo de presentación del calendario">
+              <button
+                type="button"
+                data-cal-mode="month"
+                aria-pressed="${state.displayMode === 'month' ? 'true' : 'false'}"
+                class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                  state.displayMode === 'month'
+                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }"
+              >
+                <span aria-hidden="true">📅</span>
+                <span>Mensual</span>
+              </button>
+              <button
+                type="button"
+                data-cal-mode="quarter"
+                aria-pressed="${state.displayMode === 'quarter' ? 'true' : 'false'}"
+                class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                  state.displayMode === 'quarter'
+                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }"
+              >
+                <span aria-hidden="true">🗓️</span>
+                <span>Trimestral</span>
+              </button>
+              <button
+                type="button"
+                data-cal-mode="gantt"
+                aria-pressed="${state.displayMode === 'gantt' ? 'true' : 'false'}"
+                class="px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                  state.displayMode === 'gantt'
+                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }"
+              >
+                <span aria-hidden="true">📊</span>
+                <span>Timeline / Gantt</span>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Resource Conflicts Warning Banner (if any) -->
-      ${renderConflictBanner(conflicts)}
-
-      <!-- Multi-Criteria Filter Bar -->
-      <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div class="flex flex-wrap items-center gap-3">
-          <!-- Auditor Filter -->
-          <div class="flex items-center gap-1.5">
-            <span class="text-slate-500 font-semibold">Auditor:</span>
-            <select
-              id="calendarAuditorFilter"
-              data-action="change-calendar-auditor-filter"
-              class="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-800"
+        <!-- Period Navigation + Multi-Criteria Filtering Controls -->
+        <div class="pt-3 border-t border-slate-100 grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
+          <div class="lg:col-span-4 flex items-center gap-2">
+            <button
+              type="button"
+              id="calPrevPeriodBtn"
+              aria-label="Período anterior"
+              class="px-2.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer"
             >
-              <option value="ALL">Todos los auditores</option>
-              <option value="Carlos Mendoza" ${state.filterAuditor === 'Carlos Mendoza' ? 'selected' : ''}>Ing. Carlos Mendoza</option>
-              <option value="Roberto Silva" ${state.filterAuditor === 'Roberto Silva' ? 'selected' : ''}>Ing. Roberto Silva</option>
-              <option value="Ana Belén Torres" ${state.filterAuditor === 'Ana Belén Torres' ? 'selected' : ''}>Dra. Ana Belén Torres</option>
+              ← Anterior
+            </button>
+            <div class="flex-1 text-center px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900">
+              ${escapeHtml(periodTitle)}
+            </div>
+            <button
+              type="button"
+              id="calNextPeriodBtn"
+              aria-label="Período siguiente"
+              class="px-2.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 cursor-pointer"
+            >
+              Siguiente →
+            </button>
+          </div>
+
+          <div class="lg:col-span-3">
+            <label for="calFilterAuditor" class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              Auditor Líder / Equipo
+            </label>
+            <select id="calFilterAuditor" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2">
+              <option value="ALL" ${state.filterAuditorId === 'ALL' ? 'selected' : ''}>Todos los auditores (${auditors.length})</option>
+              ${auditors
+                .map(
+                  (a) =>
+                    `<option value="${escapeHtml(a.id)}" ${state.filterAuditorId === a.id ? 'selected' : ''}>${escapeHtml(a.nombre)}</option>`
+                )
+                .join('')}
             </select>
           </div>
 
-          <!-- Standard Filter -->
-          <div class="flex items-center gap-1.5">
-            <span class="text-slate-500 font-semibold">Norma ISO:</span>
-            <select
-              id="calendarStandardFilter"
-              data-action="change-calendar-standard-filter"
-              class="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-800"
-            >
-              <option value="ALL">Todas las normas</option>
-              <option value="ISO 9001" ${state.filterStandard === 'ISO 9001' ? 'selected' : ''}>ISO 9001:2015</option>
-              <option value="ISO 14001" ${state.filterStandard === 'ISO 14001' ? 'selected' : ''}>ISO 14001:2015</option>
-              <option value="ISO 45001" ${state.filterStandard === 'ISO 45001' ? 'selected' : ''}>ISO 45001:2018</option>
-              <option value="ISO/IEC 27001" ${state.filterStandard === 'ISO/IEC 27001' ? 'selected' : ''}>ISO/IEC 27001:2022</option>
+          <div class="lg:col-span-3">
+            <label for="calFilterStandard" class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              Norma ISO
+            </label>
+            <select id="calFilterStandard" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2">
+              <option value="ALL" ${state.filterStandard === 'ALL' ? 'selected' : ''}>Todas las normas</option>
+              ${uniqueStandards
+                .map(
+                  (std) =>
+                    `<option value="${escapeHtml(std)}" ${state.filterStandard === std ? 'selected' : ''}>${escapeHtml(std)}</option>`
+                )
+                .join('')}
             </select>
           </div>
 
-          <!-- Methodology Filter -->
-          <div class="flex items-center gap-1.5">
-            <span class="text-slate-500 font-semibold">Metodología:</span>
-            <select
-              id="calendarMethodologyFilter"
-              data-action="change-calendar-methodology-filter"
-              class="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-800"
-            >
-              <option value="ALL">Todas las metodologías</option>
+          <div class="lg:col-span-2">
+            <label for="calFilterMethodology" class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              Metodología
+            </label>
+            <select id="calFilterMethodology" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2">
+              <option value="ALL" ${state.filterMethodology === 'ALL' ? 'selected' : ''}>Todas</option>
               <option value="Presencial" ${state.filterMethodology === 'Presencial' ? 'selected' : ''}>Presencial</option>
               <option value="Remota" ${state.filterMethodology === 'Remota' ? 'selected' : ''}>Remota</option>
               <option value="Mixta" ${state.filterMethodology === 'Mixta' ? 'selected' : ''}>Mixta</option>
@@ -203,430 +283,493 @@ export function renderCalendarioView(
           </div>
         </div>
 
-        <div class="flex items-center gap-3">
-          <span class="text-slate-500">
-            Mostrando <strong class="text-slate-900">${filteredAudits.length}</strong> eventos
-          </span>
-          <button
-            type="button"
-            data-action="reset-calendar-filters"
-            class="text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
-          >
-            Limpiar Filtros
-          </button>
+        <!-- Color Legend -->
+        <div class="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-bold text-slate-500 uppercase tracking-wider mr-1">Leyenda:</span>
+            <span class="px-2 py-0.5 rounded bg-sky-100 text-sky-900 border border-sky-200 font-semibold">📑 Etapa 1</span>
+            <span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-900 border border-indigo-200 font-semibold">🔍 Etapa 2</span>
+            <span class="px-2 py-0.5 rounded bg-teal-100 text-teal-900 border border-teal-200 font-semibold">🔎 Seguimiento</span>
+            <span class="px-2 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-200 font-semibold">🔄 Renovación</span>
+            <span class="px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200 font-semibold">⚡ Extraordinaria</span>
+          </div>
+          <div class="text-slate-500 font-medium">
+            Mostrando <strong class="text-slate-900">${filteredAudits.length}</strong> evento(s) · Clic en cualquier auditoría para abrir detalles
+          </div>
         </div>
-      </div>
+      </header>
 
-      <!-- Main Calendar Body: Month Grid or Timeline -->
+      <!-- Resource Conflict Alert Banner -->
+      ${renderConflictBanner(conflicts)}
+
+      <!-- Primary Calendar Canvas -->
       ${
-        state.calendarViewMode === 'timeline'
-          ? renderTimelineGanttView(filteredAudits, state.calendarMonth, state.calendarYear)
-          : renderMonthGridView(filteredAudits, state.calendarMonth, state.calendarYear)
+        state.displayMode === 'gantt'
+          ? renderGanttTimelineView(filteredAudits, state.referenceYear, state.referenceMonth, conflictingAuditIds)
+          : state.displayMode === 'quarter'
+          ? renderQuarterlyGridView(filteredAudits, state.referenceYear, state.referenceMonth, conflictingAuditIds)
+          : renderMonthlyGridView(filteredAudits, state.referenceYear, state.referenceMonth, conflictingAuditIds)
       }
 
-      <!-- Quick-Access Interactive Slide-Over Event Drawer -->
-      ${renderEventDrawer(selectedDrawerAudit)}
+      <!-- Slide-Over Event Detail Drawer -->
+      ${drawerAudit ? renderCalendarEventDrawer(drawerAudit) : ''}
     </div>
   `;
 }
 
-/**
- * Render Conflict Warning Banner
- */
-function renderConflictBanner(conflicts: AuditorScheduleConflict[]): string {
+function renderConflictBanner(conflicts: AuditScheduleConflict[]): string {
   if (conflicts.length === 0) return '';
+  return `
+    <div class="bg-rose-50 border border-rose-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3" role="status">
+      <div class="flex items-start gap-2.5">
+        <span class="text-lg shrink-0" aria-hidden="true">⚠️</span>
+        <div class="text-xs space-y-1">
+          <div class="font-bold text-rose-900">
+            Conflicto de Disponibilidad de Auditor Detectado (${conflicts.length})
+          </div>
+          <ul class="space-y-0.5 text-rose-800">
+            ${conflicts
+              .map(
+                (c) => `
+                  <li>
+                    <strong>${escapeHtml(c.auditor_nombre)}</strong> presenta solapamiento entre
+                    <button type="button" data-action="open-cal-drawer" data-audit-id="${escapeHtml(c.audit_a_id)}" class="font-mono font-bold underline cursor-pointer">${escapeHtml(c.audit_a_codigo)}</button>
+                    y
+                    <button type="button" data-action="open-cal-drawer" data-audit-id="${escapeHtml(c.audit_b_id)}" class="font-mono font-bold underline cursor-pointer">${escapeHtml(c.audit_b_codigo)}</button>
+                    (${escapeHtml(c.overlap_start)} al ${escapeHtml(c.overlap_end)}, ${c.overlap_days} día(s)).
+                  </li>
+                `
+              )
+              .join('')}
+          </ul>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderMonthlyGridView(
+  audits: ProgramacionAuditEntity[],
+  year: number,
+  month: number,
+  conflictingAuditIds: Set<string>
+): string {
+  const cells = buildCalendarMonthGrid(year, month, audits);
 
   return `
-    <div class="bg-rose-50 border-2 border-rose-300 rounded-xl p-4 shadow-xs space-y-2">
-      <div class="flex items-center gap-2">
-        <span class="text-base">🚨</span>
-        <h4 class="text-xs font-bold uppercase tracking-wider text-rose-900">
-          Alerta de Conflicto de Asignación de Recursos (${conflicts.length})
-        </h4>
+    <div class="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
+      <!-- Weekday Headers -->
+      <div class="grid grid-cols-7 bg-slate-50 border-b border-slate-200">
+        ${WEEKDAYS_ES.map(
+          (day) =>
+            `<div class="px-2 py-2.5 text-center text-[11px] font-bold uppercase tracking-wider text-slate-600">${day}</div>`
+        ).join('')}
       </div>
-      <div class="space-y-1 text-xs text-rose-800">
-        ${conflicts
-          .map(
-            (c) => `
-          <div class="flex items-start gap-2 bg-white/70 p-2 rounded-lg border border-rose-200">
-            <span class="font-bold text-rose-900">•</span>
-            <div>
-              <strong>${escapeHtml(c.auditor_nombre)}:</strong> ${escapeHtml(c.descripcion)}
-              <span class="font-mono text-[11px] block text-rose-700 mt-0.5">
-                Coincidencia el día ${escapeHtml(c.fecha_conflicto)} entre ${escapeHtml(c.auditoria_a_codigo)} (${escapeHtml(c.auditoria_a_fechas)}) y ${escapeHtml(c.auditoria_b_codigo)} (${escapeHtml(c.auditoria_b_fechas)}).
-              </span>
-            </div>
-          </div>
-        `
-          )
+
+      <!-- Calendar Days Grid -->
+      <div class="grid grid-cols-7 divide-x divide-y divide-slate-100">
+        ${cells
+          .map((cell) => {
+            const bgClass = !cell.inCurrentMonth
+              ? 'bg-slate-50/70 text-slate-400'
+              : cell.isWeekend
+              ? 'bg-slate-50/40'
+              : 'bg-white';
+
+            return `
+              <div class="min-h-28 p-2 space-y-1.5 ${bgClass}">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-bold tabular-nums ${
+                    cell.inCurrentMonth ? 'text-slate-800' : 'text-slate-400'
+                  }">${cell.dayOfMonth}</span>
+                  ${
+                    cell.audits.length > 0
+                      ? `<span class="text-[10px] font-mono font-bold text-indigo-600">${cell.audits.length}</span>`
+                      : ''
+                  }
+                </div>
+
+                <div class="space-y-1">
+                  ${cell.audits
+                    .map((a) => {
+                      const mod = getModalityVisualStyle(a.tipo_auditoria);
+                      const met = getMethodologyVisualStyle(a.metodologia);
+                      const isConflict = conflictingAuditIds.has(a.id);
+                      return `
+                        <button
+                          type="button"
+                          data-action="open-cal-drawer"
+                          data-audit-id="${escapeHtml(a.id)}"
+                          title="${escapeHtml(a.codigo_auditoria)} — ${escapeHtml(a.organizacion_nombre)} (${escapeHtml(a.tipo_auditoria)} · ${escapeHtml(a.metodologia)})"
+                          class="w-full text-left px-1.5 py-1 rounded border text-[10px] leading-tight transition-colors cursor-pointer block ${
+                            mod.calendarChipClass
+                          } ${isConflict ? 'ring-2 ring-rose-500' : ''}"
+                        >
+                          <div class="flex items-center justify-between gap-1 font-mono font-bold">
+                            <span class="truncate">${escapeHtml(a.codigo_auditoria)}</span>
+                            <span aria-hidden="true">${met.symbol}</span>
+                          </div>
+                          <div class="truncate font-semibold">${escapeHtml(a.organizacion_nombre)}</div>
+                        </button>
+                      `;
+                    })
+                    .join('')}
+                </div>
+              </div>
+            `;
+          })
           .join('')}
       </div>
     </div>
   `;
 }
 
-/**
- * Monthly Grid View
- */
-function renderMonthGridView(
-  audits: AuditEventEntity[],
-  monthIndex: number,
-  year: number
+function renderQuarterlyGridView(
+  audits: ProgramacionAuditEntity[],
+  year: number,
+  month: number,
+  conflictingAuditIds: Set<string>
 ): string {
-  // Calculate days in month and starting weekday
-  const firstDay = new Date(year, monthIndex, 1);
-  const startingDayOfWeek = firstDay.getDay(); // 0 (Sun) to 6 (Sat)
-  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-
-  // Build calendar matrix cells
-  const totalCells = Math.ceil((startingDayOfWeek + daysInMonth) / 7) * 7;
-
-  let cellsHtml = '';
-
-  for (let i = 0; i < totalCells; i++) {
-    const dayNumber = i - startingDayOfWeek + 1;
-    const isCurrentMonth = dayNumber >= 1 && dayNumber <= daysInMonth;
-
-    if (!isCurrentMonth) {
-      cellsHtml += `
-        <div class="min-h-28 bg-slate-50/50 border border-slate-100 p-1.5 text-slate-300">
-          <span class="text-[11px] font-mono"></span>
-        </div>
-      `;
-      continue;
-    }
-
-    const dateStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`;
-
-    // Find audits active on this day
-    const dayAudits = audits.filter((a) => {
-      const start = a.fecha_reprogramacion || a.fecha_inicio;
-      const end = a.fecha_fin >= start ? a.fecha_fin : start;
-      return dateStr >= start && dateStr <= end;
-    });
-
-    const isToday = false; // standard view
-
-    cellsHtml += `
-      <div class="min-h-28 bg-white border border-slate-200 p-2 flex flex-col justify-between hover:bg-slate-50/80 transition-colors group">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-bold font-mono ${
-            isToday
-              ? 'w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center'
-              : 'text-slate-700'
-          }">
-            ${dayNumber}
-          </span>
-          ${
-            dayAudits.length > 0
-              ? `<span class="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded-full bg-indigo-50 text-indigo-800">
-                   ${dayAudits.length}
-                 </span>`
-              : ''
-          }
-        </div>
-
-        <!-- Audit Chips on this Day -->
-        <div class="space-y-1 my-1">
-          ${dayAudits
-            .map((audit) => {
-              const modMeta = getModalityVisual(audit.tipo_auditoria);
-              return `
-                <button
-                  type="button"
-                  data-action="open-calendar-drawer"
-                  data-audit-id="${escapeHtml(audit.id)}"
-                  title="${escapeHtml(audit.codigo_auditoria)} · ${escapeHtml(audit.organizacion_nombre)} (${escapeHtml(audit.tipo_auditoria)})"
-                  class="w-full text-left px-1.5 py-1 rounded text-[10px] font-semibold border ${modMeta.badgeClass} hover:opacity-90 transition-opacity cursor-pointer truncate block shadow-2xs"
-                >
-                  <span class="font-bold">${escapeHtml(audit.codigo_auditoria)}</span>
-                  <span class="text-[9px] block truncate text-slate-600">${escapeHtml(audit.organizacion_nombre)}</span>
-                </button>
-              `;
-            })
-            .join('')}
-        </div>
-
-        <div class="text-[9px] text-slate-400 font-mono text-right">
-          ${dayAudits.length > 0 ? `${dayAudits.map((a) => a.metodologia[0]).join('/')}` : ''}
-        </div>
-      </div>
-    `;
-  }
+  const quarterMonths = getQuarterMonthsForMonth(year, month);
 
   return `
-    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-      <!-- Weekday Headers -->
-      <div class="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-slate-600 font-semibold text-[11px] uppercase tracking-wider text-center py-2.5">
-        ${WEEKDAY_NAMES_ES.map((day) => `<div>${day}</div>`).join('')}
-      </div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      ${quarterMonths
+        .map((qm) => {
+          const monthPrefix = `${qm.year}-${String(qm.month).padStart(2, '0')}`;
+          const monthAudits = audits.filter((a) => {
+            const start = a.fecha_reprogramacion || a.fecha_inicio;
+            return start.startsWith(monthPrefix) || a.fecha_fin.startsWith(monthPrefix);
+          });
+          const cells = buildCalendarMonthGrid(qm.year, qm.month, monthAudits);
 
-      <!-- Days Grid -->
-      <div class="grid grid-cols-7">
-        ${cellsHtml}
-      </div>
+          return `
+            <section class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-3">
+              <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 class="text-sm font-bold text-slate-900">${escapeHtml(qm.label)}</h3>
+                <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 tabular-nums">
+                  ${monthAudits.length} evento(s)
+                </span>
+              </div>
+
+              <!-- Mini Month Grid -->
+              <div class="grid grid-cols-7 gap-1 text-center text-[10px]">
+                ${WEEKDAYS_ES.map((w) => `<div class="font-bold text-slate-400 py-1">${w[0]}</div>`).join('')}
+                ${cells
+                  .map((c) => {
+                    if (!c.inCurrentMonth) {
+                      return `<div class="py-1 text-slate-300">${c.dayOfMonth}</div>`;
+                    }
+                    const hasAudits = c.audits.length > 0;
+                    const firstAudit = c.audits[0];
+                    if (hasAudits && firstAudit) {
+                      const mod = getModalityVisualStyle(firstAudit.tipo_auditoria);
+                      return `
+                        <button
+                          type="button"
+                          data-action="open-cal-drawer"
+                          data-audit-id="${escapeHtml(firstAudit.id)}"
+                          title="${escapeHtml(c.audits.map((x) => `${x.codigo_auditoria} ${x.organizacion_nombre}`).join(', '))}"
+                          class="py-1 rounded font-bold border cursor-pointer ${mod.calendarChipClass}"
+                        >
+                          ${c.dayOfMonth}
+                        </button>
+                      `;
+                    }
+                    return `<div class="py-1 text-slate-600">${c.dayOfMonth}</div>`;
+                  })
+                  .join('')}
+              </div>
+
+              <!-- Month Audits List -->
+              <div class="space-y-1.5 pt-2 border-t border-slate-100">
+                ${
+                  monthAudits.length > 0
+                    ? monthAudits
+                        .map((a) => {
+                          const mod = getModalityVisualStyle(a.tipo_auditoria);
+                          const hasConf = conflictingAuditIds.has(a.id);
+                          return `
+                            <button
+                              type="button"
+                              data-action="open-cal-drawer"
+                              data-audit-id="${escapeHtml(a.id)}"
+                              class="w-full text-left p-2 rounded-lg border text-xs transition-colors cursor-pointer flex items-center justify-between gap-2 ${
+                                mod.calendarChipClass
+                              } ${hasConf ? 'ring-2 ring-rose-500' : ''}"
+                            >
+                              <div class="min-w-0">
+                                <div class="font-mono font-bold truncate">${escapeHtml(a.codigo_auditoria)} · ${escapeHtml(a.fecha_inicio)}</div>
+                                <div class="truncate font-semibold">${escapeHtml(a.organizacion_nombre)}</div>
+                              </div>
+                              <span class="shrink-0 text-[10px] font-bold">${escapeHtml(a.metodologia)}</span>
+                            </button>
+                          `;
+                        })
+                        .join('')
+                    : `<p class="text-xs text-slate-400 italic py-2 text-center">Sin auditorías en este mes</p>`
+                }
+              </div>
+            </section>
+          `;
+        })
+        .join('')}
     </div>
   `;
 }
 
-/**
- * Timeline / Gantt View for Resource Conflict Detection
- */
-function renderTimelineGanttView(
-  audits: AuditEventEntity[],
-  monthIndex: number,
-  year: number
+function renderGanttTimelineView(
+  audits: ProgramacionAuditEntity[],
+  year: number,
+  month: number,
+  conflictingAuditIds: Set<string>
 ): string {
-  // Extract distinct auditors
-  const auditorMap = new Map<string, string>();
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const gridColsClass = GRID_COLS_BY_DAYS[daysInMonth] || GRID_COLS_BY_DAYS[30];
+  const winStartStr = formatIsoDateParts(year, month, 1);
+  const winEndStr = formatIsoDateParts(year, month, daysInMonth);
+
+  // Group audits by Lead Auditor
+  const byAuditor = new Map<string, ProgramacionAuditEntity[]>();
   for (const a of audits) {
-    if (a.auditor_lider_id) {
-      auditorMap.set(a.auditor_lider_id, a.auditor_lider_nombre);
-    }
-    for (const m of a.equipo) {
-      if (m.id_auditor) {
-        auditorMap.set(m.id_auditor, m.nombre);
-      }
-    }
+    const start = a.fecha_reprogramacion || a.fecha_inicio;
+    const end = a.fecha_fin >= start ? a.fecha_fin : start;
+    if (end < winStartStr || start > winEndStr) continue;
+
+    const list = byAuditor.get(a.auditor_lider) || [];
+    list.push(a);
+    byAuditor.set(a.auditor_lider, list);
   }
 
-  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-  const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const dayNumbers = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
   return `
-    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs space-y-4 p-4">
-      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-        <div>
-          <h3 class="text-sm font-bold text-slate-900">Línea de Tiempo de Ocupación por Evaluador</h3>
-          <p class="text-xs text-slate-500">
-            Visualización longitudinal de fechas asignadas para detección de sobreposición y optimización logística
-          </p>
+    <div class="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
+      <div class="px-5 py-3 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between gap-2">
+        <div class="text-xs font-bold text-slate-800">
+          Línea de Tiempo por Auditor Líder — ${escapeHtml(MONTH_NAMES_ES[month - 1])} ${year}
         </div>
-        <div class="text-xs font-semibold text-slate-500">
-          Evaluadores Activos: <strong class="text-slate-800">${auditorMap.size}</strong>
+        <div class="text-[11px] text-slate-500">
+          Barras con borde rojo indican conflicto de agenda en fechas superpuestas
         </div>
       </div>
 
       <div class="overflow-x-auto">
-        <table class="w-full text-xs border-collapse">
-          <thead>
-            <tr class="bg-slate-50 text-slate-600 text-[10px] font-mono border-b border-slate-200">
-              <th class="py-2 px-3 text-left w-56 font-sans uppercase font-bold text-slate-700">Auditor Calificado</th>
-              ${daysArray
+        <div class="min-w-[820px]">
+          <!-- Timeline Header -->
+          <div class="grid grid-cols-12 border-b border-slate-200 bg-slate-50 text-[10px] font-bold text-slate-500">
+            <div class="col-span-3 px-4 py-2 border-r border-slate-200 uppercase tracking-wider">
+              Auditor Líder
+            </div>
+            <div class="col-span-9 grid ${gridColsClass} text-center">
+              ${dayNumbers
                 .map(
-                  (d) => `
-                <th class="py-2 px-1 text-center w-8 ${d % 2 === 0 ? 'bg-slate-100/50' : ''}">
-                  ${d}
-                </th>
-              `
+                  (d) =>
+                    `<div class="py-2 border-r border-slate-100 font-mono tabular-nums">${d}</div>`
                 )
                 .join('')}
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100">
-            ${Array.from(auditorMap.entries())
-              .map(([audId, audName]) => {
-                return `
-                  <tr class="hover:bg-slate-50/60 transition-colors">
-                    <td class="py-3 px-3 font-semibold text-slate-900 whitespace-nowrap">
-                      <div class="flex items-center gap-1.5">
-                        <span>👤</span>
-                        <span>${escapeHtml(audName)}</span>
+            </div>
+          </div>
+
+          <!-- Timeline Rows -->
+          ${
+            byAuditor.size === 0
+              ? `<div class="p-8 text-center text-xs text-slate-500">No existen eventos asignados en ${escapeHtml(MONTH_NAMES_ES[month - 1])} ${year} bajo los filtros actuales.</div>`
+              : Array.from(byAuditor.entries())
+                  .map(([auditorName, auditorAudits]) => {
+                    return `
+                      <div class="grid grid-cols-12 border-b border-slate-100 hover:bg-slate-50/40">
+                        <div class="col-span-3 px-4 py-3 border-r border-slate-200 flex flex-col justify-center">
+                          <div class="text-xs font-bold text-slate-900 truncate">${escapeHtml(auditorName)}</div>
+                          <div class="text-[10px] text-slate-500">${auditorAudits.length} evento(s) este mes</div>
+                        </div>
+
+                        <div class="col-span-9 p-2 space-y-1.5">
+                          ${auditorAudits
+                            .map((a) => {
+                              const startStr = a.fecha_reprogramacion || a.fecha_inicio;
+                              const endStr = a.fecha_fin >= startStr ? a.fecha_fin : startStr;
+                              const clampedStart = startStr < winStartStr ? winStartStr : startStr;
+                              const clampedEnd = endStr > winEndStr ? winEndStr : endStr;
+
+                              const startDay = Math.max(1, Number(clampedStart.slice(8, 10)) || 1);
+                              const endDay = Math.min(daysInMonth, Number(clampedEnd.slice(8, 10)) || startDay);
+                              const spanDays = Math.max(1, endDay - startDay + 1);
+
+                              const startCls = COL_START_CLASSES[startDay] || 'col-start-1';
+                              const spanCls = COL_SPAN_CLASSES[spanDays] || 'col-span-1';
+                              const mod = getModalityVisualStyle(a.tipo_auditoria);
+                              const hasConflict = conflictingAuditIds.has(a.id);
+
+                              return `
+                                <div class="grid ${gridColsClass} items-center">
+                                  <button
+                                    type="button"
+                                    data-action="open-cal-drawer"
+                                    data-audit-id="${escapeHtml(a.id)}"
+                                    title="${escapeHtml(a.codigo_auditoria)} · ${escapeHtml(a.organizacion_nombre)} (${escapeHtml(a.fecha_inicio)} → ${escapeHtml(a.fecha_fin)})"
+                                    class="${startCls} ${spanCls} px-2 py-1.5 rounded-md border text-[10px] font-bold truncate text-left cursor-pointer shadow-2xs transition-opacity hover:opacity-90 ${
+                                      mod.ganttBarClass
+                                    } ${hasConflict ? 'ring-2 ring-rose-500 ring-offset-1' : ''}"
+                                  >
+                                    ${hasConflict ? '⚠️ ' : ''}${escapeHtml(a.codigo_auditoria)} · ${escapeHtml(a.organizacion_nombre)}
+                                  </button>
+                                </div>
+                              `;
+                            })
+                            .join('')}
+                        </div>
                       </div>
-                    </td>
-                    ${daysArray
-                      .map((d) => {
-                        const dateStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                        // Check if this auditor has an audit on dateStr
-                        const activeAudits = audits.filter((a) => {
-                          const isAssigned =
-                            a.auditor_lider_id === audId ||
-                            a.equipo.some((m) => m.id_auditor === audId);
-                          if (!isAssigned) return false;
-                          const start = a.fecha_reprogramacion || a.fecha_inicio;
-                          const end = a.fecha_fin >= start ? a.fecha_fin : start;
-                          return dateStr >= start && dateStr <= end;
-                        });
-
-                        if (activeAudits.length === 0) {
-                          return `<td class="py-2 px-1 text-center border-l border-slate-100"></td>`;
-                        }
-
-                        const hasConflict = activeAudits.length > 1;
-
-                        return `
-                          <td class="py-1 px-0.5 text-center border-l border-slate-100">
-                            <div
-                              class="w-full h-7 rounded text-[9px] font-bold font-mono flex items-center justify-center cursor-pointer transition-all ${
-                                hasConflict
-                                  ? 'bg-rose-500 text-white animate-pulse'
-                                  : 'bg-indigo-600 text-white'
-                              }"
-                              data-action="open-calendar-drawer"
-                              data-audit-id="${escapeHtml(activeAudits[0].id)}"
-                              title="${activeAudits.map((a) => a.codigo_auditoria).join(' & ')}"
-                            >
-                              ${hasConflict ? '⚠️' : activeAudits[0].codigo_auditoria.slice(-3)}
-                            </div>
-                          </td>
-                        `;
-                      })
-                      .join('')}
-                  </tr>
-                `;
-              })
-              .join('')}
-          </tbody>
-        </table>
+                    `;
+                  })
+                  .join('')
+          }
+        </div>
       </div>
     </div>
   `;
 }
 
-/**
- * Quick-Access Interactive Slide-Over Event Drawer
- */
-function renderEventDrawer(audit: AuditEventEntity | null): string {
-  if (!audit) return '';
-
-  const modMeta = getModalityVisual(audit.tipo_auditoria);
-  const methMeta = getMethodologyVisual(audit.metodologia);
-  const statMeta = getAuditStatusVisual(audit.estatus);
+function renderCalendarEventDrawer(audit: ProgramacionAuditEntity): string {
+  const mod = getModalityVisualStyle(audit.tipo_auditoria);
+  const met = getMethodologyVisualStyle(audit.metodologia);
+  const st = getAuditStatusVisualStyle(audit.estatus);
 
   return `
-    <div class="fixed inset-0 z-50 overflow-hidden bg-slate-900/40 backdrop-blur-xs flex justify-end animate-in fade-in duration-150">
-      <div class="bg-white w-full max-w-md h-full shadow-2xl border-l border-slate-200 flex flex-col justify-between animate-in slide-in-from-right duration-200">
-        <!-- Drawer Header -->
-        <div class="p-5 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="text-base">📅</span>
-            <span class="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
-              ${escapeHtml(audit.codigo_auditoria)}
-            </span>
-          </div>
-          <button
-            type="button"
-            data-action="close-calendar-drawer"
-            class="text-slate-400 hover:text-slate-700 text-sm font-bold cursor-pointer"
-            title="Cerrar panel lateral"
-          >
-            ✕
-          </button>
-        </div>
+    <div
+      id="calDrawerBackdrop"
+      class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex justify-end"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="calDrawerTitle"
+    >
+      <div class="w-full max-w-md bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col justify-between overflow-y-auto">
+        <div class="p-6 space-y-5">
+          <!-- Drawer Header -->
+          <div class="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                  ${escapeHtml(audit.codigo_auditoria)}
+                </span>
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${st.badgeClass}">
+                  <span class="w-1.5 h-1.5 rounded-full ${st.dotClass}"></span>
+                  <span>${escapeHtml(st.label)}</span>
+                </span>
+              </div>
+              <h3 id="calDrawerTitle" class="text-lg font-bold text-slate-900">
+                ${escapeHtml(audit.organizacion_nombre)}
+              </h3>
+              <div class="text-xs font-mono text-slate-500">
+                ${escapeHtml(audit.numero_certificado)} · ${escapeHtml(audit.norma_codigo)}
+              </div>
+            </div>
 
-        <!-- Drawer Content -->
-        <div class="p-6 overflow-y-auto space-y-5 text-xs flex-1">
-          <!-- Organization info -->
-          <div class="space-y-1">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Organización Cliente</span>
-            <h3 class="text-base font-bold text-slate-900">${escapeHtml(audit.organizacion_nombre)}</h3>
-            <div class="text-slate-500 font-mono text-[11px]">
-              RIF: <span class="font-bold text-slate-700">${escapeHtml(audit.organizacion_rif)}</span>
-            </div>
-            <div class="text-slate-600 text-[11px] pt-1">
-              📍 ${escapeHtml(audit.direccion_principal)}
-            </div>
-          </div>
-
-          <!-- Certificate & Standard -->
-          <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-            <div class="flex items-center justify-between">
-              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Certificado Asignado</span>
-              <span class="font-mono font-bold text-indigo-700">${escapeHtml(audit.numero_certificado)}</span>
-            </div>
-            <div class="font-semibold text-slate-800">
-              ${escapeHtml(audit.norma_codigo)} — ${escapeHtml(audit.norma_titulo)}
-            </div>
-            <div class="text-[10px] text-slate-500 font-mono">
-              Sector Acreditado: IAF ${audit.sector_iaf}
-            </div>
+            <button
+              type="button"
+              id="closeCalDrawerBtn"
+              aria-label="Cerrar panel de evento"
+              class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+            >
+              ✕
+            </button>
           </div>
 
-          <!-- Modality & Methodology Badges -->
-          <div class="grid grid-cols-2 gap-2">
-            <div class="p-2.5 rounded-lg border ${modMeta.badgeClass}">
-              <div class="text-[10px] font-bold uppercase">Modalidad</div>
-              <div class="font-semibold text-xs mt-0.5">${modMeta.symbol} ${escapeHtml(modMeta.label)}</div>
+          <!-- Primary Site Location Address -->
+          <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Ubicación de Sede Principal
             </div>
-            <div class="p-2.5 rounded-lg border ${methMeta.badgeClass}">
-              <div class="text-[10px] font-bold uppercase">Metodología</div>
-              <div class="font-semibold text-xs mt-0.5">${methMeta.symbol} ${escapeHtml(methMeta.label)}</div>
+            <div class="text-xs font-semibold text-slate-800 flex items-start gap-1.5">
+              <span aria-hidden="true">📍</span>
+              <span>${escapeHtml(audit.sede_principal_direccion)}</span>
             </div>
           </div>
 
-          <!-- Dates & Schedule -->
-          <div class="space-y-1.5 p-3 rounded-xl bg-slate-50 border border-slate-100">
-            <div class="flex items-center justify-between">
-              <span class="text-slate-500">Fecha de Inicio:</span>
-              <span class="font-mono font-bold text-slate-900">${escapeHtml(audit.fecha_inicio)}</span>
-            </div>
-            <div class="flex items-center justify-between">
-              <span class="text-slate-500">Fecha de Fin:</span>
-              <span class="font-mono font-bold text-slate-900">${escapeHtml(audit.fecha_fin)}</span>
-            </div>
-            <div class="flex items-center justify-between">
-              <span class="text-slate-500">Días Auditor:</span>
-              <span class="font-bold text-indigo-700">${audit.dias_auditor.toFixed(1)} días</span>
-            </div>
-            <div class="flex items-center justify-between pt-1 border-t border-slate-200">
-              <span class="text-slate-500">Estatus Operativo:</span>
-              <span class="font-bold ${statMeta.badgeClass} px-2 py-0.2 rounded text-[10px]">
-                ${statMeta.symbol} ${escapeHtml(statMeta.label)}
+          <!-- Modality & Schedule -->
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <div class="p-3 rounded-xl border border-slate-200 space-y-1">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Modalidad</span>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${mod.badgeClass}">
+                <span aria-hidden="true">${mod.symbol}</span>
+                <span>${escapeHtml(audit.tipo_auditoria)}</span>
               </span>
             </div>
+
+            <div class="p-3 rounded-xl border border-slate-200 space-y-1">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Metodología</span>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${met.badgeClass}">
+                <span aria-hidden="true">${met.symbol}</span>
+                <span>${escapeHtml(audit.metodologia)}</span>
+              </span>
+            </div>
+
+            <div class="col-span-2 p-3 rounded-xl border border-slate-200 space-y-1">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Cronograma Planificado</span>
+              <div class="font-mono font-bold text-slate-900">
+                ${escapeHtml(audit.fecha_inicio)} al ${escapeHtml(audit.fecha_fin)} (${audit.dias_auditor} día(s)-auditor)
+              </div>
+            </div>
           </div>
 
-          <!-- Lead Auditor & Team -->
-          <div class="space-y-2">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Equipo Auditor</span>
-            <div class="p-3 bg-white rounded-xl border border-slate-200 space-y-1.5">
-              <div class="flex items-center justify-between">
-                <span class="font-bold text-slate-900">${escapeHtml(audit.auditor_lider_nombre)}</span>
-                <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800">Líder</span>
-              </div>
-              <div class="text-[11px] text-slate-500">${escapeHtml(audit.auditor_lider_email || '')}</div>
+          <!-- Assigned Audit Team & Contact Coordinates -->
+          <div class="space-y-2.5">
+            <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              Equipo Auditor Asignado y Contacto (${audit.equipo.length})
+            </div>
+            <div class="space-y-2">
               ${audit.equipo
-                .filter((m) => m.id_auditor !== audit.auditor_lider_id)
                 .map(
                   (m) => `
-                <div class="pt-1 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-700">
-                  <span>${escapeHtml(m.nombre)}</span>
-                  <span class="text-slate-500">${escapeHtml(m.rol)}</span>
-                </div>
-              `
+                  <div class="p-3 rounded-xl border border-slate-200 bg-white space-y-1 text-xs">
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="font-bold text-slate-900">${escapeHtml(m.nombre)}</span>
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                        ${escapeHtml(m.rol)}
+                      </span>
+                    </div>
+                    <div class="text-[11px] text-slate-500">
+                      ${escapeHtml(m.competencia_norma)} · Credencial ${escapeHtml(m.credencial_codigo)}
+                    </div>
+                    <div class="text-[11px] text-slate-600 font-mono flex flex-wrap gap-3 pt-1">
+                      ${m.email ? `<span>✉️ ${escapeHtml(m.email)}</span>` : ''}
+                      ${m.telefono ? `<span>📞 ${escapeHtml(m.telefono)}</span>` : ''}
+                    </div>
+                  </div>
+                `
                 )
                 .join('')}
             </div>
           </div>
-
-          <!-- Objective preview -->
-          <div class="space-y-1">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Objetivo</span>
-            <p class="text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-200 leading-relaxed text-[11px]">
-              ${escapeHtml(audit.objetivo)}
-            </p>
-          </div>
         </div>
 
-        <!-- Drawer Footer with Navigation Actions -->
-        <div class="p-5 border-t border-slate-200 bg-slate-50/80 space-y-2">
+        <!-- Direct Action Footer -->
+        <div class="p-5 border-t border-slate-200 bg-slate-50 space-y-2">
           <button
             type="button"
-            data-nav="auditorias"
-            data-subview="scheduling"
+            data-action="drawer-go-programacion"
             data-audit-id="${escapeHtml(audit.id)}"
-            class="w-full py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-colors cursor-pointer text-center shadow-2xs"
+            class="w-full py-2 px-4 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors cursor-pointer text-center"
           >
-            Ir al Detalle de Programación ↗
+            Ir al Detalle de Programación →
           </button>
           <button
             type="button"
-            data-nav="auditorias"
-            data-subview="findings"
+            data-action="drawer-go-resultado"
             data-audit-id="${escapeHtml(audit.id)}"
-            class="w-full py-2 px-3 rounded-lg border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs transition-colors cursor-pointer text-center"
+            class="w-full py-2 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors cursor-pointer text-center"
           >
-            Ver Resultados y Hallazgos ↗
+            Ver Resultados y Hallazgos →
+          </button>
+          <button
+            type="button"
+            data-action="open-changelog"
+            data-table-name="auditoria"
+            data-record-id="${escapeHtml(audit.id)}"
+            data-entity-name="${escapeHtml(audit.codigo_auditoria)} · ${escapeHtml(audit.organizacion_nombre)}"
+            class="w-full py-1.5 px-4 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold transition-colors cursor-pointer text-center"
+          >
+            🕒 Historial de Cambios
           </button>
         </div>
       </div>

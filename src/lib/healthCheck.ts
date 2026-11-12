@@ -278,36 +278,21 @@ export function getVisibleDomainMenus(
         id: 'scheduling',
         label: 'Programación',
         symbol: '🗓️',
-        tooltip: 'Programación y seguimiento de auditorías de certificación',
+        tooltip: 'Planificación de auditorías, equipo evaluador, muestreo y matriz normativa',
       },
       {
         id: 'calendar',
         label: 'Calendario',
         symbol: '📆',
-        tooltip: 'Calendario de fechas programadas y reprogramaciones',
+        tooltip: 'Agenda cronológica mensual/trimestral, Timeline Gantt y conflictos',
       },
       {
         id: 'findings',
         label: 'Resultado',
         symbol: '📋',
-        tooltip: 'Registro y seguimiento de hallazgos y no conformidades',
+        tooltip: 'Tablero de hallazgos ISO 19011 y recomendación de emisión ISO/IEC 17021-1',
       },
     ];
-
-    if (isStaff || isAuditor) {
-      auditItems.push({
-        id: 'team',
-        label: 'Equipo Evaluador',
-        symbol: '👥',
-        tooltip: 'Equipo auditor asignado y calificación por auditoría',
-      });
-      auditItems.push({
-        id: 'scope',
-        label: 'Alcance de Campo',
-        symbol: '🏭',
-        tooltip: 'Sedes, turnos y procesos evaluados en auditoría',
-      });
-    }
 
     menus.push({
       id: 'auditorias',

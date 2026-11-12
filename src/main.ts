@@ -105,10 +105,33 @@ import {
 } from './lib/multisiteSampling';
 import {
   INITIAL_AUDITORES_DETAILED,
+  getCredentialValidityState,
   type AuditorDetailEntity,
   type AuditorViewState,
   type AuditorChildTab,
 } from './lib/competencyMatrix';
+import {
+  INITIAL_PROGRAMACION_AUDITS,
+  INITIAL_PHASE5_FINDINGS,
+  createSessionAuditLogEntry,
+  evaluateIso17021Recommendation,
+  validateFindingLifecycleUpdate,
+  validatePhase5FindingInput,
+  validateRecommendationSignature,
+  type AuditMethodology,
+  type AuditTeamRole,
+  type CalendarioViewState,
+  type CalendarDisplayMode,
+  type FindingLifecycleStatus,
+  type FindingsDisplayMode,
+  type NormativeVerificationStatus,
+  type Phase5FindingEntity,
+  type ProgramacionAuditEntity,
+  type ProgramacionChildTab,
+  type ProgramacionViewState,
+  type ResultadoViewState,
+  type SiteEvaluationMode,
+} from './lib/auditExecution';
 
 interface AppState {
   booting: boolean;
@@ -164,6 +187,9 @@ interface AppState {
     allOrganizaciones: OrganizacionEntity[];
     allCertificadosDetailed: CertificadoDetailEntity[];
     allAuditorsDetailed: AuditorDetailEntity[];
+    programacionAudits: ProgramacionAuditEntity[];
+    phase5Findings: Phase5FindingEntity[];
+    sessionAuditLogs: AuditLogEntry[];
     loading: boolean;
   };
   drilldown: {
@@ -180,6 +206,9 @@ interface AppState {
     isModalOpen: boolean;
   };
   selectedScopeAuditId: string | null;
+  programacionDomain: ProgramacionViewState;
+  calendarioDomain: CalendarioViewState;
+  resultadoDomain: ResultadoViewState;
   organizacionDomain: {
     selectedOrganizacionId: string | null;
     query: string;
@@ -510,6 +539,15 @@ const state: AppState = {
     allOrganizaciones: [...INITIAL_ORGANIZACIONES],
     allCertificadosDetailed: [...INITIAL_CERTIFICADOS_DETAILED],
     allAuditorsDetailed: [...INITIAL_AUDITORES_DETAILED],
+    programacionAudits: INITIAL_PROGRAMACION_AUDITS.map((a) => ({
+      ...a,
+      equipo: a.equipo.map((m) => ({ ...m })),
+      sitiosMuestreo: a.sitiosMuestreo.map((s) => ({ ...s })),
+      matrizNormativa: a.matrizNormativa.map((n) => ({ ...n })),
+      recomendacion: a.recomendacion ? { ...a.recomendacion } : null,
+    })),
+    phase5Findings: INITIAL_PHASE5_FINDINGS.map((f) => ({ ...f })),
+    sessionAuditLogs: [],
     loading: false,
   },
   drilldown: {
@@ -526,6 +564,45 @@ const state: AppState = {
     isModalOpen: false,
   },
   selectedScopeAuditId: null,
+  programacionDomain: {
+    selectedAuditId: null,
+    activeChildTab: 'equipo',
+    query: '',
+    selectedTipo: 'ALL',
+    selectedMetodologia: 'ALL',
+    selectedEstatus: 'ALL',
+    selectedAuditorLider: 'ALL',
+    viewMode: 'grid',
+    sortColumn: null,
+    sortDirection: 'none',
+    isPlanningModalOpen: false,
+    isEditingAttributes: false,
+    isAddingTeamMember: false,
+    editErrorMessage: null,
+    saveSuccessMessage: null,
+  },
+  calendarioDomain: {
+    displayMode: 'month',
+    referenceYear: 2024,
+    referenceMonth: 11,
+    filterAuditorId: 'ALL',
+    filterStandard: 'ALL',
+    filterMethodology: 'ALL',
+    drawerAuditId: null,
+  },
+  resultadoDomain: {
+    selectedAuditId: 'ALL',
+    activeAuditIdForDecision: INITIAL_PROGRAMACION_AUDITS[0]?.id || '',
+    displayMode: 'list',
+    filterType: 'ALL',
+    filterLifecycle: 'ALL',
+    searchQuery: '',
+    isLoggingFinding: false,
+    inspectingFindingId: null,
+    recommendationError: null,
+    recommendationSuccess: null,
+    findingFormError: null,
+  },
   organizacionDomain: {
     selectedOrganizacionId: null,
     query: '',
@@ -712,19 +789,16 @@ function render(): void {
   } else if (effectiveRoute === 'auditorias') {
     bodyHtml = renderAuditoriasView(state.profile, {
       activeSubSection: state.activeSubSection || 'scheduling',
-      audits: state.domainData.audits,
-      auditors: state.domainData.auditors,
-      findings: state.domainData.findings,
+      programacionState: state.programacionDomain,
+      calendarioState: state.calendarioDomain,
+      resultadoState: state.resultadoDomain,
+      programacionAudits: state.domainData.programacionAudits,
+      phase5Findings: state.domainData.phase5Findings,
+      allAuditorsDetailed: state.domainData.allAuditorsDetailed,
       certificates: state.exploration.records,
-      sites: state.domainData.sites,
       processes: state.domainData.processes,
-      shifts: state.domainData.shifts,
       requirements: state.domainData.requirements,
-      isPlanningModalOpen: state.auditPlanning.isModalOpen,
-      isLoggingFinding: state.drilldown.isLoggingFinding,
-      findingFilterType: state.drilldown.findingFilterType,
-      findingFilterStatus: state.drilldown.findingFilterStatus,
-      selectedScopeAuditId: state.selectedScopeAuditId,
+      standards: state.domainData.standards,
       loading: state.domainData.loading,
     });
   } else if (effectiveRoute === 'certificacion') {
@@ -1032,6 +1106,17 @@ function bindAuthenticatedEvents(): void {
             state.auditorDomain.selectedAuditorId = null;
             state.auditorDomain.isEditingAttributes = false;
           }
+        } else if (targetSeg.route === 'auditorias') {
+          if (
+            targetSeg.id.startsWith('domain-') ||
+            targetSeg.id.startsWith('subview-auditorias-')
+          ) {
+            state.programacionDomain.selectedAuditId = null;
+            state.programacionDomain.isEditingAttributes = false;
+            state.programacionDomain.isAddingTeamMember = false;
+            state.calendarioDomain.drawerAuditId = null;
+            state.resultadoDomain.inspectingFindingId = null;
+          }
         }
         syncUrlHash(state.activeRoute, state.activeSubSection);
       }
@@ -1043,7 +1128,7 @@ function bindAuthenticatedEvents(): void {
     el.addEventListener('click', () => {
       const target = el.dataset.nav as ActiveRoute | undefined;
       if (!target || !canAccessRoute(state.profile, target)) return;
-      const subview = el.dataset.subview || null;
+      const subview = el.dataset.subview || (target === 'auditorias' ? 'scheduling' : null);
       state.activeRoute = target;
       state.activeSubSection = subview;
       state.openMenu = null;
@@ -1053,6 +1138,17 @@ function bindAuthenticatedEvents(): void {
       if (target !== 'drilldown' && subview !== 'drilldown') {
         state.drilldown.selectedOrgId = null;
         state.drilldown.selectedCertId = null;
+      }
+      if (target === 'auditorias') {
+        state.programacionDomain.selectedAuditId = null;
+        state.programacionDomain.isEditingAttributes = false;
+        state.programacionDomain.isAddingTeamMember = false;
+        state.programacionDomain.editErrorMessage = null;
+        state.programacionDomain.saveSuccessMessage = null;
+        state.calendarioDomain.drawerAuditId = null;
+        state.resultadoDomain.inspectingFindingId = null;
+        state.resultadoDomain.recommendationError = null;
+        state.resultadoDomain.recommendationSuccess = null;
       }
       if (target === 'certificacion') {
         if (!subview || subview === 'organizations') {
@@ -1350,10 +1446,11 @@ function bindAuthenticatedEvents(): void {
     }
   });
 
-  // Audit Planning handlers
+  // Audit Planning handlers (Phase 5 Programación + Legacy Drilldown fallback)
   document.querySelectorAll<HTMLElement>('[data-action="open-plan-audit"]').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.auditPlanning.isModalOpen = true;
+      state.programacionDomain.isPlanningModalOpen = true;
       render();
     });
   });
@@ -1361,6 +1458,7 @@ function bindAuthenticatedEvents(): void {
   document.querySelectorAll<HTMLElement>('[data-action="close-plan-audit"]').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.auditPlanning.isModalOpen = false;
+      state.programacionDomain.isPlanningModalOpen = false;
       render();
     });
   });
@@ -1371,17 +1469,31 @@ function bindAuthenticatedEvents(): void {
     const typeSelect = document.getElementById('planTypeSelect') as HTMLSelectElement | null;
     const methodSelect = document.getElementById('planMethodologySelect') as HTMLSelectElement | null;
     const dateInput = document.getElementById('planDateInput') as HTMLInputElement | null;
+    const endDateInput = document.getElementById('planEndDateInput') as HTMLInputElement | null;
+    const daysInput = document.getElementById('planDaysInput') as HTMLInputElement | null;
     const reschedInput = document.getElementById('planRescheduleInput') as HTMLInputElement | null;
     const auditorSelect = document.getElementById('planAuditorSelect') as HTMLSelectElement | null;
 
-    void handleCreateAudit({
-      id_certificado: certSelect?.value || '',
-      id_tipo_auditoria: typeSelect?.value || '',
-      id_metodologia: methodSelect?.value || '',
-      fecha_programacion: dateInput?.value || '',
-      fecha_reprogramacion: reschedInput?.value.trim() || null,
-      id_auditor_lider: auditorSelect?.value || '',
-    });
+    if (endDateInput && daysInput) {
+      void handleCreatePhase5Audit({
+        id_certificado: certSelect?.value || '',
+        tipo_auditoria: typeSelect?.value || 'Etapa 1',
+        metodologia: (methodSelect?.value || 'Presencial') as AuditMethodology,
+        fecha_inicio: dateInput?.value || '2024-11-28',
+        fecha_fin: endDateInput?.value || dateInput?.value || '2024-11-29',
+        dias_auditor: Math.max(0.5, Number(daysInput.value) || 2),
+        auditor_lider_id: auditorSelect?.value || '',
+      });
+    } else {
+      void handleCreateAudit({
+        id_certificado: certSelect?.value || '',
+        id_tipo_auditoria: typeSelect?.value || '',
+        id_metodologia: methodSelect?.value || '',
+        fecha_programacion: dateInput?.value || '',
+        fecha_reprogramacion: reschedInput?.value.trim() || null,
+        id_auditor_lider: auditorSelect?.value || '',
+      });
+    }
   });
 
   // Findings logging & status toggle handlers
@@ -2667,6 +2779,1301 @@ function bindAuthenticatedEvents(): void {
       render();
     });
   });
+
+  // ===============================================
+  // DOMAIN AUDITORÍAS (Phase 5: Programación, Calendario & Resultado)
+  // ===============================================
+  bindPhase5AuditoriasEvents();
+}
+
+function recordPhase5SessionLog(
+  tableName: string,
+  recordId: string,
+  operation: 'INSERT' | 'UPDATE' | 'DELETE',
+  oldData: Record<string, unknown> | null,
+  newData: Record<string, unknown> | null
+): void {
+  const actorEmail = state.user?.email || state.profile?.nombre || 'admin@fondonorma.test';
+  const entry = createSessionAuditLogEntry({
+    tableName,
+    recordId,
+    operation,
+    actorEmail,
+    oldData,
+    newData,
+  });
+  state.domainData.sessionAuditLogs = [entry, ...state.domainData.sessionAuditLogs];
+}
+
+function bindPhase5AuditoriasEvents(): void {
+  const canPlan = Boolean(state.profile && ['ADMIN', 'WORKER'].includes(state.profile.role));
+  const canEditAudit = Boolean(
+    state.profile && ['ADMIN', 'WORKER', 'AUDITOR'].includes(state.profile.role)
+  );
+  const isStaffOrAuditor = canEditAudit;
+
+  // --- A. Programación de Auditorías ---
+  const progSearch = document.getElementById('programacionSearchInput') as HTMLInputElement | null;
+  progSearch?.addEventListener('input', (e) => {
+    state.programacionDomain.query = (e.target as HTMLInputElement).value;
+    render();
+  });
+  progSearch?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      state.programacionDomain.query = '';
+      render();
+    }
+  });
+  document.getElementById('clearProgramacionSearchBtn')?.addEventListener('click', () => {
+    state.programacionDomain.query = '';
+    render();
+  });
+
+  const resetProgFilters = () => {
+    state.programacionDomain.query = '';
+    state.programacionDomain.selectedTipo = 'ALL';
+    state.programacionDomain.selectedMetodologia = 'ALL';
+    state.programacionDomain.selectedEstatus = 'ALL';
+    state.programacionDomain.selectedAuditorLider = 'ALL';
+    render();
+  };
+  document.getElementById('resetProgFiltersBtn')?.addEventListener('click', resetProgFilters);
+  document.getElementById('resetProgFiltersEmptyBtn')?.addEventListener('click', resetProgFilters);
+
+  document.querySelectorAll<HTMLElement>('[data-prog-view-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.progViewMode;
+      if (mode === 'grid' || mode === 'list') {
+        state.programacionDomain.viewMode = mode;
+        render();
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-prog-facet]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const group = btn.dataset.progFacet;
+      const val = btn.dataset.progFacetValue || 'ALL';
+      if (group === 'tipo') state.programacionDomain.selectedTipo = val;
+      else if (group === 'metodologia') state.programacionDomain.selectedMetodologia = val;
+      else if (group === 'estatus') state.programacionDomain.selectedEstatus = val;
+      else if (group === 'auditor') state.programacionDomain.selectedAuditorLider = val;
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-prog-sort]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const col = btn.dataset.progSort as ProgramacionViewState['sortColumn'] | undefined;
+      if (!col) return;
+      if (state.programacionDomain.sortColumn === col) {
+        state.programacionDomain.sortDirection = cycleSortDirection(
+          state.programacionDomain.sortDirection
+        );
+      } else {
+        state.programacionDomain.sortColumn = col;
+        state.programacionDomain.sortDirection = 'asc';
+      }
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="select-prog-audit"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const auditId = btn.dataset.auditId;
+      if (!auditId) return;
+      const audit = state.domainData.programacionAudits.find((a) => a.id === auditId);
+      state.activeRoute = 'auditorias';
+      state.activeSubSection = 'scheduling';
+      state.programacionDomain.selectedAuditId = auditId;
+      state.programacionDomain.activeChildTab = 'equipo';
+      state.programacionDomain.isEditingAttributes = false;
+      state.programacionDomain.isAddingTeamMember = false;
+      state.programacionDomain.editErrorMessage = null;
+      state.programacionDomain.saveSuccessMessage = null;
+      state.breadcrumbs = resetBreadcrumbToDomain('auditorias', 'scheduling');
+      if (audit) {
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `prog-audit-${audit.id}`,
+          label: audit.codigo_auditoria,
+          route: 'auditorias',
+          subview: 'scheduling',
+          entityId: audit.id,
+          tooltip: `${audit.codigo_auditoria} — ${audit.organizacion_nombre}`,
+        });
+      }
+      syncUrlHash('auditorias', 'scheduling');
+      render();
+    });
+  });
+
+  document.getElementById('backToProgramacionListBtn')?.addEventListener('click', () => {
+    state.programacionDomain.selectedAuditId = null;
+    state.programacionDomain.isEditingAttributes = false;
+    state.programacionDomain.isAddingTeamMember = false;
+    state.programacionDomain.editErrorMessage = null;
+    state.programacionDomain.saveSuccessMessage = null;
+    state.breadcrumbs = resetBreadcrumbToDomain('auditorias', 'scheduling');
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="go-audit-results"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const auditId = btn.dataset.auditId;
+      if (!auditId) return;
+      state.activeRoute = 'auditorias';
+      state.activeSubSection = 'findings';
+      state.resultadoDomain.activeAuditIdForDecision = auditId;
+      state.resultadoDomain.selectedAuditId = auditId;
+      state.resultadoDomain.recommendationError = null;
+      state.resultadoDomain.recommendationSuccess = null;
+      state.breadcrumbs = resetBreadcrumbToDomain('auditorias', 'findings');
+      syncUrlHash('auditorias', 'findings');
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="open-org-from-audit"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const orgId = btn.dataset.orgId;
+      if (!orgId) return;
+      state.activeRoute = 'certificacion';
+      state.activeSubSection = 'organizations';
+      state.organizacionDomain.selectedOrganizacionId = orgId;
+      state.organizacionDomain.isEditingAttributes = false;
+      const org =
+        state.domainData.allOrganizaciones.find((o) => o.id === orgId) ||
+        INITIAL_ORGANIZACIONES.find((o) => o.id === orgId);
+      state.breadcrumbs = resetBreadcrumbToDomain('certificacion', 'organizations');
+      if (org) {
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `org-${org.id}`,
+          label: org.nombre,
+          route: 'certificacion',
+          subview: 'organizations',
+          entityId: org.id,
+          tooltip: `Organización > ${org.nombre}`,
+        });
+      }
+      syncUrlHash('certificacion', 'organizations');
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="open-cert-from-audit"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const certId = btn.dataset.certId;
+      if (!certId) return;
+      state.activeRoute = 'certificacion';
+      state.activeSubSection = 'certificates';
+      state.certificadoDomain.selectedCertId = certId;
+      state.certificadoDomain.activeChildTab = 'sitios';
+      state.certificadoDomain.isEditingAttributes = false;
+      const cert =
+        state.domainData.allCertificadosDetailed.find((c) => c.id === certId) ||
+        INITIAL_CERTIFICADOS_DETAILED.find((c) => c.id === certId);
+      state.breadcrumbs = resetBreadcrumbToDomain('certificacion', 'certificates');
+      if (cert) {
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `cert-${cert.id}`,
+          label: cert.numero_certificado,
+          route: 'certificacion',
+          subview: 'certificates',
+          entityId: cert.id,
+          tooltip: `Certificado > ${cert.numero_certificado}`,
+        });
+      }
+      syncUrlHash('certificacion', 'certificates');
+      render();
+    });
+  });
+
+  document.getElementById('startEditProgAuditBtn')?.addEventListener('click', () => {
+    if (!canEditAudit) return;
+    state.programacionDomain.isEditingAttributes = true;
+    state.programacionDomain.editErrorMessage = null;
+    state.programacionDomain.saveSuccessMessage = null;
+    render();
+  });
+
+  document.getElementById('cancelEditProgAuditBtn')?.addEventListener('click', () => {
+    state.programacionDomain.isEditingAttributes = false;
+    state.programacionDomain.editErrorMessage = null;
+    render();
+  });
+
+  document.getElementById('editProgAuditForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!canEditAudit) return;
+    const auditId = state.programacionDomain.selectedAuditId;
+    if (!auditId) return;
+
+    const tipo = (document.getElementById('editProgTipo') as HTMLSelectElement | null)?.value || '';
+    const metodologia = (
+      (document.getElementById('editProgMetodologia') as HTMLSelectElement | null)?.value ||
+      'Presencial'
+    ) as AuditMethodology;
+    const estatus =
+      (document.getElementById('editProgEstatus') as HTMLSelectElement | null)?.value ||
+      'Planificado';
+    const fechaInicio =
+      (document.getElementById('editProgFechaInicio') as HTMLInputElement | null)?.value || '';
+    const fechaFin =
+      (document.getElementById('editProgFechaFin') as HTMLInputElement | null)?.value || '';
+    const dias = Number(
+      (document.getElementById('editProgDias') as HTMLInputElement | null)?.value || 1
+    );
+    const auditorLiderId =
+      (document.getElementById('editProgAuditorLider') as HTMLSelectElement | null)?.value || '';
+
+    if (!fechaInicio || !fechaFin || fechaFin < fechaInicio) {
+      state.programacionDomain.editErrorMessage =
+        'La fecha de finalización debe ser igual o posterior a la fecha de inicio.';
+      render();
+      return;
+    }
+
+    const selectedLead = state.domainData.allAuditorsDetailed.find((a) => a.id === auditorLiderId);
+    const currentAudit = state.domainData.programacionAudits.find((a) => a.id === auditId);
+    if (!currentAudit) return;
+
+    const oldSnapshot = {
+      tipo_auditoria: currentAudit.tipo_auditoria,
+      metodologia: currentAudit.metodologia,
+      estatus: currentAudit.estatus,
+      fecha_inicio: currentAudit.fecha_inicio,
+      fecha_fin: currentAudit.fecha_fin,
+      dias_auditor: currentAudit.dias_auditor,
+      auditor_lider: currentAudit.auditor_lider,
+    };
+
+    const nextLeadName = selectedLead?.nombre || currentAudit.auditor_lider;
+
+    state.domainData.programacionAudits = state.domainData.programacionAudits.map((a) => {
+      if (a.id !== auditId) return a;
+      const updatedTeam = a.equipo.some((m) => m.id_auditor === auditorLiderId)
+        ? a.equipo.map((m) => ({
+            ...m,
+            rol: m.id_auditor === auditorLiderId ? ('Auditor Líder' as const) : m.rol,
+          }))
+        : selectedLead
+        ? [
+            {
+              id: `eq-${Date.now()}`,
+              id_auditor: selectedLead.id,
+              nombre: selectedLead.nombre,
+              rol: 'Auditor Líder' as const,
+              competencia_norma: selectedLead.normas_acreditadas[0] || a.norma_codigo,
+              competencia_sector_iaf: selectedLead.sectores_iaf[0] || a.sector_iaf,
+              credencial_codigo: selectedLead.codigo_credencial,
+              estado_credencial: 'Vigente' as const,
+              email: selectedLead.email,
+              telefono: selectedLead.telefono,
+            },
+            ...a.equipo.map((m) =>
+              m.rol === 'Auditor Líder' ? { ...m, rol: 'Auditor de Equipo' as const } : m
+            ),
+          ]
+        : a.equipo;
+
+      return {
+        ...a,
+        tipo_auditoria: tipo || a.tipo_auditoria,
+        metodologia,
+        estatus,
+        fecha_inicio: fechaInicio,
+        fecha_fin: fechaFin,
+        dias_auditor: Math.max(0.5, dias),
+        auditor_lider_id: auditorLiderId || a.auditor_lider_id,
+        auditor_lider: nextLeadName,
+        equipo: updatedTeam,
+      };
+    });
+
+    recordPhase5SessionLog('auditoria', auditId, 'UPDATE', oldSnapshot, {
+      tipo_auditoria: tipo,
+      metodologia,
+      estatus,
+      fecha_inicio: fechaInicio,
+      fecha_fin: fechaFin,
+      dias_auditor: Math.max(0.5, dias),
+      auditor_lider: nextLeadName,
+    });
+
+    state.programacionDomain.isEditingAttributes = false;
+    state.programacionDomain.editErrorMessage = null;
+    state.programacionDomain.saveSuccessMessage =
+      'Planificación de auditoría actualizada y registrada en Historial de Cambios.';
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidRegex.test(auditId)) {
+      void (async () => {
+        try {
+          await supabase
+            .from('auditoria')
+            .update({ fecha_programacion: fechaInicio })
+            .eq('id', auditId);
+        } catch {
+          // Reactive state already updated
+        }
+      })();
+    }
+
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-prog-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.progTab as ProgramacionChildTab | undefined;
+      if (tab) {
+        state.programacionDomain.activeChildTab = tab;
+        state.programacionDomain.isAddingTeamMember = false;
+        render();
+      }
+    });
+  });
+
+  // Tab 1: Equipo Evaluador
+  document.getElementById('openAddTeamMemberBtn')?.addEventListener('click', () => {
+    if (!canPlan) return;
+    state.programacionDomain.isAddingTeamMember = true;
+    render();
+  });
+  document.getElementById('cancelAddTeamMemberBtn')?.addEventListener('click', () => {
+    state.programacionDomain.isAddingTeamMember = false;
+    render();
+  });
+
+  document.getElementById('addTeamMemberForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!canPlan) return;
+    const auditId = state.programacionDomain.selectedAuditId;
+    if (!auditId) return;
+
+    const auditorId =
+      (document.getElementById('teamAuditorSelect') as HTMLSelectElement | null)?.value || '';
+    const role = (
+      (document.getElementById('teamRoleSelect') as HTMLSelectElement | null)?.value ||
+      'Auditor de Equipo'
+    ) as AuditTeamRole;
+    const auditor = state.domainData.allAuditorsDetailed.find((a) => a.id === auditorId);
+    if (!auditor) return;
+
+    const firstCompetencyExpiry = auditor.competencias[0]?.fecha_vencimiento || '';
+    const credState = getCredentialValidityState(firstCompetencyExpiry);
+
+    const newMember = {
+      id: `eq-${Date.now()}`,
+      id_auditor: auditor.id,
+      nombre: auditor.nombre,
+      rol: role,
+      competencia_norma: auditor.normas_acreditadas[0] || 'ISO 9001:2015',
+      competencia_sector_iaf: auditor.sectores_iaf[0] || 17,
+      credencial_codigo: auditor.codigo_credencial,
+      estado_credencial: credState,
+      email: auditor.email,
+      telefono: auditor.telefono,
+    };
+
+    state.domainData.programacionAudits = state.domainData.programacionAudits.map((a) =>
+      a.id === auditId
+        ? {
+            ...a,
+            equipo: [...a.equipo, newMember],
+          }
+        : a
+    );
+
+    recordPhase5SessionLog('auditoria', auditId, 'UPDATE', null, {
+      accion: 'ASIGNACION_EQUIPO_AUDITOR',
+      integrante: auditor.nombre,
+      rol: role,
+      credencial: auditor.codigo_credencial,
+    });
+
+    state.programacionDomain.isAddingTeamMember = false;
+    state.programacionDomain.saveSuccessMessage = `${auditor.nombre} asignado como ${role}.`;
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidRegex.test(auditId) && uuidRegex.test(auditor.id)) {
+      void (async () => {
+        try {
+          const [{ data: dbAudit }, { data: dbAuditor }, { data: existingMember }] =
+            await Promise.all([
+              supabase.from('auditoria').select('id').eq('id', auditId).maybeSingle(),
+              supabase.from('auditor').select('id').eq('id', auditor.id).maybeSingle(),
+              supabase
+                .from('equipo_auditor')
+                .select('id_auditor')
+                .eq('id_auditoria', auditId)
+                .eq('id_auditor', auditor.id)
+                .maybeSingle(),
+            ]);
+
+          if (dbAudit && dbAuditor && !existingMember) {
+            await supabase.from('equipo_auditor').insert({
+              id_auditoria: auditId,
+              id_auditor: auditor.id,
+              rol_auditor:
+                role === 'Auditor Líder'
+                  ? 'AUDITOR_LIDER'
+                  : role === 'Experto Técnico'
+                  ? 'EXPERTO_TECNICO'
+                  : 'AUDITOR',
+            });
+          }
+        } catch {
+          // Reactive state fallback
+        }
+      })();
+    }
+
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="remove-team-member"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!canPlan) return;
+      const auditId = btn.dataset.auditId;
+      const memberId = btn.dataset.memberId;
+      if (!auditId || !memberId) return;
+
+      const audit = state.domainData.programacionAudits.find((a) => a.id === auditId);
+      const removed = audit?.equipo.find((m) => m.id === memberId);
+
+      state.domainData.programacionAudits = state.domainData.programacionAudits.map((a) =>
+        a.id === auditId
+          ? {
+              ...a,
+              equipo: a.equipo.filter((m) => m.id !== memberId),
+            }
+          : a
+      );
+
+      if (removed) {
+        recordPhase5SessionLog(
+          'auditoria',
+          auditId,
+          'UPDATE',
+          { integrante: removed.nombre, rol: removed.rol },
+          { accion: 'RETIRO_EQUIPO_AUDITOR', integrante: removed.nombre }
+        );
+        state.programacionDomain.saveSuccessMessage = `${removed.nombre} retirado del equipo evaluador.`;
+      }
+      render();
+    });
+  });
+
+  // Tab 2: Sedes y Muestreo
+  document
+    .querySelectorAll<HTMLSelectElement>('[data-action="change-site-sampling-mode"]')
+    .forEach((select) => {
+      select.addEventListener('change', () => {
+        if (!canEditAudit) return;
+        const auditId = select.dataset.auditId;
+        const siteId = select.dataset.siteId;
+        const nextMode = select.value as SiteEvaluationMode;
+        if (!auditId || !siteId) return;
+
+        let siteName = '';
+        let prevMode = '';
+        state.domainData.programacionAudits = state.domainData.programacionAudits.map((a) =>
+          a.id === auditId
+            ? {
+                ...a,
+                sitiosMuestreo: a.sitiosMuestreo.map((s) => {
+                  if (s.id === siteId) {
+                    siteName = s.nombre_sitio;
+                    prevMode = s.modalidad_evaluacion;
+                    return { ...s, modalidad_evaluacion: nextMode };
+                  }
+                  return s;
+                }),
+              }
+            : a
+        );
+
+        if (siteName) {
+          recordPhase5SessionLog(
+            'auditoria',
+            auditId,
+            'UPDATE',
+            { sede: siteName, modalidad: prevMode },
+            { sede: siteName, modalidad: nextMode }
+          );
+          state.programacionDomain.saveSuccessMessage = `Modalidad de ${siteName} actualizada a ${nextMode}.`;
+        }
+        render();
+      });
+    });
+
+  document
+    .querySelectorAll<HTMLInputElement>('[data-action="change-site-sampling-date"]')
+    .forEach((input) => {
+      input.addEventListener('change', () => {
+        if (!canEditAudit) return;
+        const auditId = input.dataset.auditId;
+        const siteId = input.dataset.siteId;
+        const nextDate = input.value;
+        if (!auditId || !siteId || !nextDate) return;
+
+        let siteName = '';
+        let prevDate = '';
+        state.domainData.programacionAudits = state.domainData.programacionAudits.map((a) =>
+          a.id === auditId
+            ? {
+                ...a,
+                sitiosMuestreo: a.sitiosMuestreo.map((s) => {
+                  if (s.id === siteId) {
+                    siteName = s.nombre_sitio;
+                    prevDate = s.fecha_asignada;
+                    return { ...s, fecha_asignada: nextDate };
+                  }
+                  return s;
+                }),
+              }
+            : a
+        );
+
+        if (siteName) {
+          recordPhase5SessionLog(
+            'auditoria',
+            auditId,
+            'UPDATE',
+            { sede: siteName, fecha_asignada: prevDate },
+            { sede: siteName, fecha_asignada: nextDate }
+          );
+          state.programacionDomain.saveSuccessMessage = `Fecha asignada para ${siteName} actualizada a ${nextDate}.`;
+        }
+        render();
+      });
+    });
+
+  document.querySelectorAll<HTMLElement>('[data-action="toggle-site-sampled"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!canEditAudit) return;
+      const auditId = btn.dataset.auditId;
+      const siteId = btn.dataset.siteId;
+      if (!auditId || !siteId) return;
+
+      let siteName = '';
+      let nextSampled = true;
+      state.domainData.programacionAudits = state.domainData.programacionAudits.map((a) =>
+        a.id === auditId
+          ? {
+              ...a,
+              sitiosMuestreo: a.sitiosMuestreo.map((s) => {
+                if (s.id === siteId) {
+                  siteName = s.nombre_sitio;
+                  nextSampled = !s.muestreado;
+                  return { ...s, muestreado: nextSampled };
+                }
+                return s;
+              }),
+            }
+          : a
+      );
+
+      if (siteName) {
+        recordPhase5SessionLog(
+          'auditoria',
+          auditId,
+          'UPDATE',
+          { sede: siteName, muestreado: !nextSampled },
+          { sede: siteName, muestreado: nextSampled }
+        );
+      }
+      render();
+    });
+  });
+
+  // Tab 3: Matriz de Verificación Normativa
+  document
+    .querySelectorAll<HTMLSelectElement>('[data-action="change-matrix-status"]')
+    .forEach((select) => {
+      select.addEventListener('change', () => {
+        if (!canEditAudit) return;
+        const auditId = select.dataset.auditId;
+        const itemId = select.dataset.itemId;
+        const nextStatus = select.value as NormativeVerificationStatus;
+        if (!auditId || !itemId) return;
+
+        let clausula = '';
+        let prevStatus = '';
+        state.domainData.programacionAudits = state.domainData.programacionAudits.map((a) =>
+          a.id === auditId
+            ? {
+                ...a,
+                matrizNormativa: a.matrizNormativa.map((item) => {
+                  if (item.id === itemId) {
+                    clausula = item.codigo_clausula;
+                    prevStatus = item.estado_verificacion;
+                    return { ...item, estado_verificacion: nextStatus };
+                  }
+                  return item;
+                }),
+              }
+            : a
+        );
+
+        if (clausula) {
+          recordPhase5SessionLog(
+            'auditoria',
+            auditId,
+            'UPDATE',
+            { clausula, estado_verificacion: prevStatus },
+            { clausula, estado_verificacion: nextStatus }
+          );
+          state.programacionDomain.saveSuccessMessage = `Cláusula ${clausula} actualizada a estado "${nextStatus}".`;
+        }
+        render();
+      });
+    });
+
+  // --- B. Calendario Operativo ---
+  document.querySelectorAll<HTMLElement>('[data-cal-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.calMode as CalendarDisplayMode | undefined;
+      if (mode) {
+        state.calendarioDomain.displayMode = mode;
+        render();
+      }
+    });
+  });
+
+  const stepCalendarPeriod = (direction: -1 | 1) => {
+    const step = state.calendarioDomain.displayMode === 'quarter' ? 3 : 1;
+    let m = state.calendarioDomain.referenceMonth + direction * step;
+    let y = state.calendarioDomain.referenceYear;
+    while (m < 1) {
+      m += 12;
+      y -= 1;
+    }
+    while (m > 12) {
+      m -= 12;
+      y += 1;
+    }
+    state.calendarioDomain.referenceMonth = m;
+    state.calendarioDomain.referenceYear = y;
+    render();
+  };
+
+  document.getElementById('calPrevPeriodBtn')?.addEventListener('click', () => stepCalendarPeriod(-1));
+  document.getElementById('calNextPeriodBtn')?.addEventListener('click', () => stepCalendarPeriod(1));
+
+  document.getElementById('calFilterAuditor')?.addEventListener('change', (e) => {
+    state.calendarioDomain.filterAuditorId = (e.target as HTMLSelectElement).value || 'ALL';
+    render();
+  });
+  document.getElementById('calFilterStandard')?.addEventListener('change', (e) => {
+    state.calendarioDomain.filterStandard = (e.target as HTMLSelectElement).value || 'ALL';
+    render();
+  });
+  document.getElementById('calFilterMethodology')?.addEventListener('change', (e) => {
+    state.calendarioDomain.filterMethodology = (e.target as HTMLSelectElement).value || 'ALL';
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="open-cal-drawer"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.calendarioDomain.drawerAuditId = btn.dataset.auditId || null;
+      render();
+    });
+  });
+
+  const closeCalDrawer = () => {
+    state.calendarioDomain.drawerAuditId = null;
+    render();
+  };
+  document.getElementById('closeCalDrawerBtn')?.addEventListener('click', closeCalDrawer);
+  document.getElementById('calDrawerBackdrop')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeCalDrawer();
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="drawer-go-programacion"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const auditId = btn.dataset.auditId;
+      if (!auditId) return;
+      const audit = state.domainData.programacionAudits.find((a) => a.id === auditId);
+      state.calendarioDomain.drawerAuditId = null;
+      state.activeRoute = 'auditorias';
+      state.activeSubSection = 'scheduling';
+      state.programacionDomain.selectedAuditId = auditId;
+      state.programacionDomain.activeChildTab = 'equipo';
+      state.breadcrumbs = resetBreadcrumbToDomain('auditorias', 'scheduling');
+      if (audit) {
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `prog-audit-${audit.id}`,
+          label: audit.codigo_auditoria,
+          route: 'auditorias',
+          subview: 'scheduling',
+          entityId: audit.id,
+          tooltip: `${audit.codigo_auditoria} — ${audit.organizacion_nombre}`,
+        });
+      }
+      syncUrlHash('auditorias', 'scheduling');
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="drawer-go-resultado"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const auditId = btn.dataset.auditId;
+      if (!auditId) return;
+      state.calendarioDomain.drawerAuditId = null;
+      state.activeRoute = 'auditorias';
+      state.activeSubSection = 'findings';
+      state.resultadoDomain.activeAuditIdForDecision = auditId;
+      state.resultadoDomain.selectedAuditId = auditId;
+      state.resultadoDomain.recommendationError = null;
+      state.resultadoDomain.recommendationSuccess = null;
+      state.breadcrumbs = resetBreadcrumbToDomain('auditorias', 'findings');
+      syncUrlHash('auditorias', 'findings');
+      render();
+    });
+  });
+
+  // --- C. Resultado, Hallazgos & Motor ISO/IEC 17021-1 ---
+  document.getElementById('decisionAuditSelector')?.addEventListener('change', (e) => {
+    const val = (e.target as HTMLSelectElement).value;
+    if (val) {
+      state.resultadoDomain.activeAuditIdForDecision = val;
+      state.resultadoDomain.recommendationError = null;
+      state.resultadoDomain.recommendationSuccess = null;
+      render();
+    }
+  });
+
+  document.getElementById('signRecommendationForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!isStaffOrAuditor) return;
+    const form = e.currentTarget as HTMLFormElement;
+    const auditId = form.dataset.auditId || state.resultadoDomain.activeAuditIdForDecision;
+    const audit = state.domainData.programacionAudits.find((a) => a.id === auditId);
+    if (!audit) return;
+
+    const firma =
+      (document.getElementById('recSignatureInput') as HTMLInputElement | null)?.value.trim() || '';
+    const comentarios =
+      (document.getElementById('recCommentsInput') as HTMLInputElement | null)?.value.trim() || '';
+
+    const evaluation = evaluateIso17021Recommendation(state.domainData.phase5Findings, auditId);
+    const sigValidation = validateRecommendationSignature({
+      firma_electronica: firma,
+      comentarios,
+      evaluation,
+    });
+
+    if (!sigValidation.valid) {
+      state.resultadoDomain.recommendationError = sigValidation.error || 'Firma inválida.';
+      state.resultadoDomain.recommendationSuccess = null;
+      render();
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const signedBy = state.profile?.nombre || audit.auditor_lider;
+
+    const recommendationRecord = {
+      estado: evaluation.status,
+      auditor_lider_nombre: signedBy,
+      firma_electronica: firma,
+      timestamp: nowIso,
+      comentarios,
+      resumen_hallazgos: {
+        total: evaluation.totalFindings,
+        ncMayorAbiertas: evaluation.openMajorCount,
+        ncMenorAbiertas: evaluation.openMinorCount,
+        observaciones: evaluation.observationsCount,
+        oportunidadesMejora: evaluation.opportunitiesCount,
+      },
+    };
+
+    state.domainData.programacionAudits = state.domainData.programacionAudits.map((a) =>
+      a.id === auditId
+        ? {
+            ...a,
+            estatus: 'Completado',
+            recomendacion: recommendationRecord,
+          }
+        : a
+    );
+
+    recordPhase5SessionLog(
+      'auditoria',
+      auditId,
+      'UPDATE',
+      { estatus: audit.estatus, recomendacion: audit.recomendacion?.estado || null },
+      {
+        estatus: 'Completado',
+        recomendacion: evaluation.status,
+        firma_electronica: firma,
+        auditor_lider_nombre: signedBy,
+        comentarios,
+      }
+    );
+
+    state.resultadoDomain.recommendationError = null;
+    state.resultadoDomain.recommendationSuccess = `Recomendación ISO/IEC 17021-1 (${evaluation.status}) firmada y registrada en public.auditoria.`;
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-res-display-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.resDisplayMode as FindingsDisplayMode | undefined;
+      if (mode) {
+        state.resultadoDomain.displayMode = mode;
+        render();
+      }
+    });
+  });
+
+  document.getElementById('openNewFindingFormBtn')?.addEventListener('click', () => {
+    if (!isStaffOrAuditor) return;
+    state.resultadoDomain.isLoggingFinding = true;
+    state.resultadoDomain.findingFormError = null;
+    render();
+  });
+
+  const closeNewFindingForm = () => {
+    state.resultadoDomain.isLoggingFinding = false;
+    state.resultadoDomain.findingFormError = null;
+    render();
+  };
+  document.getElementById('closeNewFindingFormBtn')?.addEventListener('click', closeNewFindingForm);
+  document.getElementById('cancelNewFindingFormBtn')?.addEventListener('click', closeNewFindingForm);
+
+  document.getElementById('phase5NewFindingForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!isStaffOrAuditor) return;
+
+    const auditId =
+      (document.getElementById('p5FindingAuditSelect') as HTMLSelectElement | null)?.value || '';
+    const tipo = (
+      (document.getElementById('p5FindingTypeSelect') as HTMLSelectElement | null)?.value ||
+      'NC_MENOR'
+    ) as FindingType;
+    const reqId =
+      (document.getElementById('p5FindingReqSelect') as HTMLSelectElement | null)?.value || '';
+    const procId =
+      (document.getElementById('p5FindingProcessSelect') as HTMLSelectElement | null)?.value || '';
+    const sitioNombre =
+      (document.getElementById('p5FindingSiteInput') as HTMLInputElement | null)?.value.trim() ||
+      'Sede Principal';
+    const evidencia =
+      (document.getElementById('p5FindingEvidenceInput') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const fechaLimite =
+      (document.getElementById('p5FindingDueDateInput') as HTMLInputElement | null)?.value ||
+      '2024-12-30';
+    const descripcion =
+      (document.getElementById('p5FindingDescInput') as HTMLTextAreaElement | null)?.value.trim() ||
+      '';
+
+    const validation = validatePhase5FindingInput({
+      id_auditoria: auditId,
+      tipo,
+      id_requisito: reqId,
+      id_proceso: procId,
+      descripcion,
+      evidencia,
+    });
+
+    if (!validation.valid) {
+      state.resultadoDomain.findingFormError = validation.error || 'Datos incompletos.';
+      render();
+      return;
+    }
+
+    const audit = state.domainData.programacionAudits.find((a) => a.id === auditId);
+    const req = state.domainData.requirements.find((r) => r.id === reqId);
+    const proc = state.domainData.processes.find((p) => p.id === procId);
+    const nextCodeNum = state.domainData.phase5Findings.length + 1;
+    const newId = `finding-p5-${Date.now()}`;
+    const codigoHallazgo = `HAL-2024-${String(nextCodeNum).padStart(3, '0')}`;
+
+    const newFinding: Phase5FindingEntity = {
+      id: newId,
+      codigo_hallazgo: codigoHallazgo,
+      id_auditoria: auditId,
+      auditoria_tipo: audit?.tipo_auditoria || 'Renovación',
+      numero_certificado: audit?.numero_certificado || 'FN-QMS-2024-001',
+      organizacion_nombre: audit?.organizacion_nombre || 'Iberometal Componentes S.A.',
+      id_requisito: reqId,
+      requisito_codigo: req?.codigo || '8.5',
+      id_proceso: procId,
+      proceso_nombre: proc?.nombre_proceso || 'Troquelado y Fundición',
+      sitio_nombre: sitioNombre,
+      tipo,
+      descripcion,
+      evidencia,
+      estado_ciclo: 'Abierto',
+      analisis_causa_raiz: '',
+      plan_accion_correctiva: '',
+      comentarios_verificacion: '',
+      fecha_limite: fechaLimite,
+      fecha_cierre: null,
+      cerrado: false,
+      created_at: new Date().toISOString(),
+    };
+
+    state.domainData.phase5Findings = [newFinding, ...state.domainData.phase5Findings];
+    state.domainData.findings = [newFinding, ...state.domainData.findings];
+    state.resultadoDomain.isLoggingFinding = false;
+    state.resultadoDomain.findingFormError = null;
+    state.resultadoDomain.activeAuditIdForDecision = auditId;
+
+    // Reset prior signed recommendation if an open NC_MAYOR or blocking NC_MENOR is introduced
+    if (tipo === 'NC_MAYOR' || tipo === 'NC_MENOR') {
+      state.domainData.programacionAudits = state.domainData.programacionAudits.map((a) =>
+        a.id === auditId ? { ...a, recomendacion: null } : a
+      );
+      state.resultadoDomain.recommendationSuccess = null;
+    }
+
+    recordPhase5SessionLog('hallazgo', newId, 'INSERT', null, {
+      auditoria: audit?.codigo_auditoria || newFinding.numero_certificado,
+      codigo_hallazgo: codigoHallazgo,
+      tipo,
+      clausula: newFinding.requisito_codigo,
+      proceso: newFinding.proceso_nombre,
+      estado_ciclo: 'Abierto',
+      descripcion,
+    });
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidRegex.test(auditId) && uuidRegex.test(reqId) && uuidRegex.test(procId)) {
+      void (async () => {
+        try {
+          const [{ data: dbAudit }, { data: dbReq }, { data: dbProc }] = await Promise.all([
+            supabase.from('auditoria').select('id').eq('id', auditId).maybeSingle(),
+            supabase.from('requisito').select('id').eq('id', reqId).maybeSingle(),
+            supabase.from('proceso').select('id').eq('id', procId).maybeSingle(),
+          ]);
+          if (dbAudit && dbReq && dbProc) {
+            await supabase.from('hallazgo').insert({
+              id_auditoria: auditId,
+              id_requisito: reqId,
+              id_proceso: procId,
+              tipo,
+              descripcion,
+              evidencia: evidencia || null,
+              cerrado: false,
+            });
+          }
+        } catch {
+          // Reactive state fallback
+        }
+      })();
+    }
+
+    render();
+  });
+
+  const resSearchInput = document.getElementById('resultadoSearchInput') as HTMLInputElement | null;
+  resSearchInput?.addEventListener('input', (e) => {
+    state.resultadoDomain.searchQuery = (e.target as HTMLInputElement).value;
+    render();
+  });
+  resSearchInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      state.resultadoDomain.searchQuery = '';
+      render();
+    }
+  });
+
+  document.getElementById('resultadoBoardAuditFilter')?.addEventListener('change', (e) => {
+    state.resultadoDomain.selectedAuditId = (e.target as HTMLSelectElement).value || 'ALL';
+    render();
+  });
+
+  document.getElementById('resultadoLifecycleFilter')?.addEventListener('change', (e) => {
+    state.resultadoDomain.filterLifecycle = (e.target as HTMLSelectElement).value || 'ALL';
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-res-filter-type]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.resultadoDomain.filterType = btn.dataset.resFilterType || 'ALL';
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="inspect-finding"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.resultadoDomain.inspectingFindingId = btn.dataset.findingId || null;
+      render();
+    });
+  });
+
+  const closeFindingModal = () => {
+    state.resultadoDomain.inspectingFindingId = null;
+    render();
+  };
+  document.getElementById('closeFindingDetailModalBtn')?.addEventListener('click', closeFindingModal);
+  document.getElementById('cancelFindingDetailModalBtn')?.addEventListener('click', closeFindingModal);
+  document.getElementById('findingDetailModalBackdrop')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeFindingModal();
+  });
+
+  document.getElementById('findingLifecycleForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.currentTarget as HTMLFormElement;
+    const findingId = form.dataset.findingId || state.resultadoDomain.inspectingFindingId;
+    if (!findingId) return;
+
+    const existing = state.domainData.phase5Findings.find((f) => f.id === findingId);
+    if (!existing) return;
+
+    const rootCause =
+      (document.getElementById('modalFindingRootCause') as HTMLTextAreaElement | null)?.value.trim() ||
+      '';
+    const capa =
+      (document.getElementById('modalFindingCapa') as HTMLTextAreaElement | null)?.value.trim() || '';
+    const verification =
+      (document.getElementById('modalFindingVerification') as HTMLTextAreaElement | null)?.value.trim() ||
+      '';
+    const nextStatus = (
+      (document.getElementById('modalFindingLifecycleSelect') as HTMLSelectElement | null)?.value ||
+      existing.estado_ciclo
+    ) as FindingLifecycleStatus;
+
+    // Enforce RBAC for CLIENT (cannot advance directly to Verificado / Cerrado)
+    if (
+      !isStaffOrAuditor &&
+      (nextStatus === 'Verificado' || nextStatus === 'Cerrado')
+    ) {
+      const errBox = document.getElementById('findingLifecycleErrorBox');
+      if (errBox) {
+        errBox.textContent =
+          'Solo el Auditor Líder o Personal Técnico pueden verificar y cerrar formalmente un hallazgo.';
+        errBox.classList.remove('hidden');
+      }
+      return;
+    }
+
+    const validation = validateFindingLifecycleUpdate(existing, nextStatus, {
+      analisis_causa_raiz: rootCause,
+      plan_accion_correctiva: capa,
+      comentarios_verificacion: verification,
+    });
+
+    if (!validation.valid) {
+      const errBox = document.getElementById('findingLifecycleErrorBox');
+      if (errBox) {
+        errBox.textContent = `⚠️ ${validation.error}`;
+        errBox.classList.remove('hidden');
+      }
+      return;
+    }
+
+    const nextClosed = nextStatus === 'Cerrado';
+    const todayIso = new Date().toISOString().slice(0, 10);
+
+    const oldSnapshot = {
+      estado_ciclo: existing.estado_ciclo,
+      cerrado: existing.cerrado,
+      analisis_causa_raiz: existing.analisis_causa_raiz,
+      plan_accion_correctiva: existing.plan_accion_correctiva,
+    };
+
+    state.domainData.phase5Findings = state.domainData.phase5Findings.map((f) =>
+      f.id === findingId
+        ? {
+            ...f,
+            analisis_causa_raiz: rootCause,
+            plan_accion_correctiva: capa,
+            comentarios_verificacion: verification,
+            estado_ciclo: nextStatus,
+            cerrado: nextClosed,
+            fecha_cierre: nextClosed ? f.fecha_cierre || todayIso : null,
+          }
+        : f
+    );
+
+    state.domainData.findings = state.domainData.findings.map((f) =>
+      f.id === findingId ? { ...f, cerrado: nextClosed } : f
+    );
+
+    const relatedAudit = state.domainData.programacionAudits.find(
+      (a) => a.id === existing.id_auditoria
+    );
+
+    recordPhase5SessionLog('hallazgo', findingId, 'UPDATE', oldSnapshot, {
+      auditoria: relatedAudit?.codigo_auditoria || existing.numero_certificado,
+      codigo_hallazgo: existing.codigo_hallazgo,
+      estado_ciclo: nextStatus,
+      cerrado: nextClosed,
+      plan_accion_correctiva: capa,
+      comentarios_verificacion: verification,
+    });
+
+    state.resultadoDomain.inspectingFindingId = null;
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidRegex.test(findingId)) {
+      void (async () => {
+        try {
+          await supabase
+            .from('hallazgo')
+            .update({ cerrado: nextClosed })
+            .eq('id', findingId);
+        } catch {
+          // Reactive state fallback
+        }
+      })();
+    }
+
+    render();
+  });
+}
+
+async function handleCreatePhase5Audit(data: {
+  id_certificado: string;
+  tipo_auditoria: string;
+  metodologia: AuditMethodology;
+  fecha_inicio: string;
+  fecha_fin: string;
+  dias_auditor: number;
+  auditor_lider_id: string;
+}): Promise<void> {
+  if (!state.profile || !['ADMIN', 'WORKER'].includes(state.profile.role)) return;
+
+  const cert = state.exploration.records.find((c) => c.id === data.id_certificado);
+  const detailedCert = state.domainData.allCertificadosDetailed.find(
+    (c) => c.id === data.id_certificado
+  );
+  const auditor = state.domainData.allAuditorsDetailed.find((a) => a.id === data.auditor_lider_id);
+
+  const nextNum = state.domainData.programacionAudits.length + 1;
+  const newCode = `AUD-2024-${String(nextNum).padStart(3, '0')}`;
+  const newId = `audit-p5-${Date.now()}`;
+  const orgName =
+    cert?.organizacion_nombre ||
+    detailedCert?.organizacion_nombre ||
+    'Iberometal Componentes S.A.';
+  const certNumber =
+    cert?.numero_certificado || detailedCert?.numero_certificado || 'FN-QMS-2024-001';
+  const normaCode = cert?.norma || detailedCert?.norma_codigo || 'ISO 9001:2015';
+  const sectorIaf = cert?.sector_iaf || detailedCert?.sector_iaf || 17;
+
+  const sitesSampling =
+    detailedCert && detailedCert.sitios.length > 0
+      ? detailedCert.sitios.map((s) => ({
+          id: `sm-${Date.now()}-${s.numero_sitio}`,
+          id_sitio: s.id,
+          numero_sitio: s.numero_sitio,
+          nombre_sitio: s.nombre_sitio,
+          direccion_sitio: s.direccion_sitio,
+          modalidad_evaluacion: (data.metodologia === 'Remota' ? 'Remota' : 'Presencial') as SiteEvaluationMode,
+          fecha_asignada: data.fecha_inicio,
+          dias_asignados: Math.max(0.5, Math.round((data.dias_auditor / detailedCert.sitios.length) * 10) / 10),
+          muestreado: true,
+        }))
+      : [
+          {
+            id: `sm-${Date.now()}-0`,
+            id_sitio: '50000000-0000-0000-0000-000000000000',
+            numero_sitio: 0,
+            nombre_sitio: 'Sede Principal HQ',
+            direccion_sitio: cert?.direccion_fiscal || 'Sede Principal Registrada',
+            modalidad_evaluacion: (data.metodologia === 'Remota' ? 'Remota' : 'Presencial') as SiteEvaluationMode,
+            fecha_asignada: data.fecha_inicio,
+            dias_asignados: data.dias_auditor,
+            muestreado: true,
+          },
+        ];
+
+  const newAudit: ProgramacionAuditEntity = {
+    id: newId,
+    codigo_auditoria: newCode,
+    id_certificado: data.id_certificado || '40000000-0000-0000-0000-000000000001',
+    numero_certificado: certNumber,
+    id_organizacion: cert?.organizacion_id || detailedCert?.id_organizacion || '30000000-0000-0000-0000-000000000001',
+    organizacion_nombre: orgName,
+    norma_codigo: normaCode,
+    sector_iaf: sectorIaf,
+    tipo_auditoria: data.tipo_auditoria,
+    metodologia: data.metodologia,
+    fecha_inicio: data.fecha_inicio,
+    fecha_fin: data.fecha_fin >= data.fecha_inicio ? data.fecha_fin : data.fecha_inicio,
+    fecha_reprogramacion: null,
+    dias_auditor: data.dias_auditor,
+    estatus: 'Planificado',
+    auditor_lider_id: auditor?.id || '10000000-0000-0000-0000-000000000001',
+    auditor_lider: auditor?.nombre || 'Ing. Carlos Mendoza',
+    sede_principal_direccion: cert?.direccion_fiscal || 'Zona Industrial Principal',
+    equipo: auditor
+      ? [
+          {
+            id: `eq-${Date.now()}`,
+            id_auditor: auditor.id,
+            nombre: auditor.nombre,
+            rol: 'Auditor Líder',
+            competencia_norma: auditor.normas_acreditadas[0] || normaCode,
+            competencia_sector_iaf: auditor.sectores_iaf[0] || sectorIaf,
+            credencial_codigo: auditor.codigo_credencial,
+            estado_credencial: 'Vigente',
+            email: auditor.email,
+            telefono: auditor.telefono,
+          },
+        ]
+      : [],
+    sitiosMuestreo: sitesSampling,
+    matrizNormativa: [
+      {
+        id: `mn-${Date.now()}-1`,
+        id_requisito: 'f0000000-0000-0000-0000-000000000041',
+        codigo_clausula: '4.1',
+        titulo_clausula: 'Comprensión de la organización y de su contexto',
+        proceso_nombre: 'Dirección Estratégica y Calidad',
+        estado_verificacion: 'Planificada',
+      },
+      {
+        id: `mn-${Date.now()}-2`,
+        id_requisito: 'f0000000-0000-0000-0000-000000000085',
+        codigo_clausula: '8.5',
+        titulo_clausula: 'Producción y provisión del servicio',
+        proceso_nombre: 'Operaciones Principales',
+        estado_verificacion: 'Planificada',
+      },
+    ],
+    recomendacion: null,
+  };
+
+  state.domainData.programacionAudits = [newAudit, ...state.domainData.programacionAudits];
+  state.domainData.audits = [
+    {
+      id: newId,
+      id_certificado: newAudit.id_certificado,
+      numero_certificado: newAudit.numero_certificado,
+      organizacion_nombre: newAudit.organizacion_nombre,
+      tipo_auditoria: newAudit.tipo_auditoria,
+      metodologia: newAudit.metodologia,
+      fecha_programacion: newAudit.fecha_inicio,
+      auditor_lider: newAudit.auditor_lider,
+      estatus: 'PLANIFICADA',
+    },
+    ...state.domainData.audits,
+  ];
+
+  recordPhase5SessionLog('auditoria', newId, 'INSERT', null, {
+    codigo_auditoria: newCode,
+    organizacion: orgName,
+    certificado: certNumber,
+    tipo_auditoria: data.tipo_auditoria,
+    metodologia: data.metodologia,
+    fecha_inicio: newAudit.fecha_inicio,
+    fecha_fin: newAudit.fecha_fin,
+    auditor_lider: newAudit.auditor_lider,
+  });
+
+  state.auditPlanning.isModalOpen = false;
+  state.programacionDomain.isPlanningModalOpen = false;
+  state.programacionDomain.saveSuccessMessage = `Auditoría ${newCode} planificada exitosamente.`;
+  render();
 }
 
 const TIPO_AUDITORIA_MAP: Record<string, string> = {
@@ -2953,7 +4360,6 @@ function generateFallbackAuditEntries(
       actor_email: 'admin@fondonorma.test',
       old_data: null,
       new_data: {
-        id: recordId,
         codigo: entityName,
         estatus: 'PLANIFICADA',
         created_at: '2024-01-15T09:00:00Z',
@@ -2963,11 +4369,77 @@ function generateFallbackAuditEntries(
   ];
 }
 
+function sanitizeAuditLogDataMap(
+  raw: Record<string, unknown> | null | undefined
+): Record<string, unknown> | null {
+  if (!raw) return null;
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const out: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(raw)) {
+    if (key === 'id' || key === 'created_by' || key === 'updated_by') {
+      continue;
+    }
+    if (typeof value === 'string' && uuidPattern.test(value.trim())) {
+      const idVal = value.trim();
+      const matchedAudit = state.domainData.programacionAudits.find((a) => a.id === idVal);
+      if (matchedAudit) {
+        out[key.replace(/^id_/, '')] = matchedAudit.codigo_auditoria;
+        continue;
+      }
+      const matchedAuditor = state.domainData.allAuditorsDetailed.find((a) => a.id === idVal);
+      if (matchedAuditor) {
+        out[key.replace(/^id_/, '')] = matchedAuditor.nombre;
+        continue;
+      }
+      const matchedCert = state.exploration.records.find((c) => c.id === idVal);
+      if (matchedCert) {
+        out[key.replace(/^id_/, '')] = matchedCert.numero_certificado;
+        continue;
+      }
+      const matchedReq = state.domainData.requirements.find((r) => r.id === idVal);
+      if (matchedReq) {
+        out[key.replace(/^id_/, '')] = matchedReq.codigo;
+        continue;
+      }
+      const matchedProc = state.domainData.processes.find((p) => p.id === idVal);
+      if (matchedProc) {
+        out[key.replace(/^id_/, '')] = matchedProc.nombre_proceso;
+        continue;
+      }
+      out[key.replace(/^id_/, '')] = 'Referencia registrada';
+      continue;
+    }
+    out[key] = value;
+  }
+
+  return out;
+}
+
 async function openAuditLogModal(
   tableName: string,
   recordId: string,
   entityName: string
 ): Promise<void> {
+  const targetAuditCode = state.domainData.programacionAudits.find(
+    (a) => a.id === recordId
+  )?.codigo_auditoria;
+
+  const sessionMatches = state.domainData.sessionAuditLogs.filter((entry) => {
+    if (tableName && entry.table_name !== tableName) return false;
+    if (!recordId) return true;
+    if (entry.record_id === recordId) return true;
+    if (
+      tableName === 'hallazgo' &&
+      targetAuditCode &&
+      entry.new_data &&
+      entry.new_data.auditoria === targetAuditCode
+    ) {
+      return true;
+    }
+    return false;
+  });
+
   state.auditLogModal = {
     isOpen: true,
     entityName,
@@ -2980,10 +4452,20 @@ async function openAuditLogModal(
   render();
 
   try {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (recordId && !uuidRegex.test(recordId)) {
+      state.auditLogModal.loading = false;
+      const fallback = generateFallbackAuditEntries(tableName, recordId, entityName);
+      state.auditLogModal.entries =
+        sessionMatches.length > 0 ? [...sessionMatches, ...fallback] : fallback;
+      render();
+      return;
+    }
+
     let query = supabase
       .from('audit_log')
       .select('*')
-      .order('changed_at', { ascending: false });
+      .order('performed_at', { ascending: false });
 
     if (tableName) {
       query = query.eq('table_name', tableName);
@@ -2996,17 +4478,28 @@ async function openAuditLogModal(
 
     if (error || !data || data.length === 0) {
       state.auditLogModal.loading = false;
-      state.auditLogModal.entries = generateFallbackAuditEntries(tableName, recordId, entityName);
+      const fallback = generateFallbackAuditEntries(tableName, recordId, entityName);
+      state.auditLogModal.entries =
+        sessionMatches.length > 0 ? [...sessionMatches, ...fallback] : fallback;
       render();
       return;
     }
 
+    const sanitizedRows = (data as Array<AuditLogEntry & { performed_at?: string }>).map((row) => ({
+      ...row,
+      changed_at: row.performed_at || row.changed_at,
+      old_data: sanitizeAuditLogDataMap(row.old_data),
+      new_data: sanitizeAuditLogDataMap(row.new_data),
+    }));
+
     state.auditLogModal.loading = false;
-    state.auditLogModal.entries = data as AuditLogEntry[];
+    state.auditLogModal.entries = [...sessionMatches, ...sanitizedRows];
     render();
   } catch {
     state.auditLogModal.loading = false;
-    state.auditLogModal.entries = generateFallbackAuditEntries(tableName, recordId, entityName);
+    const fallback = generateFallbackAuditEntries(tableName, recordId, entityName);
+    state.auditLogModal.entries =
+      sessionMatches.length > 0 ? [...sessionMatches, ...fallback] : fallback;
     render();
   }
 }
@@ -3158,7 +4651,55 @@ function resetClientSessionState(): void {
     allOrganizaciones: [...INITIAL_ORGANIZACIONES],
     allCertificadosDetailed: [...INITIAL_CERTIFICADOS_DETAILED],
     allAuditorsDetailed: [...INITIAL_AUDITORES_DETAILED],
+    programacionAudits: INITIAL_PROGRAMACION_AUDITS.map((a) => ({
+      ...a,
+      equipo: a.equipo.map((m) => ({ ...m })),
+      sitiosMuestreo: a.sitiosMuestreo.map((s) => ({ ...s })),
+      matrizNormativa: a.matrizNormativa.map((n) => ({ ...n })),
+      recomendacion: a.recomendacion ? { ...a.recomendacion } : null,
+    })),
+    phase5Findings: INITIAL_PHASE5_FINDINGS.map((f) => ({ ...f })),
+    sessionAuditLogs: [],
     loading: false,
+  };
+  state.programacionDomain = {
+    selectedAuditId: null,
+    activeChildTab: 'equipo',
+    query: '',
+    selectedTipo: 'ALL',
+    selectedMetodologia: 'ALL',
+    selectedEstatus: 'ALL',
+    selectedAuditorLider: 'ALL',
+    viewMode: 'grid',
+    sortColumn: null,
+    sortDirection: 'none',
+    isPlanningModalOpen: false,
+    isEditingAttributes: false,
+    isAddingTeamMember: false,
+    editErrorMessage: null,
+    saveSuccessMessage: null,
+  };
+  state.calendarioDomain = {
+    displayMode: 'month',
+    referenceYear: 2024,
+    referenceMonth: 11,
+    filterAuditorId: 'ALL',
+    filterStandard: 'ALL',
+    filterMethodology: 'ALL',
+    drawerAuditId: null,
+  };
+  state.resultadoDomain = {
+    selectedAuditId: 'ALL',
+    activeAuditIdForDecision: INITIAL_PROGRAMACION_AUDITS[0]?.id || '',
+    displayMode: 'list',
+    filterType: 'ALL',
+    filterLifecycle: 'ALL',
+    searchQuery: '',
+    isLoggingFinding: false,
+    inspectingFindingId: null,
+    recommendationError: null,
+    recommendationSuccess: null,
+    findingFormError: null,
   };
   state.certificadoDomain = {
     selectedCertId: null,
@@ -4042,11 +5583,13 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// Global keyboard shortcuts: / to focus search, Escape to close modals/clear search
+// Global keyboard shortcuts: / to focus search, Escape to close modals/drawers/clear search
 document.addEventListener('keydown', (e) => {
   // '/' shortcut to focus search input
   if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) {
-    const searchInput = (document.getElementById('auditorDirectorySearchInput') ||
+    const searchInput = (document.getElementById('programacionSearchInput') ||
+      document.getElementById('resultadoSearchInput') ||
+      document.getElementById('auditorDirectorySearchInput') ||
       document.getElementById('certDirectorySearchInput') ||
       document.getElementById('certificateSearchInput')) as HTMLInputElement | null;
     if (searchInput) {
@@ -4058,6 +5601,23 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (e.key !== 'Escape') return;
+
+  if (state.auditLogModal.isOpen) {
+    closeAuditLogModal();
+    return;
+  }
+
+  if (state.resultadoDomain.inspectingFindingId) {
+    state.resultadoDomain.inspectingFindingId = null;
+    render();
+    return;
+  }
+
+  if (state.calendarioDomain.drawerAuditId) {
+    state.calendarioDomain.drawerAuditId = null;
+    render();
+    return;
+  }
 
   if (document.activeElement?.id === 'certificateSearchInput') {
     if (state.exploration.query) {
@@ -4123,25 +5683,6 @@ window.addEventListener('popstate', () => {
       state.breadcrumbs = resetBreadcrumbToDomain(route, subview);
       render();
     }
-  }
-});
-
-// Global Keyboard Shortcuts ('/' to focus search, 'Escape' to dismiss modals/clear)
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    if (state.auditLogModal.isOpen) {
-      closeAuditLogModal();
-    }
-  } else if (
-    e.key === '/' &&
-    document.activeElement?.tagName !== 'INPUT' &&
-    document.activeElement?.tagName !== 'TEXTAREA'
-  ) {
-    e.preventDefault();
-    const searchInput = (document.getElementById('auditorDirectorySearchInput') ||
-      document.getElementById('certDirectorySearchInput') ||
-      document.getElementById('certificateSearchInput')) as HTMLInputElement | null;
-    searchInput?.focus();
   }
 });
 
