@@ -103,6 +103,12 @@ import {
   type CertificadoViewState,
   type CertificadoChildTab,
 } from './lib/multisiteSampling';
+import {
+  INITIAL_AUDITORES_DETAILED,
+  type AuditorDetailEntity,
+  type AuditorViewState,
+  type AuditorChildTab,
+} from './lib/competencyMatrix';
 
 interface AppState {
   booting: boolean;
@@ -157,6 +163,7 @@ interface AppState {
     findings: FindingRecord[];
     allOrganizaciones: OrganizacionEntity[];
     allCertificadosDetailed: CertificadoDetailEntity[];
+    allAuditorsDetailed: AuditorDetailEntity[];
     loading: boolean;
   };
   drilldown: {
@@ -188,6 +195,7 @@ interface AppState {
     saveSuccessMessage?: string | null;
   };
   certificadoDomain: CertificadoViewState;
+  auditorDomain: AuditorViewState;
   extraDomain: {
     selectedNormaId: string | null;
     activeNormaTab: 'acreditacion' | 'requisitos';
@@ -501,6 +509,7 @@ const state: AppState = {
     findings: [...INITIAL_FINDINGS],
     allOrganizaciones: [...INITIAL_ORGANIZACIONES],
     allCertificadosDetailed: [...INITIAL_CERTIFICADOS_DETAILED],
+    allAuditorsDetailed: [...INITIAL_AUDITORES_DETAILED],
     loading: false,
   },
   drilldown: {
@@ -546,6 +555,21 @@ const state: AppState = {
     editErrorMessage: null,
     saveSuccessMessage: null,
     originatingOrganizacionId: null,
+  },
+  auditorDomain: {
+    selectedAuditorId: null,
+    activeChildTab: 'competencias',
+    query: '',
+    selectedCalificacion: 'ALL',
+    selectedStandard: 'ALL',
+    selectedSectorIaf: 'ALL',
+    viewMode: 'grid',
+    sortColumn: null,
+    sortDirection: 'none',
+    isEditingAttributes: false,
+    editFormData: undefined,
+    editErrorMessage: null,
+    saveSuccessMessage: null,
   },
   extraDomain: {
     selectedNormaId: null,
@@ -733,6 +757,8 @@ function render(): void {
       allOrganizaciones: state.domainData.allOrganizaciones,
       certificadoState: state.certificadoDomain,
       allCertificadosDetailed: state.domainData.allCertificadosDetailed,
+      auditorState: state.auditorDomain,
+      allAuditorsDetailed: state.domainData.allAuditorsDetailed,
     });
   } else if (effectiveRoute === 'extra') {
     bodyHtml = renderExtraView(state.profile, {
@@ -999,6 +1025,13 @@ function bindAuthenticatedEvents(): void {
             state.certificadoDomain.selectedCertId = null;
             state.certificadoDomain.isEditingAttributes = false;
           }
+          if (
+            targetSeg.id.startsWith('domain-') ||
+            targetSeg.id === 'subview-certificacion-auditors'
+          ) {
+            state.auditorDomain.selectedAuditorId = null;
+            state.auditorDomain.isEditingAttributes = false;
+          }
         }
         syncUrlHash(state.activeRoute, state.activeSubSection);
       }
@@ -1029,6 +1062,10 @@ function bindAuthenticatedEvents(): void {
         if (!subview || subview === 'certificates') {
           state.certificadoDomain.selectedCertId = null;
           state.certificadoDomain.isEditingAttributes = false;
+        }
+        if (!subview || subview === 'auditors') {
+          state.auditorDomain.selectedAuditorId = null;
+          state.auditorDomain.isEditingAttributes = false;
         }
       }
       if (target === 'extra') {
@@ -2405,6 +2442,231 @@ function bindAuthenticatedEvents(): void {
       render();
     });
   });
+
+  // ===============================================
+  // DOMAIN CERTIFICACIÓN (Phase 4.3: Auditor & Competencias)
+  // ===============================================
+
+  // 1. Select auditor -> 4-Zone Detail View & push breadcrumb
+  document.querySelectorAll<HTMLElement>('[data-action="select-auditor"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const auditorId = btn.dataset.auditorId;
+      if (!auditorId) return;
+      state.activeRoute = 'certificacion';
+      state.activeSubSection = 'auditors';
+      state.auditorDomain.selectedAuditorId = auditorId;
+      state.auditorDomain.activeChildTab = 'competencias';
+      state.auditorDomain.isEditingAttributes = false;
+      state.auditorDomain.editErrorMessage = null;
+      state.auditorDomain.saveSuccessMessage = null;
+
+      const aud =
+        state.domainData.allAuditorsDetailed.find((a) => a.id === auditorId) ||
+        INITIAL_AUDITORES_DETAILED.find((a) => a.id === auditorId);
+
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `aud-${auditorId}`,
+        label: aud?.nombre || 'Auditor',
+        route: 'certificacion',
+        subview: 'auditors',
+        entityId: auditorId,
+        tooltip: `Auditor > ${aud?.nombre || auditorId}`,
+      });
+      syncUrlHash('certificacion', 'auditors');
+      render();
+    });
+  });
+
+  // 2. Back to auditor list
+  document.querySelectorAll<HTMLElement>('[data-action="back-to-auditor-list"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.auditorDomain.selectedAuditorId = null;
+      state.auditorDomain.isEditingAttributes = false;
+      state.auditorDomain.editErrorMessage = null;
+      state.auditorDomain.saveSuccessMessage = null;
+      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-certificacion-auditors');
+      render();
+    });
+  });
+
+  // 3. View mode toggle (grid | list)
+  document.querySelectorAll<HTMLElement>('[data-auditor-view-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.auditorViewMode;
+      if (mode === 'grid' || mode === 'list') {
+        state.auditorDomain.viewMode = mode;
+        render();
+      }
+    });
+  });
+
+  // 4. Excel-style column sorting
+  document.querySelectorAll<HTMLElement>('[data-action="sort-auditor"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const col = btn.dataset.column as
+        | 'nombre'
+        | 'codigo_credencial'
+        | 'calificacion'
+        | 'normas'
+        | 'sectores'
+        | undefined;
+      if (col) {
+        if (state.auditorDomain.sortColumn === col) {
+          state.auditorDomain.sortDirection = cycleSortDirection(
+            state.auditorDomain.sortDirection
+          );
+        } else {
+          state.auditorDomain.sortColumn = col;
+          state.auditorDomain.sortDirection = 'asc';
+        }
+        render();
+      }
+    });
+  });
+
+  // 5. Facet: Calificación status
+  document.querySelectorAll<HTMLElement>('[data-auditor-filter-calificacion]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.auditorDomain.selectedCalificacion = (btn.dataset.auditorFilterCalificacion || 'ALL') as any;
+      render();
+    });
+  });
+
+  // 6. Facet: Standard (Norma ISO)
+  document.querySelectorAll<HTMLElement>('[data-auditor-filter-standard]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.auditorDomain.selectedStandard = btn.dataset.auditorFilterStandard || 'ALL';
+      render();
+    });
+  });
+
+  // 7. Facet: IAF Sector
+  document.querySelectorAll<HTMLElement>('[data-auditor-filter-iaf]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.auditorDomain.selectedSectorIaf = btn.dataset.auditorFilterIaf || 'ALL';
+      render();
+    });
+  });
+
+  // 8. Search input & clear/reset
+  const audSearchInput = document.getElementById('auditorDirectorySearchInput') as HTMLInputElement | null;
+  audSearchInput?.addEventListener('input', (e) => {
+    state.auditorDomain.query = (e.target as HTMLInputElement).value;
+    render();
+  });
+  audSearchInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      state.auditorDomain.query = '';
+      render();
+    }
+  });
+  document.getElementById('clearAuditorSearchBtn')?.addEventListener('click', () => {
+    state.auditorDomain.query = '';
+    render();
+  });
+  document.querySelectorAll<HTMLElement>('#resetAuditorFiltersBtn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.auditorDomain.query = '';
+      state.auditorDomain.selectedCalificacion = 'ALL';
+      state.auditorDomain.selectedStandard = 'ALL';
+      state.auditorDomain.selectedSectorIaf = 'ALL';
+      render();
+    });
+  });
+
+  // 9. Child tab switching (Matriz de Competencias | Historial de Auditorías)
+  document.querySelectorAll<HTMLElement>('[data-auditor-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.auditorTab as AuditorChildTab | undefined;
+      if (tab) {
+        state.auditorDomain.activeChildTab = tab;
+        render();
+      }
+    });
+  });
+
+  // 10. Edit mode toggling for Auditor Direct Attributes
+  document.getElementById('startEditAuditorBtn')?.addEventListener('click', () => {
+    state.auditorDomain.isEditingAttributes = true;
+    state.auditorDomain.editErrorMessage = null;
+    state.auditorDomain.saveSuccessMessage = null;
+    const aud = state.domainData.allAuditorsDetailed.find(
+      (a) => a.id === state.auditorDomain.selectedAuditorId
+    );
+    if (aud) {
+      state.auditorDomain.editFormData = {
+        titulo_profesional: aud.titulo_profesional,
+        email: aud.email,
+        telefono: aud.telefono,
+        biografia: aud.biografia,
+      };
+    }
+    render();
+  });
+
+  const cancelAuditorEdit = () => {
+    state.auditorDomain.isEditingAttributes = false;
+    state.auditorDomain.editErrorMessage = null;
+    render();
+  };
+  document.getElementById('cancelEditAuditorBtn')?.addEventListener('click', cancelAuditorEdit);
+  document.getElementById('cancelEditAuditorBtnSecondary')?.addEventListener('click', cancelAuditorEdit);
+
+  // 11. Save edited auditor attributes
+  document.getElementById('editAuditorForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const titulo_profesional = (form.querySelector('[name="titulo_profesional"]') as HTMLInputElement)?.value.trim() || '';
+    const email = (form.querySelector('[name="email"]') as HTMLInputElement)?.value.trim() || '';
+    const telefono = (form.querySelector('[name="telefono"]') as HTMLInputElement)?.value.trim() || '';
+    const biografia = (form.querySelector('[name="biografia"]') as HTMLTextAreaElement)?.value.trim() || '';
+
+    const audId = state.auditorDomain.selectedAuditorId;
+    if (!audId) return;
+
+    state.domainData.allAuditorsDetailed = state.domainData.allAuditorsDetailed.map((a) => {
+      if (a.id === audId) {
+        return {
+          ...a,
+          titulo_profesional: titulo_profesional || a.titulo_profesional,
+          email: email || a.email,
+          telefono: telefono || a.telefono,
+          biografia,
+        };
+      }
+      return a;
+    });
+
+    state.auditorDomain.isEditingAttributes = false;
+    state.auditorDomain.editErrorMessage = null;
+    state.auditorDomain.saveSuccessMessage = 'Información y credenciales del auditor actualizadas exitosamente.';
+
+    void (async () => {
+      try {
+        await supabase
+          .from('auditor')
+          .update({
+            email,
+            telefono,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', audId);
+      } catch (err) {
+        console.warn('Fallback to reactive state for auditor update:', err);
+      }
+    })();
+
+    render();
+  });
+
+  // 12. Modal / action for assigning new competency
+  document.querySelectorAll<HTMLElement>('[data-action="open-add-competency-modal"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.auditorDomain.saveSuccessMessage =
+        'Asignación de nueva competencia ISO 17021-1 disponible para directores técnicos y administradores de acreditación.';
+      render();
+    });
+  });
 }
 
 const TIPO_AUDITORIA_MAP: Record<string, string> = {
@@ -2895,6 +3157,7 @@ function resetClientSessionState(): void {
     findings: [...INITIAL_FINDINGS],
     allOrganizaciones: [...INITIAL_ORGANIZACIONES],
     allCertificadosDetailed: [...INITIAL_CERTIFICADOS_DETAILED],
+    allAuditorsDetailed: [...INITIAL_AUDITORES_DETAILED],
     loading: false,
   };
   state.certificadoDomain = {
@@ -2912,6 +3175,21 @@ function resetClientSessionState(): void {
     editErrorMessage: null,
     saveSuccessMessage: null,
     originatingOrganizacionId: null,
+  };
+  state.auditorDomain = {
+    selectedAuditorId: null,
+    activeChildTab: 'competencias',
+    query: '',
+    selectedCalificacion: 'ALL',
+    selectedStandard: 'ALL',
+    selectedSectorIaf: 'ALL',
+    viewMode: 'grid',
+    sortColumn: null,
+    sortDirection: 'none',
+    isEditingAttributes: false,
+    editFormData: undefined,
+    editErrorMessage: null,
+    saveSuccessMessage: null,
   };
   state.auth = {
     ...state.auth,
@@ -3768,7 +4046,9 @@ document.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   // '/' shortcut to focus search input
   if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) {
-    const searchInput = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
+    const searchInput = (document.getElementById('auditorDirectorySearchInput') ||
+      document.getElementById('certDirectorySearchInput') ||
+      document.getElementById('certificateSearchInput')) as HTMLInputElement | null;
     if (searchInput) {
       e.preventDefault();
       searchInput.focus();
@@ -3858,7 +4138,9 @@ window.addEventListener('keydown', (e) => {
     document.activeElement?.tagName !== 'TEXTAREA'
   ) {
     e.preventDefault();
-    const searchInput = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
+    const searchInput = (document.getElementById('auditorDirectorySearchInput') ||
+      document.getElementById('certDirectorySearchInput') ||
+      document.getElementById('certificateSearchInput')) as HTMLInputElement | null;
     searchInput?.focus();
   }
 });

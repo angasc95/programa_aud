@@ -96,10 +96,10 @@ Adheres to the Standardized 4-Zone Detail Page Architecture:
 
 ## 4. Key Implementation Milestones
 
-* [ ] **Milestone 4.3.1:** Pure helper functions for competency matching and scope validation implemented and verified with unit tests in `src/lib/competencyMatrix.test.ts`.
-* [ ] **Milestone 4.3.2:** `Auditor` directory list and grid views implemented in `src/views/auditorView.ts` with real-time search, qualification status facets, and accredited scheme counts.
-* [ ] **Milestone 4.3.3:** `Auditor` 4-zone detail view implemented with read/edit attribute states and `🕒 Historial de Cambios` modal integration.
-* [ ] **Milestone 4.3.4:** Child tabs (`Matriz de Competencias` with standard/sub-sector linkages and `Historial de Auditorías`) fully integrated with zero raw UUID exposure.
+* [x] **Milestone 4.3.1:** Pure helper functions for competency matching and scope validation implemented and verified with unit tests in `src/lib/competencyMatrix.test.ts`.
+* [x] **Milestone 4.3.2:** `Auditor` directory list and grid views implemented in `src/views/auditorView.ts` with real-time search, qualification status facets, and accredited scheme counts.
+* [x] **Milestone 4.3.3:** `Auditor` 4-zone detail view implemented with read/edit attribute states and `🕒 Historial de Cambios` modal integration.
+* [x] **Milestone 4.3.4:** Child tabs (`Matriz de Competencias` with standard/sub-sector linkages and `Historial de Auditorías`) fully integrated with zero raw UUID exposure.
 
 ---
 

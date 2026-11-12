@@ -27,6 +27,14 @@ import {
   INITIAL_CERTIFICADOS_DETAILED,
   type CertificadoDetailEntity,
 } from '../lib/multisiteSampling';
+import {
+  renderAuditorView,
+  type AuditorViewState,
+} from './auditorView';
+import {
+  INITIAL_AUDITORES_DETAILED,
+  type AuditorDetailEntity,
+} from '../lib/competencyMatrix';
 
 export interface OrganizationRecord {
   id: string;
@@ -76,6 +84,8 @@ export interface CertificacionViewState {
   allOrganizaciones?: OrganizacionEntity[];
   certificadoState?: Partial<CertificadoViewState>;
   allCertificadosDetailed?: CertificadoDetailEntity[];
+  auditorState?: Partial<AuditorViewState>;
+  allAuditorsDetailed?: AuditorDetailEntity[];
 }
 
 export function renderCertificacionView(
@@ -91,6 +101,12 @@ export function renderCertificacionView(
       label: 'Certificados Emitidos',
       symbol: '📜',
       desc: 'Certificados de conformidad y avance de cobertura normativa ISO',
+    },
+    {
+      id: 'auditors',
+      label: 'Auditores y Competencias',
+      symbol: '👤',
+      desc: 'Cuerpo de auditores técnicos calificados y matriz de competencias ISO 17021-1',
     },
     {
       id: 'organizations',
@@ -166,6 +182,34 @@ export function renderCertificacionView(
       state: orgState,
       organizaciones: orgList,
       certificados: certSummaries,
+      loading: state.loading,
+    });
+  } else if (activeSub === 'auditors') {
+    const audState: AuditorViewState = {
+      selectedAuditorId: state.auditorState?.selectedAuditorId || null,
+      activeChildTab: state.auditorState?.activeChildTab || 'competencias',
+      query: state.auditorState?.query || '',
+      selectedCalificacion: state.auditorState?.selectedCalificacion || 'ALL',
+      selectedStandard: state.auditorState?.selectedStandard || 'ALL',
+      selectedSectorIaf: state.auditorState?.selectedSectorIaf || 'ALL',
+      viewMode: state.auditorState?.viewMode || 'grid',
+      sortColumn: state.auditorState?.sortColumn || null,
+      sortDirection: state.auditorState?.sortDirection || 'none',
+      isEditingAttributes: Boolean(state.auditorState?.isEditingAttributes),
+      editFormData: state.auditorState?.editFormData,
+      editErrorMessage: state.auditorState?.editErrorMessage,
+      saveSuccessMessage: state.auditorState?.saveSuccessMessage,
+    };
+
+    const audList: AuditorDetailEntity[] =
+      state.allAuditorsDetailed && state.allAuditorsDetailed.length > 0
+        ? state.allAuditorsDetailed
+        : INITIAL_AUDITORES_DETAILED;
+
+    contentHtml = renderAuditorView({
+      profile,
+      state: audState,
+      auditors: audList,
       loading: state.loading,
     });
   } else if (activeSub === 'sites') {
