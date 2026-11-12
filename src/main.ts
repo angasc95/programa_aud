@@ -91,6 +91,11 @@ import {
   INITIAL_ORGANISMOS,
   INITIAL_REQUISITOS_LTREE,
 } from './lib/extraDomain';
+import {
+  INITIAL_ORGANIZACIONES,
+  validateRifFormat,
+  type OrganizacionEntity,
+} from './lib/activeCertificates';
 
 interface AppState {
   booting: boolean;
@@ -143,6 +148,7 @@ interface AppState {
     iafSectors: IafRecord[];
     catalogs: CatalogItem[];
     findings: FindingRecord[];
+    allOrganizaciones: OrganizacionEntity[];
     loading: boolean;
   };
   drilldown: {
@@ -159,6 +165,20 @@ interface AppState {
     isModalOpen: boolean;
   };
   selectedScopeAuditId: string | null;
+  organizacionDomain: {
+    selectedOrganizacionId: string | null;
+    query: string;
+    hasActiveCertificates: 'ALL' | 'WITH_ACTIVE' | 'WITHOUT_ACTIVE';
+    selectedSectorIaf: string;
+    viewMode: 'grid' | 'list';
+    sortColumn: 'nombre' | 'rif' | 'certificados_activos' | 'sector' | null;
+    sortDirection: SortDirection;
+    isEditingAttributes: boolean;
+    activeChildTab: 'certificados';
+    editFormData?: Partial<OrganizacionEntity>;
+    editErrorMessage?: string | null;
+    saveSuccessMessage?: string | null;
+  };
   extraDomain: {
     selectedNormaId: string | null;
     activeNormaTab: 'acreditacion' | 'requisitos';
@@ -470,6 +490,7 @@ const state: AppState = {
     iafSectors: [...INITIAL_IAF],
     catalogs: [...INITIAL_CATALOGS],
     findings: [...INITIAL_FINDINGS],
+    allOrganizaciones: [...INITIAL_ORGANIZACIONES],
     loading: false,
   },
   drilldown: {
@@ -486,6 +507,20 @@ const state: AppState = {
     isModalOpen: false,
   },
   selectedScopeAuditId: null,
+  organizacionDomain: {
+    selectedOrganizacionId: null,
+    query: '',
+    hasActiveCertificates: 'ALL',
+    selectedSectorIaf: 'ALL',
+    viewMode: 'grid',
+    sortColumn: null,
+    sortDirection: 'none',
+    isEditingAttributes: false,
+    activeChildTab: 'certificados',
+    editFormData: undefined,
+    editErrorMessage: null,
+    saveSuccessMessage: null,
+  },
   extraDomain: {
     selectedNormaId: null,
     activeNormaTab: 'acreditacion',
@@ -668,6 +703,8 @@ function render(): void {
       processes: state.domainData.processes,
       shifts: state.domainData.shifts,
       loading: state.exploration.loading,
+      organizacionState: state.organizacionDomain,
+      allOrganizaciones: state.domainData.allOrganizaciones,
     });
   } else if (effectiveRoute === 'extra') {
     bodyHtml = renderExtraView(state.profile, {
@@ -919,6 +956,14 @@ function bindAuthenticatedEvents(): void {
             state.extraDomain.selectedTipoId = null;
             state.extraDomain.selectedMetodologiaId = null;
           }
+        } else if (targetSeg.route === 'certificacion') {
+          if (
+            targetSeg.id.startsWith('domain-') ||
+            targetSeg.id === 'subview-certificacion-organizations'
+          ) {
+            state.organizacionDomain.selectedOrganizacionId = null;
+            state.organizacionDomain.isEditingAttributes = false;
+          }
         }
         syncUrlHash(state.activeRoute, state.activeSubSection);
       }
@@ -940,6 +985,12 @@ function bindAuthenticatedEvents(): void {
       if (target !== 'drilldown' && subview !== 'drilldown') {
         state.drilldown.selectedOrgId = null;
         state.drilldown.selectedCertId = null;
+      }
+      if (target === 'certificacion') {
+        if (!subview || subview === 'organizations') {
+          state.organizacionDomain.selectedOrganizacionId = null;
+          state.organizacionDomain.isEditingAttributes = false;
+        }
       }
       if (target === 'extra') {
         state.extraDomain.selectedNormaId = null;
@@ -1761,6 +1812,251 @@ function bindAuthenticatedEvents(): void {
     state.extraDomain.metodologiaSearchQuery = '';
     render();
   });
+
+  // ===============================================
+  // DOMAIN CERTIFICACIÓN (Phase 4.1: Organización)
+  // ===============================================
+
+  // 1. Select organization -> Detail view & push breadcrumb
+  document.querySelectorAll<HTMLElement>('[data-action="select-org"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const orgId = btn.dataset.orgId;
+      if (!orgId) return;
+      state.organizacionDomain.selectedOrganizacionId = orgId;
+      state.organizacionDomain.isEditingAttributes = false;
+      state.organizacionDomain.editErrorMessage = null;
+      state.organizacionDomain.saveSuccessMessage = null;
+
+      const org =
+        state.domainData.allOrganizaciones.find((o) => o.id === orgId) ||
+        INITIAL_ORGANIZACIONES.find((o) => o.id === orgId);
+
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `org-${orgId}`,
+        label: org?.nombre || 'Organización',
+        route: 'certificacion',
+        subview: 'organizations',
+        entityId: orgId,
+        tooltip: `Organización > ${org?.nombre || orgId}`,
+      });
+      render();
+    });
+  });
+
+  // 2. Back to organizations list
+  document.querySelectorAll<HTMLElement>('[data-action="back-to-org-list"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.organizacionDomain.selectedOrganizacionId = null;
+      state.organizacionDomain.isEditingAttributes = false;
+      state.organizacionDomain.editErrorMessage = null;
+      state.organizacionDomain.saveSuccessMessage = null;
+      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-certificacion-organizations');
+      render();
+    });
+  });
+
+  // 3. View mode toggle (grid | list)
+  document.querySelectorAll<HTMLElement>('[data-org-view-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.orgViewMode;
+      if (mode === 'grid' || mode === 'list') {
+        state.organizacionDomain.viewMode = mode;
+        render();
+      }
+    });
+  });
+
+  // 4. Column sorting (Excel-style loop)
+  document.querySelectorAll<HTMLElement>('[data-action="sort-org"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const col = btn.dataset.sortCol as
+        | 'nombre'
+        | 'rif'
+        | 'certificados_activos'
+        | 'sector'
+        | undefined;
+      if (col) {
+        if (state.organizacionDomain.sortColumn === col) {
+          state.organizacionDomain.sortDirection = cycleSortDirection(
+            state.organizacionDomain.sortDirection
+          );
+        } else {
+          state.organizacionDomain.sortColumn = col;
+          state.organizacionDomain.sortDirection = 'asc';
+        }
+        render();
+      }
+    });
+  });
+
+  // 5. Facet: Active certificate presence
+  document.querySelectorAll<HTMLElement>('[data-org-filter-active]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const val = btn.dataset.orgFilterActive as
+        | 'ALL'
+        | 'WITH_ACTIVE'
+        | 'WITHOUT_ACTIVE'
+        | undefined;
+      if (val) {
+        state.organizacionDomain.hasActiveCertificates = val;
+        render();
+      }
+    });
+  });
+
+  // 6. Facet: Primary Sector IAF
+  document.querySelectorAll<HTMLElement>('[data-org-filter-sector]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const sec = btn.dataset.orgFilterSector || 'ALL';
+      state.organizacionDomain.selectedSectorIaf = sec;
+      render();
+    });
+  });
+
+  // 7. Search input & clear/reset
+  const orgDirectorySearchInput = document.getElementById('orgSearchInput') as HTMLInputElement | null;
+  orgDirectorySearchInput?.addEventListener('input', (e) => {
+    state.organizacionDomain.query = (e.target as HTMLInputElement).value;
+    render();
+  });
+  orgDirectorySearchInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      state.organizacionDomain.query = '';
+      render();
+    }
+  });
+  document.getElementById('clearOrgSearchBtn')?.addEventListener('click', () => {
+    state.organizacionDomain.query = '';
+    render();
+  });
+  document.getElementById('resetOrgFiltersBtn')?.addEventListener('click', () => {
+    state.organizacionDomain.query = '';
+    state.organizacionDomain.hasActiveCertificates = 'ALL';
+    state.organizacionDomain.selectedSectorIaf = 'ALL';
+    render();
+  });
+
+  // 8. Edit mode toggling
+  document.getElementById('startEditOrgBtn')?.addEventListener('click', () => {
+    state.organizacionDomain.isEditingAttributes = true;
+    state.organizacionDomain.editErrorMessage = null;
+    state.organizacionDomain.saveSuccessMessage = null;
+    render();
+  });
+  document.getElementById('cancelEditOrgBtn')?.addEventListener('click', () => {
+    state.organizacionDomain.isEditingAttributes = false;
+    state.organizacionDomain.editErrorMessage = null;
+    render();
+  });
+
+  // 9. Save edited organization attributes
+  document.getElementById('editOrgForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const nombre = (form.querySelector('[name="nombre"]') as HTMLInputElement)?.value.trim() || '';
+    const rif = (form.querySelector('[name="rif"]') as HTMLInputElement)?.value.trim() || '';
+    const sitio_web = (form.querySelector('[name="sitio_web"]') as HTMLInputElement)?.value.trim() || '';
+    const contacto_principal = (form.querySelector('[name="contacto_principal"]') as HTMLInputElement)?.value.trim() || '';
+    const correo_contacto = (form.querySelector('[name="correo_contacto"]') as HTMLInputElement)?.value.trim() || '';
+    const telefono_contacto = (form.querySelector('[name="telefono_contacto"]') as HTMLInputElement)?.value.trim() || '';
+    const grupo_corporativo = (form.querySelector('[name="grupo_corporativo"]') as HTMLInputElement)?.value.trim() || '';
+    const direccion_fiscal = (form.querySelector('[name="direccion_fiscal"]') as HTMLInputElement)?.value.trim() || '';
+
+    // Validate RIF format
+    const rifCheck = validateRifFormat(rif);
+    if (!rifCheck.valid) {
+      state.organizacionDomain.editErrorMessage = rifCheck.message || 'Formato de RIF / NIF inválido.';
+      render();
+      return;
+    }
+
+    const orgId = state.organizacionDomain.selectedOrganizacionId;
+    if (!orgId) return;
+
+    // Mutate local reactive state
+    state.domainData.allOrganizaciones = state.domainData.allOrganizaciones.map((o) => {
+      if (o.id === orgId) {
+        return {
+          ...o,
+          nombre,
+          rif,
+          sitio_web,
+          contacto_principal,
+          correo_contacto,
+          telefono_contacto,
+          grupo_corporativo,
+          direccion_fiscal,
+        };
+      }
+      return o;
+    });
+
+    // Also update legacy organizations list if present
+    state.domainData.organizations = state.domainData.organizations.map((o) => {
+      if (o.id === orgId) {
+        return { ...o, nombre, rif, direccion_fiscal };
+      }
+      return o;
+    });
+
+    state.organizacionDomain.isEditingAttributes = false;
+    state.organizacionDomain.editErrorMessage = null;
+    state.organizacionDomain.saveSuccessMessage = 'Atributos de la organización guardados exitosamente.';
+
+    // Attempt Supabase update
+    void (async () => {
+      try {
+        await supabase
+          .from('organizacion')
+          .update({
+            nombre,
+            rif,
+            direccion_fiscal,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', orgId);
+      } catch (err) {
+        console.warn('Fallback to reactive state for organization update:', err);
+      }
+    })();
+
+    render();
+  });
+
+  // 10. Click IAF sector in Zone 1 -> navigates to Domain Extra Sector IAF
+  document.querySelectorAll<HTMLElement>('[data-action="view-sector-iaf"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const secNum = btn.dataset.sectorNumber || '17';
+      state.activeRoute = 'extra';
+      state.activeSubSection = 'iaf';
+      state.extraDomain.iafSearchQuery = secNum;
+      state.breadcrumbs = resetBreadcrumbToDomain('extra', 'iaf');
+      syncUrlHash('extra', 'iaf');
+      render();
+    });
+  });
+
+  // 11. Click child certificate in Zone 4 -> drill down to certificate
+  document.querySelectorAll<HTMLElement>('[data-action="drilldown-to-cert"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const certId = btn.dataset.certId;
+      const certCode = btn.dataset.certCode;
+      if (certId && certCode) {
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `cert-${certId}`,
+          label: certCode,
+          route: 'certificacion',
+          subview: 'certificates',
+          entityId: certId,
+          tooltip: `Certificado > ${certCode}`,
+        });
+        state.activeSubSection = 'certificates';
+        state.exploration.query = certCode;
+        syncUrlHash('certificacion', 'certificates');
+        render();
+      }
+    });
+  });
 }
 
 const TIPO_AUDITORIA_MAP: Record<string, string> = {
@@ -2249,6 +2545,7 @@ function resetClientSessionState(): void {
     iafSectors: [...INITIAL_IAF],
     catalogs: [...INITIAL_CATALOGS],
     findings: [...INITIAL_FINDINGS],
+    allOrganizaciones: [...INITIAL_ORGANIZACIONES],
     loading: false,
   };
   state.auth = {

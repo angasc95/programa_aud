@@ -10,6 +10,15 @@ import type {
   CertificateRecord,
   SearchControlsFilterState,
 } from '../lib/searchControls';
+import {
+  renderOrganizacionView,
+  type OrganizacionViewState,
+} from './organizacionView';
+import {
+  INITIAL_ORGANIZACIONES,
+  type OrganizacionEntity,
+  type CertificadoSummary,
+} from '../lib/activeCertificates';
 
 export interface OrganizationRecord {
   id: string;
@@ -55,6 +64,8 @@ export interface CertificacionViewState {
   processes: ProcessRecord[];
   shifts: ShiftRecord[];
   loading: boolean;
+  organizacionState?: Partial<OrganizacionViewState>;
+  allOrganizaciones?: OrganizacionEntity[];
 }
 
 export function renderCertificacionView(
@@ -103,54 +114,50 @@ export function renderCertificacionView(
   let contentHtml = '';
 
   if (activeSub === 'organizations') {
-    contentHtml = `
-      <div class="space-y-4">
-        <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 class="text-base font-bold text-slate-900">Organizaciones Clientes Registradas</h3>
-              <p class="text-xs text-slate-500">Padrón de empresas evaluadas y titulares de certificados</p>
-            </div>
-            <span class="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-700 rounded-full border border-slate-200">
-              ${state.organizations.length} Empresas Registradas
-            </span>
-          </div>
+    const orgState: OrganizacionViewState = {
+      selectedOrganizacionId: state.organizacionState?.selectedOrganizacionId || null,
+      query: state.organizacionState?.query || '',
+      hasActiveCertificates: state.organizacionState?.hasActiveCertificates || 'ALL',
+      selectedSectorIaf: state.organizacionState?.selectedSectorIaf || 'ALL',
+      viewMode: state.organizacionState?.viewMode || 'grid',
+      sortColumn: state.organizacionState?.sortColumn || null,
+      sortDirection: state.organizacionState?.sortDirection || 'none',
+      isEditingAttributes: Boolean(state.organizacionState?.isEditingAttributes),
+      activeChildTab: 'certificados',
+      editFormData: state.organizacionState?.editFormData,
+      editErrorMessage: state.organizacionState?.editErrorMessage,
+      saveSuccessMessage: state.organizacionState?.saveSuccessMessage,
+    };
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            ${state.organizations
-              .map(
-                (org) => `
-              <div class="p-4 bg-slate-50/75 border border-slate-200 rounded-xl space-y-3">
-                <div class="flex items-start justify-between gap-2">
-                  <div class="space-y-0.5">
-                    <h4 class="text-sm font-bold text-slate-900">${escapeHtml(org.nombre)}</h4>
-                    <span class="font-mono text-xs font-semibold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-                      ${escapeHtml(org.rif)}
-                    </span>
-                  </div>
-                  <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                    ACTIVA
-                  </span>
-                </div>
+    const orgList: OrganizacionEntity[] =
+      state.allOrganizaciones && state.allOrganizaciones.length > 0
+        ? state.allOrganizaciones
+        : INITIAL_ORGANIZACIONES;
 
-                <div class="text-xs text-slate-600 space-y-1 pt-2 border-t border-slate-200/60">
-                  <div>
-                    <span class="text-[10px] uppercase font-bold text-slate-400">Dirección Fiscal:</span>
-                    <p class="text-slate-700 font-medium">${escapeHtml(org.direccion_fiscal || 'No especificada')}</p>
-                  </div>
-                  <div class="flex items-center justify-between pt-1">
-                    <span class="text-slate-500">Certificados Vinculados:</span>
-                    <span class="font-bold text-slate-900">${org.certificados_count}</span>
-                  </div>
-                </div>
-              </div>
-            `
-              )
-              .join('')}
-          </div>
-        </div>
-      </div>
-    `;
+    const certSummaries: CertificadoSummary[] = state.allCertificates.map((c) => ({
+      id: c.id,
+      numero_certificado: c.numero_certificado,
+      id_organizacion: c.organizacion_id,
+      organizacion_id: c.organizacion_id,
+      organizacion_nombre: c.organizacion_nombre,
+      norma: c.norma,
+      esquema: c.esquema,
+      estatus: c.estatus,
+      sector_iaf: c.sector_iaf,
+      multisitio: c.multisitio,
+      sitios_count: c.sitios_count,
+      fecha_emision: c.fecha_emision,
+      fecha_vencimiento: c.fecha_vencimiento,
+      cobertura_porcentaje: c.cobertura_porcentaje,
+    }));
+
+    contentHtml = renderOrganizacionView({
+      profile,
+      state: orgState,
+      organizaciones: orgList,
+      certificados: certSummaries,
+      loading: state.loading,
+    });
   } else if (activeSub === 'sites') {
     contentHtml = `
       <div class="space-y-4">
