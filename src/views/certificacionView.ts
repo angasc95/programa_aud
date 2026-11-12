@@ -19,6 +19,14 @@ import {
   type OrganizacionEntity,
   type CertificadoSummary,
 } from '../lib/activeCertificates';
+import {
+  renderCertificadoView,
+  type CertificadoViewState,
+} from './certificadoView';
+import {
+  INITIAL_CERTIFICADOS_DETAILED,
+  type CertificadoDetailEntity,
+} from '../lib/multisiteSampling';
 
 export interface OrganizationRecord {
   id: string;
@@ -66,6 +74,8 @@ export interface CertificacionViewState {
   loading: boolean;
   organizacionState?: Partial<OrganizacionViewState>;
   allOrganizaciones?: OrganizacionEntity[];
+  certificadoState?: Partial<CertificadoViewState>;
+  allCertificadosDetailed?: CertificadoDetailEntity[];
 }
 
 export function renderCertificacionView(
@@ -300,41 +310,35 @@ export function renderCertificacionView(
       </div>
     `;
   } else {
-    // certificates - Interactive Exploration View with Sub-Phase 4.2 components!
-    const totalCount = state.allCertificates.length;
-    const matchCount = state.filteredCertificates.length;
+    // certificates - Sub-Phase 4.2 Certificado Universal Directory & 4-Zone Detail View
+    const certState: CertificadoViewState = {
+      selectedCertId: state.certificadoState?.selectedCertId || null,
+      activeChildTab: state.certificadoState?.activeChildTab || 'sitios',
+      query: state.certificadoState?.query || '',
+      selectedStandard: state.certificadoState?.selectedStandard || 'ALL',
+      selectedStatus: state.certificadoState?.selectedStatus || 'ALL',
+      selectedSectorIaf: state.certificadoState?.selectedSectorIaf || 'ALL',
+      viewMode: state.certificadoState?.viewMode || 'grid',
+      sortColumn: state.certificadoState?.sortColumn || null,
+      sortDirection: state.certificadoState?.sortDirection || 'none',
+      isEditingAttributes: Boolean(state.certificadoState?.isEditingAttributes),
+      editFormData: state.certificadoState?.editFormData,
+      editErrorMessage: state.certificadoState?.editErrorMessage,
+      saveSuccessMessage: state.certificadoState?.saveSuccessMessage,
+      originatingOrganizacionId: state.certificadoState?.originatingOrganizacionId || null,
+    };
 
-    let viewContainerHtml = '';
-    if (state.loading) {
-      viewContainerHtml = `
-        <div class="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-500 text-sm font-medium">
-          <div class="inline-block animate-spin w-6 h-6 border-2 border-slate-900 border-t-transparent rounded-full mb-3"></div>
-          <p>Cargando certificados emitidos y cobertura normativa...</p>
-        </div>
-      `;
-    } else if (matchCount === 0) {
-      viewContainerHtml = renderEmptySearchState(state.filters.query);
-    } else if (state.filters.viewMode === 'list') {
-      viewContainerHtml = renderCertificateList(state.filteredCertificates);
-    } else {
-      viewContainerHtml = renderCertificateGrid(state.filteredCertificates);
-    }
+    const certList: CertificadoDetailEntity[] =
+      state.allCertificadosDetailed && state.allCertificadosDetailed.length > 0
+        ? state.allCertificadosDetailed
+        : INITIAL_CERTIFICADOS_DETAILED;
 
-    contentHtml = `
-      <div class="space-y-4">
-        ${renderSearchControls({
-          filters: state.filters,
-          availableStatuses: state.availableStatuses,
-          availableStandards: state.availableStandards,
-          matchCount,
-          totalCount,
-        })}
-
-        <div id="explorationResultsContainer">
-          ${viewContainerHtml}
-        </div>
-      </div>
-    `;
+    contentHtml = renderCertificadoView({
+      profile,
+      state: certState,
+      certificates: certList,
+      loading: state.loading,
+    });
   }
 
   return `
