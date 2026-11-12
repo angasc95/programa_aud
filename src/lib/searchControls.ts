@@ -30,6 +30,7 @@ export interface CertificateRecord {
   cobertura_resumen?: CoverageBreakdown;
   fecha_emision?: string;
   fecha_vencimiento?: string;
+  alcance?: string;
 }
 
 export interface SearchControlsFilterState {

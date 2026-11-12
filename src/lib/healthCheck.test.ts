@@ -10,6 +10,7 @@ import {
   formatResetSummary,
   getRoleVisualMeta,
   getStatusVisualMeta,
+  getUserIdentityDisplay,
   getVisibleDomainMenus,
   isValidUserRole,
   shouldUpdateProfileRole,
@@ -78,6 +79,75 @@ test('role and status visual metadata include required symbols and tooltips', ()
   assert.equal(getStatusVisualMeta('REJECTED').symbol, '❌');
   assert.match(getStatusVisualMeta('APPROVED').tooltip, /APPROVED/);
   assert.match(getRoleVisualMeta('WORKER').tooltip, /WORKER/);
+});
+
+test('getUserIdentityDisplay renders minimalist role iconography for approved users and suppresses role icon for unapproved users', () => {
+  // Approved Admin: 🛡️
+  const adminProfile: UserProfile = {
+    id: 'u-1',
+    nombre: 'Carlos Mendoza',
+    role: 'ADMIN',
+    status: 'APPROVED',
+  };
+  const adminDisplay = getUserIdentityDisplay(adminProfile);
+  assert.equal(adminDisplay.icon, '🛡️');
+  assert.equal(adminDisplay.isApproved, true);
+  assert.equal(adminDisplay.suppressRoleIcon, false);
+  assert.equal(adminDisplay.displayNameWithRoleOrStatus, 'Carlos Mendoza (Administrador)');
+
+  // Approved Worker: ⚙️
+  const workerDisplay = getUserIdentityDisplay({
+    id: 'u-2',
+    nombre: 'María Ramos',
+    role: 'WORKER',
+    status: 'APPROVED',
+  });
+  assert.equal(workerDisplay.icon, '⚙️');
+  assert.equal(workerDisplay.isApproved, true);
+
+  // Approved Auditor: 📋
+  const auditorDisplay = getUserIdentityDisplay({
+    id: 'u-3',
+    nombre: 'Alejandro Cruz',
+    role: 'AUDITOR',
+    status: 'APPROVED',
+  });
+  assert.equal(auditorDisplay.icon, '📋');
+  assert.equal(auditorDisplay.isApproved, true);
+
+  // Approved Client: 🏢
+  const clientDisplay = getUserIdentityDisplay({
+    id: 'u-4',
+    nombre: 'CyberCloud S.L.',
+    role: 'CLIENT',
+    status: 'APPROVED',
+  });
+  assert.equal(clientDisplay.icon, '🏢');
+  assert.equal(clientDisplay.isApproved, true);
+
+  // Unapproved Pending: ⏳ (Role icon strictly suppressed)
+  const pendingDisplay = getUserIdentityDisplay({
+    id: 'u-5',
+    nombre: 'Laura Gómez',
+    role: 'ADMIN', // requested admin
+    status: 'PENDING',
+  });
+  assert.equal(pendingDisplay.icon, '⏳'); // status icon only!
+  assert.equal(pendingDisplay.suppressRoleIcon, true);
+  assert.equal(pendingDisplay.isApproved, false);
+  assert.equal(pendingDisplay.displayNameWithRoleOrStatus, 'Laura Gómez (Pendiente)');
+
+  // Unapproved Rejected: ❌ (Role icon strictly suppressed)
+  const rejectedDisplay = getUserIdentityDisplay({
+    id: 'u-6',
+    nombre: 'Juan Pérez',
+    role: 'WORKER',
+    status: 'REJECTED',
+  });
+  assert.equal(rejectedDisplay.icon, '❌'); // status icon only!
+  assert.equal(rejectedDisplay.suppressRoleIcon, true);
+  assert.equal(rejectedDisplay.isApproved, false);
+  assert.equal(rejectedDisplay.displayNameWithRoleOrStatus, 'Juan Pérez (Rechazado)');
 });
 
 test('getVisibleDomainMenus and canAccessRoute enforce role and approval boundaries', () => {

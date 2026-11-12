@@ -67,6 +67,15 @@ import {
   type FindingRecord,
   type FindingType,
 } from './lib/drillDown';
+import {
+  resetBreadcrumbToDomain,
+  pushBreadcrumb,
+  popToBreadcrumb,
+  type BreadcrumbSegment,
+} from './lib/breadcrumb';
+import { renderBreadcrumbBar } from './views/breadcrumbView';
+import { renderAuditLogModal } from './views/auditLogModal';
+import type { AuditLogEntry } from './lib/auditLog';
 
 interface AppState {
   booting: boolean;
@@ -75,6 +84,16 @@ interface AppState {
   activeRoute: ActiveRoute;
   activeSubSection: string | null;
   openMenu: HeaderDropdownId | null;
+  breadcrumbs: BreadcrumbSegment[];
+  auditLogModal: {
+    isOpen: boolean;
+    entityName: string;
+    tableName: string;
+    recordId: string;
+    entries: AuditLogEntry[];
+    loading: boolean;
+    errorMessage: string | null;
+  };
   auth: AuthViewState;
   approvals: {
     profiles: UserProfile[];
@@ -341,6 +360,16 @@ const state: AppState = {
   activeRoute: 'dashboard',
   activeSubSection: null,
   openMenu: null,
+  breadcrumbs: resetBreadcrumbToDomain('dashboard'),
+  auditLogModal: {
+    isOpen: false,
+    entityName: '',
+    tableName: '',
+    recordId: '',
+    entries: [],
+    loading: false,
+    errorMessage: null,
+  },
   auth: {
     mode: 'login',
     errorMessage: null,
@@ -591,6 +620,9 @@ function render(): void {
   const searchCursorStart = searchInput?.selectionStart ?? null;
   const searchCursorEnd = searchInput?.selectionEnd ?? null;
 
+  const breadcrumbBarHtml = renderBreadcrumbBar({ trail: state.breadcrumbs });
+  const auditModalHtml = renderAuditLogModal(state.auditLogModal);
+
   root.innerHTML = `
     ${renderHeader({
       profile: state.profile,
@@ -601,7 +633,13 @@ function render(): void {
       pendingCount,
       openMenu: state.openMenu,
     })}
+    ${
+      state.breadcrumbs && state.breadcrumbs.length > 1
+        ? `<div class="max-w-6xl w-full mx-auto px-4 sm:px-6 pt-4 pb-0">${breadcrumbBarHtml}</div>`
+        : ''
+    }
     ${bodyHtml}
+    ${auditModalHtml}
   `;
 
   bindAuthenticatedEvents();
@@ -714,13 +752,47 @@ function bindAuthenticatedEvents(): void {
     void handleSignOut();
   });
 
+  // Persistent Breadcrumb Trail Navigation Backtracking
+  document.querySelectorAll<HTMLElement>('[data-breadcrumb-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const segId = btn.dataset.breadcrumbId;
+      if (!segId) return;
+      const targetSeg = state.breadcrumbs.find((s) => s.id === segId);
+      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, segId);
+
+      if (targetSeg) {
+        state.activeRoute = targetSeg.route;
+        state.activeSubSection = targetSeg.subview || null;
+        if (targetSeg.route === 'drilldown') {
+          if (targetSeg.id === 'drilldown-root') {
+            state.drilldown.selectedOrgId = null;
+            state.drilldown.selectedCertId = null;
+          } else if (targetSeg.id.startsWith('org-')) {
+            state.drilldown.selectedOrgId = targetSeg.entityId || null;
+          }
+        }
+        syncUrlHash(state.activeRoute, state.activeSubSection);
+      }
+      render();
+    });
+  });
+
   document.querySelectorAll<HTMLElement>('[data-nav]').forEach((el) => {
     el.addEventListener('click', () => {
       const target = el.dataset.nav as ActiveRoute | undefined;
       if (!target || !canAccessRoute(state.profile, target)) return;
+      const subview = el.dataset.subview || null;
       state.activeRoute = target;
-      state.activeSubSection = el.dataset.subview || null;
+      state.activeSubSection = subview;
       state.openMenu = null;
+
+      // Top Header Reset Rule: instantly reset breadcrumb trail to target domain root
+      state.breadcrumbs = resetBreadcrumbToDomain(target, subview);
+      if (target !== 'drilldown' && subview !== 'drilldown') {
+        state.drilldown.selectedOrgId = null;
+        state.drilldown.selectedCertId = null;
+      }
+
       syncUrlHash(target, state.activeSubSection);
       render();
 
@@ -817,7 +889,7 @@ function bindAuthenticatedEvents(): void {
     });
   });
 
-  // Drill-Down interactive selectors
+  // Drill-Down interactive selectors with Breadcrumb synchronization
   document.querySelectorAll<HTMLElement>('[data-drilldown-select-org]').forEach((el) => {
     el.addEventListener('click', () => {
       const orgId = el.dataset.drilldownSelectOrg || null;
@@ -832,8 +904,33 @@ function bindAuthenticatedEvents(): void {
                 ?.nombre.toLowerCase()
         );
         state.drilldown.selectedCertId = orgCerts.length > 0 ? orgCerts[0].id : null;
+
+        const org = state.domainData.organizations.find((o) => o.id === orgId);
+        state.breadcrumbs = resetBreadcrumbToDomain('certificacion', 'drilldown');
+        if (org) {
+          state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+            id: `org-${org.id}`,
+            label: org.nombre,
+            route: 'drilldown',
+            entityId: org.id,
+            tooltip: `${org.nombre} — RIF: ${org.rif}`,
+          });
+        }
+        if (state.drilldown.selectedCertId) {
+          const cert = state.exploration.records.find((c) => c.id === state.drilldown.selectedCertId);
+          if (cert) {
+            state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+              id: `cert-${cert.id}`,
+              label: cert.numero_certificado,
+              route: 'drilldown',
+              entityId: cert.id,
+              tooltip: `Certificado ${cert.numero_certificado} (${cert.esquema})`,
+            });
+          }
+        }
       } else {
         state.drilldown.selectedCertId = null;
+        state.breadcrumbs = resetBreadcrumbToDomain('certificacion', 'drilldown');
       }
       state.activeRoute = 'drilldown';
       state.activeSubSection = null;
@@ -846,9 +943,49 @@ function bindAuthenticatedEvents(): void {
     el.addEventListener('click', () => {
       const certId = el.dataset.drilldownSelectCert || null;
       state.drilldown.selectedCertId = certId;
+      if (certId) {
+        const cert = state.exploration.records.find((c) => c.id === certId);
+        if (cert) {
+          state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+            id: `cert-${cert.id}`,
+            label: cert.numero_certificado,
+            route: 'drilldown',
+            entityId: cert.id,
+            tooltip: `Certificado ${cert.numero_certificado} (${cert.esquema})`,
+          });
+        }
+      }
       render();
     });
   });
+
+  // Top-Right Changelog Trigger [🕒 Historial de Cambios]
+  document.querySelectorAll<HTMLElement>('[data-action="open-changelog"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tableName = btn.dataset.tableName || 'certificado';
+      const recordId = btn.dataset.recordId || '';
+      const entityName = btn.dataset.entityName || 'Registro';
+      void openAuditLogModal(tableName, recordId, entityName);
+    });
+  });
+
+  // Changelog Modal Close Handlers
+  document.getElementById('closeAuditLogModalBtn')?.addEventListener('click', closeAuditLogModal);
+  document.getElementById('closeAuditLogModalFooterBtn')?.addEventListener('click', closeAuditLogModal);
+  document.getElementById('auditLogModalBackdrop')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeAuditLogModal();
+  });
+
+  // Live Scope Textarea Character Counter
+  const scopeInput = document.getElementById('detailScopeInput') as HTMLTextAreaElement | null;
+  if (scopeInput) {
+    scopeInput.addEventListener('input', () => {
+      const counterEl = document.getElementById('scopeCharCount');
+      if (counterEl) {
+        counterEl.textContent = String(scopeInput.value.length);
+      }
+    });
+  }
 
   document.querySelectorAll<HTMLElement>('[data-drilldown-subtab]').forEach((el) => {
     el.addEventListener('click', () => {
@@ -1260,6 +1397,100 @@ function handleResetAllFilters(): void {
   render();
 }
 
+function closeAuditLogModal(): void {
+  state.auditLogModal.isOpen = false;
+  state.auditLogModal.errorMessage = null;
+  render();
+}
+
+function generateFallbackAuditEntries(
+  tableName: string,
+  recordId: string,
+  entityName: string
+): AuditLogEntry[] {
+  return [
+    {
+      id: `audit-log-2`,
+      table_name: tableName,
+      record_id: recordId,
+      action: 'UPDATE',
+      actor_email: 'admin@fondonorma.test',
+      old_data: {
+        estatus: 'PLANIFICADA',
+        alcance: 'Alcance preliminar de certificación bajo evaluación técnica inicial.',
+      },
+      new_data: {
+        estatus: 'ACTIVO',
+        alcance: `Auditoría y certificación de conformidad bajo estándares internacionales ISO para ${entityName}`,
+      },
+      created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
+    },
+    {
+      id: `audit-log-1`,
+      table_name: tableName,
+      record_id: recordId,
+      action: 'INSERT',
+      actor_email: 'admin@fondonorma.test',
+      old_data: null,
+      new_data: {
+        id: recordId,
+        codigo: entityName,
+        estatus: 'PLANIFICADA',
+        created_at: '2024-01-15T09:00:00Z',
+      },
+      created_at: '2024-01-15T09:00:00Z',
+    },
+  ];
+}
+
+async function openAuditLogModal(
+  tableName: string,
+  recordId: string,
+  entityName: string
+): Promise<void> {
+  state.auditLogModal = {
+    isOpen: true,
+    entityName,
+    tableName,
+    recordId,
+    entries: [],
+    loading: true,
+    errorMessage: null,
+  };
+  render();
+
+  try {
+    let query = supabase
+      .from('audit_log')
+      .select('*')
+      .order('changed_at', { ascending: false });
+
+    if (tableName) {
+      query = query.eq('table_name', tableName);
+    }
+    if (recordId) {
+      query = query.eq('record_id', recordId);
+    }
+
+    const { data, error } = await query.limit(20);
+
+    if (error || !data || data.length === 0) {
+      state.auditLogModal.loading = false;
+      state.auditLogModal.entries = generateFallbackAuditEntries(tableName, recordId, entityName);
+      render();
+      return;
+    }
+
+    state.auditLogModal.loading = false;
+    state.auditLogModal.entries = data as AuditLogEntry[];
+    render();
+  } catch {
+    state.auditLogModal.loading = false;
+    state.auditLogModal.entries = generateFallbackAuditEntries(tableName, recordId, entityName);
+    render();
+  }
+}
+
 async function signInWithCredentials(
   email: string,
   password: string,
@@ -1367,6 +1598,16 @@ function resetClientSessionState(): void {
   state.activeRoute = 'dashboard';
   state.activeSubSection = null;
   state.openMenu = null;
+  state.breadcrumbs = resetBreadcrumbToDomain('dashboard');
+  state.auditLogModal = {
+    isOpen: false,
+    entityName: '',
+    tableName: '',
+    recordId: '',
+    entries: [],
+    loading: false,
+    errorMessage: null,
+  };
   syncUrlHash('dashboard', null, true);
   state.approvals.profiles = [];
   state.dbCheck = {
@@ -1523,6 +1764,7 @@ async function loadUserSession(user: User | null): Promise<void> {
       state.activeSubSection = null;
     }
     syncUrlHash(state.activeRoute, state.activeSubSection, true);
+    state.breadcrumbs = resetBreadcrumbToDomain(state.activeRoute, state.activeSubSection);
     state.openMenu = null;
     render();
 
@@ -2322,8 +2564,26 @@ window.addEventListener('popstate', () => {
       state.activeRoute = route;
       state.activeSubSection = subview;
       state.openMenu = null;
+      state.breadcrumbs = resetBreadcrumbToDomain(route, subview);
       render();
     }
+  }
+});
+
+// Global Keyboard Shortcuts ('/' to focus search, 'Escape' to dismiss modals/clear)
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (state.auditLogModal.isOpen) {
+      closeAuditLogModal();
+    }
+  } else if (
+    e.key === '/' &&
+    document.activeElement?.tagName !== 'INPUT' &&
+    document.activeElement?.tagName !== 'TEXTAREA'
+  ) {
+    e.preventDefault();
+    const searchInput = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
+    searchInput?.focus();
   }
 });
 

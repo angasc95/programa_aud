@@ -106,6 +106,90 @@ export interface DomainMenuSpec {
   items: DomainNavItem[];
 }
 
+export interface UserIdentityDisplay {
+  icon: string;
+  name: string;
+  displayNameWithRoleOrStatus: string;
+  subtitle: string;
+  tooltip: string;
+  isApproved: boolean;
+  status: UserStatus;
+  role: UserRole;
+  suppressRoleIcon: boolean;
+}
+
+export function getUserIdentityDisplay(profile: UserProfile): UserIdentityDisplay {
+  const isApproved = profile.status === 'APPROVED';
+
+  if (!isApproved) {
+    if (profile.status === 'REJECTED') {
+      return {
+        icon: '❌',
+        name: profile.nombre,
+        displayNameWithRoleOrStatus: `${profile.nombre} (Rechazado)`,
+        subtitle: 'Rechazado',
+        tooltip: 'REJECTED — Solicitud de cuenta declinada por un administrador',
+        isApproved: false,
+        status: 'REJECTED',
+        role: profile.role,
+        suppressRoleIcon: true,
+      };
+    }
+    // PENDING
+    return {
+      icon: '⏳',
+      name: profile.nombre,
+      displayNameWithRoleOrStatus: `${profile.nombre} (Pendiente)`,
+      subtitle: 'Pendiente',
+      tooltip: 'PENDING — En espera de aprobación por un administrador',
+      isApproved: false,
+      status: 'PENDING',
+      role: profile.role,
+      suppressRoleIcon: true,
+    };
+  }
+
+  let roleIcon = '🏢';
+  let roleName = 'Cliente';
+  let tooltip = 'CLIENT — Portal de organización cliente';
+
+  switch (profile.role) {
+    case 'ADMIN':
+      roleIcon = '🛡️';
+      roleName = 'Administrador';
+      tooltip = 'ADMIN — Control administrativo total de usuarios, catálogos y gobernanza';
+      break;
+    case 'WORKER':
+      roleIcon = '⚙️';
+      roleName = 'Coordinador';
+      tooltip = 'WORKER — Coordinador de operaciones de certificación y auditorías';
+      break;
+    case 'AUDITOR':
+      roleIcon = '📋';
+      roleName = 'Auditor';
+      tooltip = 'AUDITOR — Evaluador técnico calificado para auditorías y hallazgos';
+      break;
+    case 'CLIENT':
+    default:
+      roleIcon = '🏢';
+      roleName = 'Cliente';
+      tooltip = 'CLIENT — Portal de organización cliente titular';
+      break;
+  }
+
+  return {
+    icon: roleIcon,
+    name: profile.nombre,
+    displayNameWithRoleOrStatus: `${profile.nombre} (${roleName})`,
+    subtitle: roleName,
+    tooltip,
+    isApproved: true,
+    status: 'APPROVED',
+    role: profile.role,
+    suppressRoleIcon: false,
+  };
+}
+
 export function getRoleVisualMeta(role: UserRole): RoleVisualMeta {
   switch (role) {
     case 'ADMIN':
@@ -187,90 +271,101 @@ export function getVisibleDomainMenus(
 
   const menus: DomainMenuSpec[] = [];
 
+  // BLOCK 1: Auditorías [ Programación | Calendario | Resultado ]
   if (isStaff || isAuditor || isClient) {
     const auditItems: DomainNavItem[] = [
       {
         id: 'scheduling',
-        label: 'Event Scheduling',
+        label: 'Programación',
         symbol: '🗓️',
         tooltip: 'Programación y seguimiento de auditorías de certificación',
       },
       {
         id: 'calendar',
-        label: 'Calendar Selection',
+        label: 'Calendario',
         symbol: '📆',
         tooltip: 'Calendario de fechas programadas y reprogramaciones',
+      },
+      {
+        id: 'findings',
+        label: 'Resultado',
+        symbol: '📋',
+        tooltip: 'Registro y seguimiento de hallazgos y no conformidades',
       },
     ];
 
     if (isStaff || isAuditor) {
       auditItems.push({
         id: 'team',
-        label: 'Evaluator Team',
+        label: 'Equipo Evaluador',
         symbol: '👥',
         tooltip: 'Equipo auditor asignado y calificación por auditoría',
       });
       auditItems.push({
         id: 'scope',
-        label: 'Audit Scope',
+        label: 'Alcance de Campo',
         symbol: '🏭',
-        tooltip: 'Alcance de campo: sedes, turnos y procesos evaluados',
-      });
-      auditItems.push({
-        id: 'findings',
-        label: 'Audit Findings',
-        symbol: '📋',
-        tooltip: 'Registro de no conformidades (NC Mayor/Menor), observaciones y mejoras',
+        tooltip: 'Sedes, turnos y procesos evaluados en auditoría',
       });
     }
 
     menus.push({
       id: 'auditorias',
-      label: 'Dominio Auditorías',
+      label: 'Auditorías',
       symbol: '📅',
-      tooltip: 'Gestión de auditorías, calendario y equipo evaluador',
+      tooltip: 'BLOCK 1: Auditorías — Programación, Calendario y Resultado',
       items: auditItems,
     });
   }
 
+  // BLOCK 2: Certificación [ Organización | Certificado | Auditor ]
   if (isStaff || isClient) {
     const certItems: DomainNavItem[] = [
       {
         id: 'organizations',
-        label: 'Client Organizations',
+        label: 'Organización',
         symbol: '🏢',
         tooltip: 'Organizaciones clientes titulares y acceso autorizado',
       },
       {
         id: 'certificates',
-        label: 'Issued Certificates',
+        label: 'Certificado',
         symbol: '📜',
         tooltip: 'Certificados emitidos y avance de cobertura normativa',
       },
       {
+        id: 'auditors',
+        label: 'Auditor',
+        symbol: '👤',
+        tooltip: 'Cuerpo de auditores técnicos calificados y liderazgo evaluador',
+      },
+      {
         id: 'drilldown',
-        label: 'Hierarchical Drill-Down',
+        label: 'Drill-Down',
         symbol: '🔍',
-        tooltip: 'Navegación relacional en profundidad (Organización > Certificado > Sedes > Hallazgos)',
-      },
-      {
-        id: 'sites',
-        label: 'Multi-site Locations',
-        symbol: '📍',
-        tooltip: 'Sedes físicas y esquemas multisitio por certificado',
-      },
-      {
-        id: 'processes',
-        label: 'Process Mapping',
-        symbol: '⚙️',
-        tooltip: 'Mapa de procesos y cláusulas normativas vinculadas',
+        tooltip: 'Navegación jerárquica en profundidad',
       },
     ];
+
+    if (isStaff || isClient) {
+      certItems.push({
+        id: 'sites',
+        label: 'Sedes Multisitio',
+        symbol: '📍',
+        tooltip: 'Sedes físicas y plantas operativas por certificado',
+      });
+      certItems.push({
+        id: 'processes',
+        label: 'Mapa de Procesos',
+        symbol: '⚙️',
+        tooltip: 'Procesos operativos y cláusulas normativas vinculadas',
+      });
+    }
 
     if (isStaff) {
       certItems.push({
         id: 'shifts',
-        label: 'Work Shifts',
+        label: 'Turnos',
         symbol: '🕒',
         tooltip: 'Turnos productivos y horarios operativos por sede',
       });
@@ -278,42 +373,61 @@ export function getVisibleDomainMenus(
 
     menus.push({
       id: 'certificacion',
-      label: 'Dominio Certificación',
+      label: 'Certificación',
       symbol: '🏛️',
-      tooltip: 'Organizaciones, certificados, sedes, procesos y turnos',
+      tooltip: 'BLOCK 2: Certificación — Organización, Certificado y Auditor',
       items: certItems,
     });
   }
 
+  // BLOCK 3: Extra [ Norma | Sector IAF | Estatus | Tipo | Metodología ]
   menus.push({
     id: 'extra',
-    label: 'Dominio Extra',
+    label: 'Extra',
     symbol: '📚',
-    tooltip: 'Catálogos maestros: normas, requisitos ltree, sectores IAF y metodologías',
+    tooltip: 'BLOCK 3: Extra — Norma, Sector IAF, Estatus, Tipo y Metodología',
     items: [
       {
         id: 'standards',
-        label: 'ISO Standards',
+        label: 'Norma',
         symbol: '📘',
         tooltip: 'Esquemas y normas certificables ISO',
       },
       {
+        id: 'iaf',
+        label: 'Sector IAF',
+        symbol: '🏭',
+        tooltip: 'Sectores técnicos y sub-sectores de acreditación IAF',
+      },
+      {
+        id: 'estatus',
+        label: 'Estatus',
+        symbol: '🏷️',
+        tooltip: 'Catálogo de estatus canónicos de auditorías y certificados',
+      },
+      {
+        id: 'tipos',
+        label: 'Tipo',
+        symbol: '📑',
+        tooltip: 'Tipos de auditoría de certificación (Etapa 1, 2, Vigilancia...)',
+      },
+      {
+        id: 'metodologias',
+        label: 'Metodología',
+        symbol: '🌐',
+        tooltip: 'Metodologías de auditoría (Presencial, Remota, Híbrida)',
+      },
+      {
         id: 'requirements',
-        label: 'LTREE Requirements',
+        label: 'Requisitos LTREE',
         symbol: '🌳',
         tooltip: 'Jerarquía de cláusulas y sub-requisitos normativos',
       },
       {
-        id: 'iaf',
-        label: 'IAF Sectors',
-        symbol: '🏭',
-        tooltip: 'Sectores técnicos de acreditación IAF',
-      },
-      {
         id: 'catalogs',
-        label: 'Statuses & Methodologies',
-        symbol: '🏷️',
-        tooltip: 'Estatus operativos, tipos de auditoría y metodologías',
+        label: 'Todos los Catálogos',
+        symbol: '📋',
+        tooltip: 'Visor unificado de catálogos maestros del sistema',
       },
     ],
   });

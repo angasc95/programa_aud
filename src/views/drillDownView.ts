@@ -950,8 +950,20 @@ export function renderDrillDownView(
           <div class="flex items-center gap-2">
             <button
               type="button"
+              data-action="open-changelog"
+              data-table-name="organizacion"
+              data-record-id="${escapeHtml(selectedOrg.id)}"
+              data-entity-name="${escapeHtml(selectedOrg.nombre)}"
+              title="Ver registro cronológico de auditoría forense para ${escapeHtml(selectedOrg.nombre)}"
+              class="text-xs font-semibold text-slate-700 hover:text-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 shadow-2xs cursor-pointer inline-flex items-center gap-1.5 transition-colors"
+            >
+              <span aria-hidden="true">🕒</span>
+              <span>Historial de Cambios</span>
+            </button>
+            <button
+              type="button"
               data-drilldown-select-org=""
-              class="text-xs font-semibold text-slate-600 hover:text-slate-900 px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-50 cursor-pointer"
+              class="text-xs font-semibold text-slate-600 hover:text-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors"
             >
               Cambiar Organización
             </button>
@@ -997,6 +1009,51 @@ export function renderDrillDownView(
         selectedCert
           ? `
             <section class="space-y-4">
+              <!-- Certificate Actions & Scope Statement Zone -->
+              <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-3">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xl">📜</span>
+                    <div>
+                      <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Certificado Seleccionado</div>
+                      <div class="text-sm font-bold text-slate-900">${escapeHtml(selectedCert.numero_certificado)} · ${escapeHtml(selectedCert.norma)}</div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button
+                      type="button"
+                      data-action="open-changelog"
+                      data-table-name="certificado"
+                      data-record-id="${escapeHtml(selectedCert.id)}"
+                      data-entity-name="${escapeHtml(selectedCert.numero_certificado)}"
+                      title="Ver registro cronológico de auditoría forense para ${escapeHtml(selectedCert.numero_certificado)}"
+                      class="text-xs font-semibold text-slate-700 hover:text-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 shadow-2xs cursor-pointer inline-flex items-center gap-1.5 transition-colors"
+                    >
+                      <span aria-hidden="true">🕒</span>
+                      <span>Historial de Cambios</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Scope Statement with live character counter -->
+                <div class="pt-2 border-t border-slate-100 space-y-1.5">
+                  <div class="flex items-center justify-between gap-2 text-xs">
+                    <label for="detailScopeInput" class="font-bold uppercase tracking-wider text-slate-700 text-[10px]">
+                      Declaración de Alcance de Certificación (ISO 9001 / ISO/IEC 17021-1:2015 cláusula 8.2)
+                    </label>
+                    <span class="text-[11px] font-mono text-slate-400">
+                      <span id="scopeCharCount">${(selectedCert.alcance || 'Fabricación, mecanizado y comercialización de componentes mecánicos y metálicos para uso industrial automotriz.').length}</span> / 1000 caracteres
+                    </span>
+                  </div>
+                  <textarea
+                    id="detailScopeInput"
+                    maxlength="1000"
+                    rows="2"
+                    class="w-full text-xs rounded-lg border border-slate-300 p-2.5 bg-slate-50/50 text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+                  >${escapeHtml(selectedCert.alcance || 'Fabricación, mecanizado y comercialización de componentes mecánicos y metálicos para uso industrial automotriz.')}</textarea>
+                </div>
+              </div>
+
               <!-- Sub-tabs navigation -->
               <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
                 ${detailTabs
