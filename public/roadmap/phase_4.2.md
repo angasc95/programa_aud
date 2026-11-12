@@ -104,10 +104,10 @@ The certificate detail page adheres strictly to the 4-zone layout blueprint, fea
 
 ## 4. Key Implementation Milestones
 
-* [ ] **Milestone 4.2.1:** Pure helper functions for multisite branch counting and Site 0 sorting implemented and verified with unit tests in `src/lib/multisiteSampling.test.ts`.
-* [ ] **Milestone 4.2.2:** `Certificado` list view implemented in `src/views/certificadoView.ts` with strict exclusion of the `"Cobertura Normativa"` column and correct multisite counts.
-* [ ] **Milestone 4.2.3:** `Certificado` detail page implemented following the 4-zone blueprint, featuring the `alcance` textarea with 10-1000 character counter feedback.
-* [ ] **Milestone 4.2.4:** The five specialized child tabs (`Sitios` with Site 0 first, `Procesos` with `tipo` badges, `Turnos`, `No Aplicables` with justification text, and `Auditorías`) fully integrated.
+* [x] **Milestone 4.2.1:** Pure helper functions for multisite branch counting and Site 0 sorting implemented and verified with unit tests in `src/lib/multisiteSampling.test.ts`.
+* [x] **Milestone 4.2.2:** `Certificado` list view implemented in `src/views/certificadoView.ts` with strict exclusion of the `"Cobertura Normativa"` column and correct multisite counts.
+* [x] **Milestone 4.2.3:** `Certificado` detail page implemented following the 4-zone blueprint, featuring the `alcance` textarea with 10-1000 character counter feedback.
+* [x] **Milestone 4.2.4:** The five specialized child tabs (`Sitios` with Site 0 first, `Procesos` with `tipo` badges, `Turnos`, `No Aplicables` with justification text, and `Auditorías`) fully integrated.
 
 ---
 

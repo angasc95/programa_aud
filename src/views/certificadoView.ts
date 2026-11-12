@@ -16,6 +16,8 @@ import {
   type AuditEntity,
 } from '../lib/multisiteSampling';
 
+export type { CertificadoViewState, CertificadoChildTab };
+
 export interface CertificadoViewProps {
   profile: UserProfile;
   state: CertificadoViewState;

@@ -96,6 +96,13 @@ import {
   validateRifFormat,
   type OrganizacionEntity,
 } from './lib/activeCertificates';
+import {
+  INITIAL_CERTIFICADOS_DETAILED,
+  validateAlcance,
+  type CertificadoDetailEntity,
+  type CertificadoViewState,
+  type CertificadoChildTab,
+} from './lib/multisiteSampling';
 
 interface AppState {
   booting: boolean;
@@ -149,6 +156,7 @@ interface AppState {
     catalogs: CatalogItem[];
     findings: FindingRecord[];
     allOrganizaciones: OrganizacionEntity[];
+    allCertificadosDetailed: CertificadoDetailEntity[];
     loading: boolean;
   };
   drilldown: {
@@ -179,6 +187,7 @@ interface AppState {
     editErrorMessage?: string | null;
     saveSuccessMessage?: string | null;
   };
+  certificadoDomain: CertificadoViewState;
   extraDomain: {
     selectedNormaId: string | null;
     activeNormaTab: 'acreditacion' | 'requisitos';
@@ -491,6 +500,7 @@ const state: AppState = {
     catalogs: [...INITIAL_CATALOGS],
     findings: [...INITIAL_FINDINGS],
     allOrganizaciones: [...INITIAL_ORGANIZACIONES],
+    allCertificadosDetailed: [...INITIAL_CERTIFICADOS_DETAILED],
     loading: false,
   },
   drilldown: {
@@ -520,6 +530,22 @@ const state: AppState = {
     editFormData: undefined,
     editErrorMessage: null,
     saveSuccessMessage: null,
+  },
+  certificadoDomain: {
+    selectedCertId: null,
+    activeChildTab: 'sitios',
+    query: '',
+    selectedStandard: 'ALL',
+    selectedStatus: 'ALL',
+    selectedSectorIaf: 'ALL',
+    viewMode: 'grid',
+    sortColumn: null,
+    sortDirection: 'none',
+    isEditingAttributes: false,
+    editFormData: undefined,
+    editErrorMessage: null,
+    saveSuccessMessage: null,
+    originatingOrganizacionId: null,
   },
   extraDomain: {
     selectedNormaId: null,
@@ -705,6 +731,8 @@ function render(): void {
       loading: state.exploration.loading,
       organizacionState: state.organizacionDomain,
       allOrganizaciones: state.domainData.allOrganizaciones,
+      certificadoState: state.certificadoDomain,
+      allCertificadosDetailed: state.domainData.allCertificadosDetailed,
     });
   } else if (effectiveRoute === 'extra') {
     bodyHtml = renderExtraView(state.profile, {
@@ -964,6 +992,13 @@ function bindAuthenticatedEvents(): void {
             state.organizacionDomain.selectedOrganizacionId = null;
             state.organizacionDomain.isEditingAttributes = false;
           }
+          if (
+            targetSeg.id.startsWith('domain-') ||
+            targetSeg.id === 'subview-certificacion-certificates'
+          ) {
+            state.certificadoDomain.selectedCertId = null;
+            state.certificadoDomain.isEditingAttributes = false;
+          }
         }
         syncUrlHash(state.activeRoute, state.activeSubSection);
       }
@@ -990,6 +1025,10 @@ function bindAuthenticatedEvents(): void {
         if (!subview || subview === 'organizations') {
           state.organizacionDomain.selectedOrganizacionId = null;
           state.organizacionDomain.isEditingAttributes = false;
+        }
+        if (!subview || subview === 'certificates') {
+          state.certificadoDomain.selectedCertId = null;
+          state.certificadoDomain.isEditingAttributes = false;
         }
       }
       if (target === 'extra') {
@@ -2042,6 +2081,12 @@ function bindAuthenticatedEvents(): void {
       const certId = btn.dataset.certId;
       const certCode = btn.dataset.certCode;
       if (certId && certCode) {
+        state.activeRoute = 'certificacion';
+        state.activeSubSection = 'certificates';
+        state.certificadoDomain.selectedCertId = certId;
+        state.certificadoDomain.activeChildTab = 'sitios';
+        state.certificadoDomain.isEditingAttributes = false;
+        state.certificadoDomain.originatingOrganizacionId = state.organizacionDomain.selectedOrganizacionId;
         state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
           id: `cert-${certId}`,
           label: certCode,
@@ -2050,11 +2095,314 @@ function bindAuthenticatedEvents(): void {
           entityId: certId,
           tooltip: `Certificado > ${certCode}`,
         });
-        state.activeSubSection = 'certificates';
-        state.exploration.query = certCode;
         syncUrlHash('certificacion', 'certificates');
         render();
       }
+    });
+  });
+
+  // ===============================================
+  // DOMAIN CERTIFICACIÓN (Phase 4.2: Certificado)
+  // ===============================================
+
+  // 1. Select certificate -> 4-Zone Detail View & push breadcrumb
+  document.querySelectorAll<HTMLElement>('[data-action="select-cert"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const certId = btn.dataset.certId;
+      if (!certId) return;
+      state.activeRoute = 'certificacion';
+      state.activeSubSection = 'certificates';
+      state.certificadoDomain.selectedCertId = certId;
+      state.certificadoDomain.activeChildTab = 'sitios';
+      state.certificadoDomain.isEditingAttributes = false;
+      state.certificadoDomain.editErrorMessage = null;
+      state.certificadoDomain.saveSuccessMessage = null;
+
+      const cert =
+        state.domainData.allCertificadosDetailed.find((c) => c.id === certId) ||
+        INITIAL_CERTIFICADOS_DETAILED.find((c) => c.id === certId);
+
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `cert-${certId}`,
+        label: cert?.numero_certificado || 'Certificado',
+        route: 'certificacion',
+        subview: 'certificates',
+        entityId: certId,
+        tooltip: `Certificado > ${cert?.numero_certificado || certId}`,
+      });
+      syncUrlHash('certificacion', 'certificates');
+      render();
+    });
+  });
+
+  // 2. Back to certificates list
+  document.querySelectorAll<HTMLElement>('[data-action="back-to-cert-list"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.certificadoDomain.selectedCertId = null;
+      state.certificadoDomain.isEditingAttributes = false;
+      state.certificadoDomain.editErrorMessage = null;
+      state.certificadoDomain.saveSuccessMessage = null;
+      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-certificacion-certificates');
+      render();
+    });
+  });
+
+  // 3. View mode toggle (grid | list)
+  document.querySelectorAll<HTMLElement>('[data-cert-view-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.certViewMode;
+      if (mode === 'grid' || mode === 'list') {
+        state.certificadoDomain.viewMode = mode;
+        render();
+      }
+    });
+  });
+
+  // 4. Excel-style column sorting
+  document.querySelectorAll<HTMLElement>('[data-action="sort-cert"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const col = btn.dataset.column as
+        | 'numero_certificado'
+        | 'organizacion'
+        | 'norma'
+        | 'estatus'
+        | 'vigencia'
+        | 'sedes'
+        | undefined;
+      if (col) {
+        if (state.certificadoDomain.sortColumn === col) {
+          state.certificadoDomain.sortDirection = cycleSortDirection(
+            state.certificadoDomain.sortDirection
+          );
+        } else {
+          state.certificadoDomain.sortColumn = col;
+          state.certificadoDomain.sortDirection = 'asc';
+        }
+        render();
+      }
+    });
+  });
+
+  // 5. Facet: Standard (Norma ISO)
+  document.querySelectorAll<HTMLElement>('[data-cert-filter-standard]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.certificadoDomain.selectedStandard = btn.dataset.certFilterStandard || 'ALL';
+      render();
+    });
+  });
+
+  // 6. Facet: Status (Estatus Operativo)
+  document.querySelectorAll<HTMLElement>('[data-cert-filter-status]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.certificadoDomain.selectedStatus = btn.dataset.certFilterStatus || 'ALL';
+      render();
+    });
+  });
+
+  // 7. Facet: IAF Technical Sector
+  document.querySelectorAll<HTMLElement>('[data-cert-filter-iaf]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.certificadoDomain.selectedSectorIaf = btn.dataset.certFilterIaf || 'ALL';
+      render();
+    });
+  });
+
+  // 8. Search input & clear/reset
+  const certSearchInput = document.getElementById('certDirectorySearchInput') as HTMLInputElement | null;
+  certSearchInput?.addEventListener('input', (e) => {
+    state.certificadoDomain.query = (e.target as HTMLInputElement).value;
+    render();
+  });
+  certSearchInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      state.certificadoDomain.query = '';
+      render();
+    }
+  });
+  document.getElementById('clearCertSearchBtn')?.addEventListener('click', () => {
+    state.certificadoDomain.query = '';
+    render();
+  });
+  document.querySelectorAll<HTMLElement>('#resetCertFiltersBtn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.certificadoDomain.query = '';
+      state.certificadoDomain.selectedStandard = 'ALL';
+      state.certificadoDomain.selectedStatus = 'ALL';
+      state.certificadoDomain.selectedSectorIaf = 'ALL';
+      render();
+    });
+  });
+
+  // 9. Child tab switching (5 specialized child modules)
+  document.querySelectorAll<HTMLElement>('[data-cert-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.certTab as CertificadoChildTab | undefined;
+      if (tab) {
+        state.certificadoDomain.activeChildTab = tab;
+        render();
+      }
+    });
+  });
+
+  // 10. Edit mode toggling
+  document.getElementById('startEditCertBtn')?.addEventListener('click', () => {
+    state.certificadoDomain.isEditingAttributes = true;
+    state.certificadoDomain.editErrorMessage = null;
+    state.certificadoDomain.saveSuccessMessage = null;
+    const cert = state.domainData.allCertificadosDetailed.find(
+      (c) => c.id === state.certificadoDomain.selectedCertId
+    );
+    if (cert) {
+      state.certificadoDomain.editFormData = {
+        alcance: cert.alcance,
+        fecha_emision: cert.fecha_emision,
+        fecha_vencimiento: cert.fecha_vencimiento,
+      };
+    }
+    render();
+  });
+
+  const cancelCertEdit = () => {
+    state.certificadoDomain.isEditingAttributes = false;
+    state.certificadoDomain.editErrorMessage = null;
+    render();
+  };
+  document.getElementById('cancelEditCertBtn')?.addEventListener('click', cancelCertEdit);
+  document.getElementById('cancelEditCertBtnSecondary')?.addEventListener('click', cancelCertEdit);
+
+  // 11. Live Scope Textarea Character Counter
+  const editCertAlcanceInput = document.getElementById('editCertAlcanceInput') as HTMLTextAreaElement | null;
+  editCertAlcanceInput?.addEventListener('input', () => {
+    const counter = document.getElementById('certAlcanceLiveCounter');
+    const val = editCertAlcanceInput.value;
+    if (counter) {
+      counter.textContent = `(${val.length} / 1000 caracteres)`;
+      if (val.length < 10 || val.length > 1000) {
+        counter.classList.add('text-rose-600');
+        counter.classList.remove('text-slate-600');
+      } else {
+        counter.classList.remove('text-rose-600');
+        counter.classList.add('text-slate-600');
+      }
+    }
+  });
+
+  // 12. Save edited certificate attributes
+  document.getElementById('editCertForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const alcance = (form.querySelector('[name="alcance"]') as HTMLTextAreaElement)?.value.trim() || '';
+    const fecha_emision = (form.querySelector('[name="fecha_emision"]') as HTMLInputElement)?.value || '';
+    const fecha_vencimiento = (form.querySelector('[name="fecha_vencimiento"]') as HTMLInputElement)?.value || '';
+
+    const alcanceValidation = validateAlcance(alcance);
+    if (!alcanceValidation.valid) {
+      state.certificadoDomain.editErrorMessage = alcanceValidation.error || 'Alcance inválido.';
+      render();
+      return;
+    }
+
+    const certId = state.certificadoDomain.selectedCertId;
+    if (!certId) return;
+
+    state.domainData.allCertificadosDetailed = state.domainData.allCertificadosDetailed.map((c) => {
+      if (c.id === certId) {
+        return {
+          ...c,
+          alcance,
+          fecha_emision,
+          fecha_vencimiento,
+        };
+      }
+      return c;
+    });
+
+    state.exploration.records = state.exploration.records.map((c) => {
+      if (c.id === certId) {
+        return {
+          ...c,
+          alcance,
+          fecha_emision,
+          fecha_vencimiento,
+        };
+      }
+      return c;
+    });
+
+    state.certificadoDomain.isEditingAttributes = false;
+    state.certificadoDomain.editErrorMessage = null;
+    state.certificadoDomain.saveSuccessMessage = 'Alcance y vigencia de la certificación guardados exitosamente.';
+
+    void (async () => {
+      try {
+        await supabase
+          .from('certificado')
+          .update({
+            alcance,
+            fecha_emision,
+            fecha_vencimiento,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', certId);
+      } catch (err) {
+        console.warn('Fallback to reactive state for certificado update:', err);
+      }
+    })();
+
+    render();
+  });
+
+  // 13. Nav link: view organization from certificate Zone 1
+  document.querySelectorAll<HTMLElement>('[data-action="view-org-from-cert"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const orgId = btn.dataset.orgId;
+      if (!orgId) return;
+      state.activeRoute = 'certificacion';
+      state.activeSubSection = 'organizations';
+      state.organizacionDomain.selectedOrganizacionId = orgId;
+      state.organizacionDomain.isEditingAttributes = false;
+      const org =
+        state.domainData.allOrganizaciones.find((o) => o.id === orgId) ||
+        INITIAL_ORGANIZACIONES.find((o) => o.id === orgId);
+      state.breadcrumbs = resetBreadcrumbToDomain('certificacion', 'organizations');
+      if (org) {
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `org-${org.id}`,
+          label: org.nombre,
+          route: 'certificacion',
+          subview: 'organizations',
+          entityId: org.id,
+          tooltip: `Organización > ${org.nombre}`,
+        });
+      }
+      syncUrlHash('certificacion', 'organizations');
+      render();
+    });
+  });
+
+  // 14. Nav link: view standard (norma) from certificate Zone 1
+  document.querySelectorAll<HTMLElement>('[data-action="view-norma-from-cert"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const normaId = btn.dataset.normaId;
+      state.activeRoute = 'extra';
+      state.activeSubSection = 'standards';
+      state.extraDomain.selectedNormaId = normaId || null;
+      state.breadcrumbs = resetBreadcrumbToDomain('extra', 'standards');
+      syncUrlHash('extra', 'standards');
+      render();
+    });
+  });
+
+  // 15. Nav link: view IAF sector from certificate Zone 1
+  document.querySelectorAll<HTMLElement>('[data-action="view-iaf-from-cert"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const sectorId = btn.dataset.sectorId;
+      state.activeRoute = 'extra';
+      state.activeSubSection = 'iaf';
+      state.extraDomain.selectedSectorId = sectorId || null;
+      state.breadcrumbs = resetBreadcrumbToDomain('extra', 'iaf');
+      syncUrlHash('extra', 'iaf');
+      render();
     });
   });
 }
@@ -2546,7 +2894,24 @@ function resetClientSessionState(): void {
     catalogs: [...INITIAL_CATALOGS],
     findings: [...INITIAL_FINDINGS],
     allOrganizaciones: [...INITIAL_ORGANIZACIONES],
+    allCertificadosDetailed: [...INITIAL_CERTIFICADOS_DETAILED],
     loading: false,
+  };
+  state.certificadoDomain = {
+    selectedCertId: null,
+    activeChildTab: 'sitios',
+    query: '',
+    selectedStandard: 'ALL',
+    selectedStatus: 'ALL',
+    selectedSectorIaf: 'ALL',
+    viewMode: 'grid',
+    sortColumn: null,
+    sortDirection: 'none',
+    isEditingAttributes: false,
+    editFormData: undefined,
+    editErrorMessage: null,
+    saveSuccessMessage: null,
+    originatingOrganizacionId: null,
   };
   state.auth = {
     ...state.auth,
