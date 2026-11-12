@@ -76,6 +76,21 @@ import {
 import { renderBreadcrumbBar } from './views/breadcrumbView';
 import { renderAuditLogModal } from './views/auditLogModal';
 import type { AuditLogEntry } from './lib/auditLog';
+import {
+  cycleSortDirection,
+  type SortDirection,
+} from './lib/universalTemplate';
+import {
+  INITIAL_NORMAS,
+  INITIAL_SECTORES_IAF,
+  INITIAL_ESTATUS_CATALOG,
+  INITIAL_TIPOS_AUDITORIA_CATALOG,
+  INITIAL_METODOLOGIAS_CATALOG,
+  INITIAL_ACREDITACIONES,
+  INITIAL_SUBSECTORES_IAF,
+  INITIAL_ORGANISMOS,
+  INITIAL_REQUISITOS_LTREE,
+} from './lib/extraDomain';
 
 interface AppState {
   booting: boolean;
@@ -144,6 +159,45 @@ interface AppState {
     isModalOpen: boolean;
   };
   selectedScopeAuditId: string | null;
+  extraDomain: {
+    selectedNormaId: string | null;
+    activeNormaTab: 'acreditacion' | 'requisitos';
+    normaSearchQuery: string;
+    normaFilterStatus: string;
+    normaFilterScheme: string;
+    normaViewMode: 'grid' | 'list';
+    normaSortColumn: string | null;
+    normaSortDirection: SortDirection;
+    isAddAccreditationModalOpen: boolean;
+    inspectingClauseId: string | null;
+
+    selectedSectorId: string | null;
+    activeSectorTab: 'subsectores' | 'auditores';
+    iafSearchQuery: string;
+    iafFilterRisk: string;
+    iafViewMode: 'grid' | 'list';
+    iafSortColumn: string | null;
+    iafSortDirection: SortDirection;
+    isAddSubsectorModalOpen: boolean;
+
+    selectedEstatusId: string | null;
+    estatusSearchQuery: string;
+    estatusViewMode: 'grid' | 'list';
+    estatusSortColumn: string | null;
+    estatusSortDirection: SortDirection;
+
+    selectedTipoId: string | null;
+    tipoSearchQuery: string;
+    tipoViewMode: 'grid' | 'list';
+    tipoSortColumn: string | null;
+    tipoSortDirection: SortDirection;
+
+    selectedMetodologiaId: string | null;
+    metodologiaSearchQuery: string;
+    metodologiaViewMode: 'grid' | 'list';
+    metodologiaSortColumn: string | null;
+    metodologiaSortDirection: SortDirection;
+  };
 }
 
 function createInitialChecks(): HealthCheckItem[] {
@@ -432,6 +486,45 @@ const state: AppState = {
     isModalOpen: false,
   },
   selectedScopeAuditId: null,
+  extraDomain: {
+    selectedNormaId: null,
+    activeNormaTab: 'acreditacion',
+    normaSearchQuery: '',
+    normaFilterStatus: 'ALL',
+    normaFilterScheme: 'ALL',
+    normaViewMode: 'grid',
+    normaSortColumn: null,
+    normaSortDirection: 'none',
+    isAddAccreditationModalOpen: false,
+    inspectingClauseId: null,
+
+    selectedSectorId: null,
+    activeSectorTab: 'subsectores',
+    iafSearchQuery: '',
+    iafFilterRisk: 'ALL',
+    iafViewMode: 'grid',
+    iafSortColumn: null,
+    iafSortDirection: 'none',
+    isAddSubsectorModalOpen: false,
+
+    selectedEstatusId: null,
+    estatusSearchQuery: '',
+    estatusViewMode: 'grid',
+    estatusSortColumn: null,
+    estatusSortDirection: 'none',
+
+    selectedTipoId: null,
+    tipoSearchQuery: '',
+    tipoViewMode: 'grid',
+    tipoSortColumn: null,
+    tipoSortDirection: 'none',
+
+    selectedMetodologiaId: null,
+    metodologiaSearchQuery: '',
+    metodologiaViewMode: 'grid',
+    metodologiaSortColumn: null,
+    metodologiaSortDirection: 'none',
+  },
 };
 
 function isApprovedAdmin(): boolean {
@@ -584,6 +677,49 @@ function render(): void {
       iafSectors: state.domainData.iafSectors,
       catalogs: state.domainData.catalogs,
       loading: state.domainData.loading,
+      normaState: {
+        selectedNormaId: state.extraDomain.selectedNormaId,
+        activeChildTab: state.extraDomain.activeNormaTab,
+        query: state.extraDomain.normaSearchQuery,
+        selectedStatus: state.extraDomain.normaFilterStatus,
+        selectedScheme: state.extraDomain.normaFilterScheme,
+        viewMode: state.extraDomain.normaViewMode,
+        sortColumn: state.extraDomain.normaSortColumn,
+        sortDirection: state.extraDomain.normaSortDirection,
+        isAddAccreditationModalOpen: state.extraDomain.isAddAccreditationModalOpen,
+        inspectingClauseId: state.extraDomain.inspectingClauseId,
+      },
+      iafState: {
+        selectedSectorId: state.extraDomain.selectedSectorId,
+        activeChildTab: state.extraDomain.activeSectorTab,
+        query: state.extraDomain.iafSearchQuery,
+        selectedRisk: state.extraDomain.iafFilterRisk,
+        viewMode: state.extraDomain.iafViewMode,
+        sortColumn: state.extraDomain.iafSortColumn,
+        sortDirection: state.extraDomain.iafSortDirection,
+        isAddSubsectorModalOpen: state.extraDomain.isAddSubsectorModalOpen,
+      },
+      estatusState: {
+        selectedEstatusId: state.extraDomain.selectedEstatusId,
+        query: state.extraDomain.estatusSearchQuery,
+        viewMode: state.extraDomain.estatusViewMode,
+        sortColumn: state.extraDomain.estatusSortColumn,
+        sortDirection: state.extraDomain.estatusSortDirection,
+      },
+      tipoState: {
+        selectedTipoId: state.extraDomain.selectedTipoId,
+        query: state.extraDomain.tipoSearchQuery,
+        viewMode: state.extraDomain.tipoViewMode,
+        sortColumn: state.extraDomain.tipoSortColumn,
+        sortDirection: state.extraDomain.tipoSortDirection,
+      },
+      metodologiaState: {
+        selectedMetodologiaId: state.extraDomain.selectedMetodologiaId,
+        query: state.extraDomain.metodologiaSearchQuery,
+        viewMode: state.extraDomain.metodologiaViewMode,
+        sortColumn: state.extraDomain.metodologiaSortColumn,
+        sortDirection: state.extraDomain.metodologiaSortDirection,
+      },
     });
   } else {
     const filteredRecords = filterCertificateRecords(state.exploration.records, {
@@ -615,10 +751,11 @@ function render(): void {
     );
   }
 
-  const searchInput = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
-  const hadSearchFocus = document.activeElement === searchInput;
-  const searchCursorStart = searchInput?.selectionStart ?? null;
-  const searchCursorEnd = searchInput?.selectionEnd ?? null;
+  const activeEl = document.activeElement as HTMLElement | null;
+  const isInputActive = activeEl?.tagName === 'INPUT' || activeEl?.tagName === 'TEXTAREA';
+  const activeInputId = isInputActive ? activeEl?.id || null : null;
+  const searchCursorStart = isInputActive ? (activeEl as HTMLInputElement).selectionStart : null;
+  const searchCursorEnd = isInputActive ? (activeEl as HTMLInputElement).selectionEnd : null;
 
   const breadcrumbBarHtml = renderBreadcrumbBar({ trail: state.breadcrumbs });
   const auditModalHtml = renderAuditLogModal(state.auditLogModal);
@@ -644,12 +781,16 @@ function render(): void {
 
   bindAuthenticatedEvents();
 
-  if (hadSearchFocus) {
-    const restoredInput = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
+  if (activeInputId) {
+    const restoredInput = document.getElementById(activeInputId) as HTMLInputElement | null;
     if (restoredInput) {
       restoredInput.focus();
       if (searchCursorStart !== null && searchCursorEnd !== null) {
-        restoredInput.setSelectionRange(searchCursorStart, searchCursorEnd);
+        try {
+          restoredInput.setSelectionRange(searchCursorStart, searchCursorEnd);
+        } catch {
+          // ignore non-text inputs
+        }
       }
     }
   }
@@ -770,6 +911,14 @@ function bindAuthenticatedEvents(): void {
           } else if (targetSeg.id.startsWith('org-')) {
             state.drilldown.selectedOrgId = targetSeg.entityId || null;
           }
+        } else if (targetSeg.route === 'extra') {
+          if (targetSeg.id.startsWith('domain-') || targetSeg.id.startsWith('subview-')) {
+            state.extraDomain.selectedNormaId = null;
+            state.extraDomain.selectedSectorId = null;
+            state.extraDomain.selectedEstatusId = null;
+            state.extraDomain.selectedTipoId = null;
+            state.extraDomain.selectedMetodologiaId = null;
+          }
         }
         syncUrlHash(state.activeRoute, state.activeSubSection);
       }
@@ -791,6 +940,13 @@ function bindAuthenticatedEvents(): void {
       if (target !== 'drilldown' && subview !== 'drilldown') {
         state.drilldown.selectedOrgId = null;
         state.drilldown.selectedCertId = null;
+      }
+      if (target === 'extra') {
+        state.extraDomain.selectedNormaId = null;
+        state.extraDomain.selectedSectorId = null;
+        state.extraDomain.selectedEstatusId = null;
+        state.extraDomain.selectedTipoId = null;
+        state.extraDomain.selectedMetodologiaId = null;
       }
 
       syncUrlHash(target, state.activeSubSection);
@@ -1146,6 +1302,464 @@ function bindAuthenticatedEvents(): void {
         void handleToggleFindingStatus(findingId, !isCurrentlyClosed);
       }
     });
+  });
+
+  // ==========================================
+  // DOMAIN EXTRA (Phase 3) INTERACTIVE EVENTS
+  // ==========================================
+
+  // --- 1. Normas & Standards Events ---
+  document.querySelectorAll<HTMLElement>('[data-action="select-norma"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const normaId = btn.dataset.normaId;
+      if (!normaId) return;
+      state.extraDomain.selectedNormaId = normaId;
+      const norma = INITIAL_NORMAS.find((n) => n.id === normaId);
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `norma-${normaId}`,
+        label: norma?.codigo || 'Norma',
+        route: 'extra',
+        subview: 'standards',
+        entityId: normaId,
+        tooltip: `Norma ISO > ${norma?.codigo || normaId}`,
+      });
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="back-to-normas-list"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.extraDomain.selectedNormaId = null;
+      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-extra-standards');
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-norma-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.normaTab;
+      if (tab === 'acreditacion' || tab === 'requisitos') {
+        state.extraDomain.activeNormaTab = tab;
+        render();
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-norma-view-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.normaViewMode;
+      if (mode === 'grid' || mode === 'list') {
+        state.extraDomain.normaViewMode = mode;
+        render();
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="sort-norma"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const col = btn.dataset.sortCol;
+      if (col) {
+        if (state.extraDomain.normaSortColumn === col) {
+          state.extraDomain.normaSortDirection = cycleSortDirection(state.extraDomain.normaSortDirection);
+        } else {
+          state.extraDomain.normaSortColumn = col;
+          state.extraDomain.normaSortDirection = 'asc';
+        }
+        render();
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-norma-filter-status]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.extraDomain.normaFilterStatus = btn.dataset.normaFilterStatus || 'ALL';
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-norma-filter-scheme]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.extraDomain.normaFilterScheme = btn.dataset.normaFilterScheme || 'ALL';
+      render();
+    });
+  });
+
+  const normaSearch = document.getElementById('normaSearchInput') as HTMLInputElement | null;
+  normaSearch?.addEventListener('input', (e) => {
+    state.extraDomain.normaSearchQuery = (e.target as HTMLInputElement).value;
+    render();
+  });
+  normaSearch?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      state.extraDomain.normaSearchQuery = '';
+      render();
+    }
+  });
+  document.getElementById('clearNormaSearchBtn')?.addEventListener('click', () => {
+    state.extraDomain.normaSearchQuery = '';
+    render();
+  });
+  document.getElementById('resetNormaFiltersBtn')?.addEventListener('click', () => {
+    state.extraDomain.normaSearchQuery = '';
+    state.extraDomain.normaFilterStatus = 'ALL';
+    state.extraDomain.normaFilterScheme = 'ALL';
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="inspect-clause"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.extraDomain.inspectingClauseId = btn.dataset.clauseId || null;
+      render();
+    });
+  });
+  document.getElementById('closeClauseInspectBtn')?.addEventListener('click', () => {
+    state.extraDomain.inspectingClauseId = null;
+    render();
+  });
+  document.getElementById('closeClauseInspectFooterBtn')?.addEventListener('click', () => {
+    state.extraDomain.inspectingClauseId = null;
+    render();
+  });
+
+  document.getElementById('openNewAccreditationModalBtn')?.addEventListener('click', () => {
+    state.extraDomain.isAddAccreditationModalOpen = true;
+    render();
+  });
+  document.getElementById('closeNewAccredModalBtn')?.addEventListener('click', () => {
+    state.extraDomain.isAddAccreditationModalOpen = false;
+    render();
+  });
+  document.getElementById('cancelNewAccredModalBtn')?.addEventListener('click', () => {
+    state.extraDomain.isAddAccreditationModalOpen = false;
+    render();
+  });
+  document.getElementById('newAccreditationForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const orgId = (form.querySelector('[name="id_organismo"]') as HTMLSelectElement)?.value;
+    const numero = (form.querySelector('[name="numero_acreditacion"]') as HTMLInputElement)?.value;
+    const fecha = (form.querySelector('[name="fecha_concesion"]') as HTMLInputElement)?.value;
+    const estatus = (form.querySelector('[name="estatus"]') as HTMLSelectElement)?.value || 'Vigente';
+    const org = INITIAL_ORGANISMOS.find((o) => o.id === orgId);
+    const norma = INITIAL_NORMAS.find((n) => n.id === state.extraDomain.selectedNormaId);
+    if (org && norma) {
+      INITIAL_ACREDITACIONES.push({
+        id: `acred-${Date.now()}`,
+        id_norma: norma.id,
+        norma_codigo: norma.codigo,
+        id_organismo: org.id,
+        organismo_codigo: org.codigo,
+        organismo_nombre: org.nombre,
+        organismo_pais: org.pais,
+        numero_acreditacion: numero || `ACR-${Date.now().toString().slice(-4)}`,
+        fecha_concesion: fecha || new Date().toISOString().slice(0, 10),
+        estatus: estatus as any,
+      });
+      norma.acreditaciones_count += 1;
+    }
+    state.extraDomain.isAddAccreditationModalOpen = false;
+    render();
+  });
+
+  // --- 2. Sectores IAF & Sub-Sectores Events ---
+  document.querySelectorAll<HTMLElement>('[data-action="select-iaf"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const secId = btn.dataset.sectorId;
+      if (!secId) return;
+      state.extraDomain.selectedSectorId = secId;
+      const sec = INITIAL_SECTORES_IAF.find((s) => s.id === secId || String(s.sector) === secId);
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `sector-${secId}`,
+        label: sec ? `Sector ${sec.sector}` : 'Sector IAF',
+        route: 'extra',
+        subview: 'iaf',
+        entityId: secId,
+        tooltip: `Sector IAF > ${sec?.sector || secId}`,
+      });
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="back-to-iaf-list"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.extraDomain.selectedSectorId = null;
+      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-extra-iaf');
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-iaf-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.iafTab;
+      if (tab === 'subsectores' || tab === 'auditores') {
+        state.extraDomain.activeSectorTab = tab;
+        render();
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-iaf-view-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.iafViewMode;
+      if (mode === 'grid' || mode === 'list') {
+        state.extraDomain.iafViewMode = mode;
+        render();
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="sort-iaf"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const col = btn.dataset.sortCol;
+      if (col) {
+        if (state.extraDomain.iafSortColumn === col) {
+          state.extraDomain.iafSortDirection = cycleSortDirection(state.extraDomain.iafSortDirection);
+        } else {
+          state.extraDomain.iafSortColumn = col;
+          state.extraDomain.iafSortDirection = 'asc';
+        }
+        render();
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-iaf-filter-risk]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.extraDomain.iafFilterRisk = btn.dataset.iafFilterRisk || 'ALL';
+      render();
+    });
+  });
+
+  const iafSearch = document.getElementById('iafSearchInput') as HTMLInputElement | null;
+  iafSearch?.addEventListener('input', (e) => {
+    state.extraDomain.iafSearchQuery = (e.target as HTMLInputElement).value;
+    render();
+  });
+  iafSearch?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      state.extraDomain.iafSearchQuery = '';
+      render();
+    }
+  });
+  document.getElementById('clearIafSearchBtn')?.addEventListener('click', () => {
+    state.extraDomain.iafSearchQuery = '';
+    render();
+  });
+  document.getElementById('resetIafFiltersBtn')?.addEventListener('click', () => {
+    state.extraDomain.iafSearchQuery = '';
+    state.extraDomain.iafFilterRisk = 'ALL';
+    render();
+  });
+
+  document.getElementById('openNewSubsectorModalBtn')?.addEventListener('click', () => {
+    state.extraDomain.isAddSubsectorModalOpen = true;
+    render();
+  });
+  document.getElementById('closeNewSubsectorModalBtn')?.addEventListener('click', () => {
+    state.extraDomain.isAddSubsectorModalOpen = false;
+    render();
+  });
+  document.getElementById('cancelNewSubsectorModalBtn')?.addEventListener('click', () => {
+    state.extraDomain.isAddSubsectorModalOpen = false;
+    render();
+  });
+  document.getElementById('newSubsectorForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const codigo = (form.querySelector('[name="codigo"]') as HTMLInputElement)?.value;
+    const desc = (form.querySelector('[name="descripcion"]') as HTMLTextAreaElement)?.value;
+    const riesgo = (form.querySelector('[name="categoria_riesgo"]') as HTMLSelectElement)?.value || 'MEDIO';
+    const sec = INITIAL_SECTORES_IAF.find(
+      (s) => s.id === state.extraDomain.selectedSectorId || String(s.sector) === state.extraDomain.selectedSectorId
+    );
+    if (sec && codigo && desc) {
+      INITIAL_SUBSECTORES_IAF.push({
+        id: `subsec-${Date.now()}`,
+        id_sector_iaf: sec.id,
+        sector_numero: sec.sector,
+        codigo,
+        descripcion: desc,
+        categoria_riesgo: riesgo as any,
+        auditores_nombres: ['Ing. Carlos Mendoza (Auditor Líder)'],
+      });
+      sec.subsectores_count += 1;
+    }
+    state.extraDomain.isAddSubsectorModalOpen = false;
+    render();
+  });
+
+  // --- 3. Estatus Catalog Events ---
+  document.querySelectorAll<HTMLElement>('[data-action="select-estatus"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const estId = btn.dataset.estatusId;
+      if (!estId) return;
+      state.extraDomain.selectedEstatusId = estId;
+      const est = INITIAL_ESTATUS_CATALOG.find((e) => e.id === estId || e.estatus === estId);
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `estatus-${estId}`,
+        label: est?.estatus || 'Estatus',
+        route: 'extra',
+        subview: 'estatus',
+        entityId: estId,
+        tooltip: `Estatus > ${est?.estatus || estId}`,
+      });
+      render();
+    });
+  });
+  document.querySelectorAll<HTMLElement>('[data-action="back-to-estatus-list"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.extraDomain.selectedEstatusId = null;
+      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-extra-estatus');
+      render();
+    });
+  });
+  document.querySelectorAll<HTMLElement>('[data-estatus-view-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.estatusViewMode;
+      if (mode === 'grid' || mode === 'list') {
+        state.extraDomain.estatusViewMode = mode;
+        render();
+      }
+    });
+  });
+  document.querySelectorAll<HTMLElement>('[data-action="sort-estatus"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const col = btn.dataset.sortCol;
+      if (col) {
+        if (state.extraDomain.estatusSortColumn === col) {
+          state.extraDomain.estatusSortDirection = cycleSortDirection(state.extraDomain.estatusSortDirection);
+        } else {
+          state.extraDomain.estatusSortColumn = col;
+          state.extraDomain.estatusSortDirection = 'asc';
+        }
+        render();
+      }
+    });
+  });
+  const estatusSearch = document.getElementById('estatusSearchInput') as HTMLInputElement | null;
+  estatusSearch?.addEventListener('input', (e) => {
+    state.extraDomain.estatusSearchQuery = (e.target as HTMLInputElement).value;
+    render();
+  });
+  document.getElementById('clearEstatusSearchBtn')?.addEventListener('click', () => {
+    state.extraDomain.estatusSearchQuery = '';
+    render();
+  });
+
+  // --- 4. Tipos de Auditoría Events ---
+  document.querySelectorAll<HTMLElement>('[data-action="select-tipo"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tipoId = btn.dataset.tipoId;
+      if (!tipoId) return;
+      state.extraDomain.selectedTipoId = tipoId;
+      const t = INITIAL_TIPOS_AUDITORIA_CATALOG.find((x) => x.id === tipoId || x.tipo === tipoId);
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `tipo-${tipoId}`,
+        label: t?.tipo || 'Tipo Auditoría',
+        route: 'extra',
+        subview: 'tipos',
+        entityId: tipoId,
+        tooltip: `Tipo Auditoría > ${t?.tipo || tipoId}`,
+      });
+      render();
+    });
+  });
+  document.querySelectorAll<HTMLElement>('[data-action="back-to-tipo-list"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.extraDomain.selectedTipoId = null;
+      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-extra-tipos');
+      render();
+    });
+  });
+  document.querySelectorAll<HTMLElement>('[data-tipo-view-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.tipoViewMode;
+      if (mode === 'grid' || mode === 'list') {
+        state.extraDomain.tipoViewMode = mode;
+        render();
+      }
+    });
+  });
+  document.querySelectorAll<HTMLElement>('[data-action="sort-tipo"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const col = btn.dataset.sortCol;
+      if (col) {
+        if (state.extraDomain.tipoSortColumn === col) {
+          state.extraDomain.tipoSortDirection = cycleSortDirection(state.extraDomain.tipoSortDirection);
+        } else {
+          state.extraDomain.tipoSortColumn = col;
+          state.extraDomain.tipoSortDirection = 'asc';
+        }
+        render();
+      }
+    });
+  });
+  const tipoSearch = document.getElementById('tipoSearchInput') as HTMLInputElement | null;
+  tipoSearch?.addEventListener('input', (e) => {
+    state.extraDomain.tipoSearchQuery = (e.target as HTMLInputElement).value;
+    render();
+  });
+  document.getElementById('clearTipoSearchBtn')?.addEventListener('click', () => {
+    state.extraDomain.tipoSearchQuery = '';
+    render();
+  });
+
+  // --- 5. Metodologías de Auditoría Events ---
+  document.querySelectorAll<HTMLElement>('[data-action="select-metodologia"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const metId = btn.dataset.metodologiaId;
+      if (!metId) return;
+      state.extraDomain.selectedMetodologiaId = metId;
+      const m = INITIAL_METODOLOGIAS_CATALOG.find((x) => x.id === metId || x.metodologia === metId);
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `metodologia-${metId}`,
+        label: m?.metodologia || 'Metodología',
+        route: 'extra',
+        subview: 'metodologias',
+        entityId: metId,
+        tooltip: `Metodología > ${m?.metodologia || metId}`,
+      });
+      render();
+    });
+  });
+  document.querySelectorAll<HTMLElement>('[data-action="back-to-metodologia-list"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.extraDomain.selectedMetodologiaId = null;
+      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-extra-metodologias');
+      render();
+    });
+  });
+  document.querySelectorAll<HTMLElement>('[data-metodologia-view-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.metodologiaViewMode;
+      if (mode === 'grid' || mode === 'list') {
+        state.extraDomain.metodologiaViewMode = mode;
+        render();
+      }
+    });
+  });
+  document.querySelectorAll<HTMLElement>('[data-action="sort-metodologia"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const col = btn.dataset.sortCol;
+      if (col) {
+        if (state.extraDomain.metodologiaSortColumn === col) {
+          state.extraDomain.metodologiaSortDirection = cycleSortDirection(state.extraDomain.metodologiaSortDirection);
+        } else {
+          state.extraDomain.metodologiaSortColumn = col;
+          state.extraDomain.metodologiaSortDirection = 'asc';
+        }
+        render();
+      }
+    });
+  });
+  const metSearch = document.getElementById('metodologiaSearchInput') as HTMLInputElement | null;
+  metSearch?.addEventListener('input', (e) => {
+    state.extraDomain.metodologiaSearchQuery = (e.target as HTMLInputElement).value;
+    render();
+  });
+  document.getElementById('clearMetodologiaSearchBtn')?.addEventListener('click', () => {
+    state.extraDomain.metodologiaSearchQuery = '';
+    render();
   });
 }
 
