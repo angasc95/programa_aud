@@ -97,12 +97,12 @@ GRANT EXECUTE ON FUNCTION public.is_assigned_auditor(UUID) TO anon, authenticate
 GRANT EXECUTE ON FUNCTION public.is_auditor_for_cert(UUID) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.is_auditor_for_org(UUID) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.has_client_org_access(UUID) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.auditor_esta_calificado(UUID, UUID, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.auditor_esta_calificado(UUID, UUID, UUID, UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.auditores_calificados_para_certificado(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.evaluar_cobertura_certificado(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.cobertura_normativa_certificado(UUID) TO authenticated;
 
--- Activación RLS
+-- Activación RLS en todas las tablas públicas
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.client_organization_access ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.organizacion ENABLE ROW LEVEL SECURITY;
@@ -114,12 +114,16 @@ ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.norma ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.requisito ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sector_iaf ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subsector_iaf ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.organismo_acreditacion ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.acreditacion_norma_iaf ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.estatus ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tipo_auditoria ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.metodologia_auditoria ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.auditor ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.norma_auditor ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sector_iaf_auditor ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subsector_iaf_auditor ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sitio ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.proceso ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.requisitos_por_proceso ENABLE ROW LEVEL SECURITY;
@@ -142,57 +146,64 @@ BEGIN
     END LOOP;
 END $$;
 
--- Políticas de Catálogos y Competencias (Lectura Pública/Autenticada, Escritura Exclusiva por Admin)
+-- Políticas de Catálogos y Competencias (Lectura Pública/Autenticada, Escritura por Admin/Worker)
 CREATE POLICY "catalog_norma_select" ON public.norma FOR SELECT USING (true);
 CREATE POLICY "catalog_requisito_select" ON public.requisito FOR SELECT USING (true);
 CREATE POLICY "catalog_sector_iaf_select" ON public.sector_iaf FOR SELECT USING (true);
+CREATE POLICY "catalog_subsector_iaf_select" ON public.subsector_iaf FOR SELECT USING (true);
+CREATE POLICY "catalog_organismo_acreditacion_select" ON public.organismo_acreditacion FOR SELECT USING (true);
+CREATE POLICY "catalog_acreditacion_norma_iaf_select" ON public.acreditacion_norma_iaf FOR SELECT USING (true);
 CREATE POLICY "catalog_estatus_select" ON public.estatus FOR SELECT USING (true);
 CREATE POLICY "catalog_tipo_auditoria_select" ON public.tipo_auditoria FOR SELECT USING (true);
 CREATE POLICY "catalog_metodologia_select" ON public.metodologia_auditoria FOR SELECT USING (true);
 CREATE POLICY "catalog_auditor_select" ON public.auditor FOR SELECT USING (true);
 CREATE POLICY "catalog_norma_auditor_select" ON public.norma_auditor FOR SELECT USING (true);
 CREATE POLICY "catalog_sector_iaf_auditor_select" ON public.sector_iaf_auditor FOR SELECT USING (true);
+CREATE POLICY "catalog_subsector_iaf_auditor_select" ON public.subsector_iaf_auditor FOR SELECT USING (true);
 CREATE POLICY "catalog_turno_select" ON public.turno FOR SELECT USING (true);
 
-CREATE POLICY "catalog_norma_insert_admin" ON public.norma FOR INSERT TO authenticated WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_norma_update_admin" ON public.norma FOR UPDATE TO authenticated USING (public.is_approved_admin()) WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_norma_delete_admin" ON public.norma FOR DELETE TO authenticated USING (public.is_approved_admin());
+-- Políticas de Modificación para Catálogos y Esquemas de Acreditación (ADMIN y WORKER)
+CREATE POLICY "catalog_norma_write_worker" ON public.norma FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
 
-CREATE POLICY "catalog_requisito_insert_admin" ON public.requisito FOR INSERT TO authenticated WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_requisito_update_admin" ON public.requisito FOR UPDATE TO authenticated USING (public.is_approved_admin()) WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_requisito_delete_admin" ON public.requisito FOR DELETE TO authenticated USING (public.is_approved_admin());
+CREATE POLICY "catalog_requisito_write_worker" ON public.requisito FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
 
-CREATE POLICY "catalog_sector_iaf_insert_admin" ON public.sector_iaf FOR INSERT TO authenticated WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_sector_iaf_update_admin" ON public.sector_iaf FOR UPDATE TO authenticated USING (public.is_approved_admin()) WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_sector_iaf_delete_admin" ON public.sector_iaf FOR DELETE TO authenticated USING (public.is_approved_admin());
+CREATE POLICY "catalog_sector_iaf_write_worker" ON public.sector_iaf FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
 
-CREATE POLICY "catalog_estatus_insert_admin" ON public.estatus FOR INSERT TO authenticated WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_estatus_update_admin" ON public.estatus FOR UPDATE TO authenticated USING (public.is_approved_admin()) WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_estatus_delete_admin" ON public.estatus FOR DELETE TO authenticated USING (public.is_approved_admin());
+CREATE POLICY "catalog_subsector_iaf_write_worker" ON public.subsector_iaf FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
 
-CREATE POLICY "catalog_tipo_auditoria_insert_admin" ON public.tipo_auditoria FOR INSERT TO authenticated WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_tipo_auditoria_update_admin" ON public.tipo_auditoria FOR UPDATE TO authenticated USING (public.is_approved_admin()) WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_tipo_auditoria_delete_admin" ON public.tipo_auditoria FOR DELETE TO authenticated USING (public.is_approved_admin());
+CREATE POLICY "catalog_organismo_write_worker" ON public.organismo_acreditacion FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
 
-CREATE POLICY "catalog_metodologia_insert_admin" ON public.metodologia_auditoria FOR INSERT TO authenticated WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_metodologia_update_admin" ON public.metodologia_auditoria FOR UPDATE TO authenticated USING (public.is_approved_admin()) WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_metodologia_delete_admin" ON public.metodologia_auditoria FOR DELETE TO authenticated USING (public.is_approved_admin());
+CREATE POLICY "catalog_acreditacion_write_worker" ON public.acreditacion_norma_iaf FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
 
-CREATE POLICY "catalog_auditor_insert_admin" ON public.auditor FOR INSERT TO authenticated WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_auditor_update_admin" ON public.auditor FOR UPDATE TO authenticated USING (public.is_approved_admin()) WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_auditor_delete_admin" ON public.auditor FOR DELETE TO authenticated USING (public.is_approved_admin());
+CREATE POLICY "catalog_estatus_write_worker" ON public.estatus FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
 
-CREATE POLICY "catalog_norma_auditor_insert_admin" ON public.norma_auditor FOR INSERT TO authenticated WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_norma_auditor_update_admin" ON public.norma_auditor FOR UPDATE TO authenticated USING (public.is_approved_admin()) WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_norma_auditor_delete_admin" ON public.norma_auditor FOR DELETE TO authenticated USING (public.is_approved_admin());
+CREATE POLICY "catalog_tipo_auditoria_write_worker" ON public.tipo_auditoria FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
 
-CREATE POLICY "catalog_sector_iaf_auditor_insert_admin" ON public.sector_iaf_auditor FOR INSERT TO authenticated WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_sector_iaf_auditor_update_admin" ON public.sector_iaf_auditor FOR UPDATE TO authenticated USING (public.is_approved_admin()) WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_sector_iaf_auditor_delete_admin" ON public.sector_iaf_auditor FOR DELETE TO authenticated USING (public.is_approved_admin());
+CREATE POLICY "catalog_metodologia_write_worker" ON public.metodologia_auditoria FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
 
-CREATE POLICY "catalog_turno_insert_admin" ON public.turno FOR INSERT TO authenticated WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_turno_update_admin" ON public.turno FOR UPDATE TO authenticated USING (public.is_approved_admin()) WITH CHECK (public.is_approved_admin());
-CREATE POLICY "catalog_turno_delete_admin" ON public.turno FOR DELETE TO authenticated USING (public.is_approved_admin());
+CREATE POLICY "catalog_auditor_write_worker" ON public.auditor FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
+
+CREATE POLICY "catalog_norma_auditor_write_worker" ON public.norma_auditor FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
+
+CREATE POLICY "catalog_sector_iaf_auditor_write_worker" ON public.sector_iaf_auditor FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
+
+CREATE POLICY "catalog_subsector_iaf_auditor_write_worker" ON public.subsector_iaf_auditor FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
+
+CREATE POLICY "catalog_turno_write_worker" ON public.turno FOR ALL TO authenticated
+    USING (public.is_approved_worker()) WITH CHECK (public.is_approved_worker());
 
 -- Políticas para PROFILES
 CREATE POLICY "profiles_select" ON public.profiles FOR SELECT TO authenticated
@@ -404,6 +415,6 @@ CREATE POLICY "comentarios_auditoria_write_worker_or_auditor" ON public.comentar
     USING (public.is_approved_worker() OR public.is_assigned_auditor(id_auditoria))
     WITH CHECK (public.is_approved_worker() OR public.is_assigned_auditor(id_auditoria));
 
--- Políticas para AUDIT_LOG
-CREATE POLICY "audit_log_select_admin" ON public.audit_log FOR SELECT TO authenticated
-    USING (public.is_approved_admin());
+-- Políticas para AUDIT_LOG (Acceso de lectura forense para ADMIN y WORKER)
+CREATE POLICY "audit_log_select_authorized" ON public.audit_log FOR SELECT TO authenticated
+    USING (public.is_approved_worker());

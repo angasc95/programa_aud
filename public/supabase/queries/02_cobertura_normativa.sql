@@ -1,5 +1,5 @@
 -- ============================================================================
--- FILE 2: 02_COBERTURA_NORMATIVA.SQL (Motor de Cálculo LTREE)
+-- FILE 2: 02_COBERTURA_NORMATIVA.SQL (Motor de Cálculo LTREE y Competencias)
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.evaluar_cobertura_certificado(p_id_certificado UUID)
@@ -84,13 +84,14 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
 $$;
 
 -- ============================================================================
--- Validación de Competencias Técnicas de Auditores (Fase 2)
--- Verifica cruce compuesto entre auditor, norma ISO y sector IAF (< 10ms)
+-- Validación de Competencias Técnicas de Auditores (ISO/IEC 17021-1)
+-- Verifica competencias por auditor, norma ISO, sector IAF y sub-sector IAF
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.auditor_esta_calificado(
     p_id_auditor UUID,
     p_id_norma UUID,
-    p_id_sector_iaf UUID
+    p_id_sector_iaf UUID,
+    p_id_subsector_iaf UUID DEFAULT NULL
 )
 RETURNS BOOLEAN
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -99,9 +100,12 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
         FROM public.norma_auditor na
         INNER JOIN public.sector_iaf_auditor sa
             ON sa.id_auditor = na.id_auditor
+        LEFT JOIN public.subsector_iaf_auditor ssa
+            ON ssa.id_auditor = na.id_auditor AND ssa.id_subsector_iaf = p_id_subsector_iaf
         WHERE na.id_auditor = p_id_auditor
           AND na.id_norma = p_id_norma
           AND sa.id_sector_iaf = p_id_sector_iaf
+          AND (p_id_subsector_iaf IS NULL OR ssa.id_subsector_iaf IS NOT NULL)
     );
 $$;
 

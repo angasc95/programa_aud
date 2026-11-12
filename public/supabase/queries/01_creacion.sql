@@ -101,14 +101,39 @@ CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- Dominio 1: Catálogos Base y Competencias
+-- Dominio 1: Catálogos Base, Normas, Acreditación y Competencias
 CREATE TABLE IF NOT EXISTS norma (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     esquema VARCHAR(50) NOT NULL,
-    norma VARCHAR(100) NOT NULL UNIQUE,
+    codigo VARCHAR(50) NOT NULL UNIQUE,
+    titulo VARCHAR(255) NOT NULL,
+    estatus VARCHAR(50) NOT NULL DEFAULT 'Vigente' CHECK (estatus IN ('Vigente', 'En Revisión', 'Obsoleta')),
+    fecha_publicacion DATE,
+    norma VARCHAR(100) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE OR REPLACE FUNCTION public.fn_norma_sync_codigo_titulo()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.codigo IS NULL OR TRIM(NEW.codigo) = '' THEN
+        NEW.codigo := COALESCE(NULLIF(NEW.norma, ''), 'NORMA-DEF');
+    END IF;
+    IF NEW.norma IS NULL OR TRIM(NEW.norma) = '' THEN
+        NEW.norma := NEW.codigo;
+    END IF;
+    IF NEW.titulo IS NULL OR TRIM(NEW.titulo) = '' THEN
+        NEW.titulo := NEW.norma;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_norma_sync_codigo_titulo ON public.norma;
+CREATE TRIGGER trg_norma_sync_codigo_titulo
+    BEFORE INSERT OR UPDATE ON public.norma
+    FOR EACH ROW EXECUTE FUNCTION public.fn_norma_sync_codigo_titulo();
 
 CREATE TABLE IF NOT EXISTS requisito (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -124,6 +149,40 @@ CREATE TABLE IF NOT EXISTS requisito (
 CREATE TABLE IF NOT EXISTS sector_iaf (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     sector INTEGER NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS subsector_iaf (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_sector_iaf UUID NOT NULL REFERENCES sector_iaf(id) ON DELETE RESTRICT,
+    codigo VARCHAR(10) NOT NULL,
+    descripcion TEXT NOT NULL,
+    categoria_riesgo VARCHAR(20) NOT NULL DEFAULT 'MEDIO' CHECK (categoria_riesgo IN ('ALTO', 'MEDIO', 'BAJO')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT unique_subsector_codigo UNIQUE (codigo)
+);
+
+CREATE TABLE IF NOT EXISTS organismo_acreditacion (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    codigo VARCHAR(20) NOT NULL UNIQUE,
+    nombre VARCHAR(255) NOT NULL,
+    pais VARCHAR(100) NOT NULL,
+    sitio_web VARCHAR(255),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS acreditacion_norma_iaf (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_organismo UUID NOT NULL REFERENCES organismo_acreditacion(id) ON DELETE CASCADE,
+    id_norma UUID NOT NULL REFERENCES norma(id) ON DELETE CASCADE,
+    id_sector_iaf UUID REFERENCES sector_iaf(id) ON DELETE SET NULL,
+    numero_acreditacion VARCHAR(100) NOT NULL,
+    fecha_concesion DATE NOT NULL,
+    fecha_vencimiento DATE,
+    estatus VARCHAR(30) NOT NULL DEFAULT 'Activa',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -168,6 +227,13 @@ CREATE TABLE IF NOT EXISTS sector_iaf_auditor (
     PRIMARY KEY (id_auditor, id_sector_iaf)
 );
 
+CREATE TABLE IF NOT EXISTS subsector_iaf_auditor (
+    id_auditor UUID NOT NULL REFERENCES auditor(id) ON DELETE CASCADE,
+    id_subsector_iaf UUID NOT NULL REFERENCES subsector_iaf(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id_auditor, id_subsector_iaf)
+);
+
 -- Dominio 2: Organizaciones, Certificados, Sitios, Procesos y Acceso Cliente
 CREATE TABLE IF NOT EXISTS organizacion (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -197,6 +263,7 @@ CREATE TABLE IF NOT EXISTS certificado (
     id_sector_iaf UUID NOT NULL REFERENCES sector_iaf(id) ON DELETE RESTRICT,
     id_organizacion UUID NOT NULL REFERENCES organizacion(id) ON DELETE RESTRICT,
     numero_certificado VARCHAR(100) NOT NULL UNIQUE,
+    alcance VARCHAR(1000) NOT NULL DEFAULT '',
     multisitio BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -205,7 +272,7 @@ CREATE TABLE IF NOT EXISTS certificado (
 CREATE TABLE IF NOT EXISTS sitio (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     id_certificado UUID NOT NULL REFERENCES certificado(id) ON DELETE CASCADE,
-    numero_sitio INTEGER NOT NULL,
+    numero_sitio INTEGER NOT NULL CHECK (numero_sitio >= 0),
     nombre_sitio VARCHAR(150) NOT NULL,
     direccion_sitio TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -217,6 +284,7 @@ CREATE TABLE IF NOT EXISTS proceso (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     id_certificado UUID NOT NULL REFERENCES certificado(id) ON DELETE CASCADE,
     nombre_proceso VARCHAR(150) NOT NULL,
+    tipo VARCHAR(30) NOT NULL DEFAULT 'Medular' CONSTRAINT check_proceso_tipo CHECK (tipo IN ('Estratégico', 'Medular', 'De Apoyo', 'Otro')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT unique_proceso_certificado UNIQUE (id_certificado, nombre_proceso)
@@ -229,9 +297,13 @@ CREATE TABLE IF NOT EXISTS requisitos_por_proceso (
 );
 
 CREATE TABLE IF NOT EXISTS requisitos_no_aplicables_certificado (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     id_certificado UUID NOT NULL REFERENCES certificado(id) ON DELETE CASCADE,
     id_requisito UUID NOT NULL REFERENCES requisito(id) ON DELETE CASCADE,
-    PRIMARY KEY (id_certificado, id_requisito)
+    justificacion TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT unique_cert_requisito_no_aplicable UNIQUE (id_certificado, id_requisito)
 );
 
 CREATE TABLE IF NOT EXISTS turno (
@@ -451,17 +523,42 @@ BEGIN
 END;
 $$;
 
+-- Triggers de Auditoría Inmutable para Entidades Principales y Secundarias
 DROP TRIGGER IF EXISTS audit_organizacion_trigger ON public.organizacion;
 CREATE TRIGGER audit_organizacion_trigger AFTER INSERT OR UPDATE OR DELETE ON public.organizacion FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
 
 DROP TRIGGER IF EXISTS audit_certificado_trigger ON public.certificado;
 CREATE TRIGGER audit_certificado_trigger AFTER INSERT OR UPDATE OR DELETE ON public.certificado FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
 
+DROP TRIGGER IF EXISTS audit_sitio_trigger ON public.sitio;
+CREATE TRIGGER audit_sitio_trigger AFTER INSERT OR UPDATE OR DELETE ON public.sitio FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
+DROP TRIGGER IF EXISTS audit_proceso_trigger ON public.proceso;
+CREATE TRIGGER audit_proceso_trigger AFTER INSERT OR UPDATE OR DELETE ON public.proceso FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
 DROP TRIGGER IF EXISTS audit_auditoria_trigger ON public.auditoria;
 CREATE TRIGGER audit_auditoria_trigger AFTER INSERT OR UPDATE OR DELETE ON public.auditoria FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
 
 DROP TRIGGER IF EXISTS audit_client_access_trigger ON public.client_organization_access;
 CREATE TRIGGER audit_client_access_trigger AFTER INSERT OR UPDATE OR DELETE ON public.client_organization_access FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
+DROP TRIGGER IF EXISTS audit_subsector_iaf_trigger ON public.subsector_iaf;
+CREATE TRIGGER audit_subsector_iaf_trigger AFTER INSERT OR UPDATE OR DELETE ON public.subsector_iaf FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
+DROP TRIGGER IF EXISTS audit_organismo_acreditacion_trigger ON public.organismo_acreditacion;
+CREATE TRIGGER audit_organismo_acreditacion_trigger AFTER INSERT OR UPDATE OR DELETE ON public.organismo_acreditacion FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
+DROP TRIGGER IF EXISTS audit_acreditacion_norma_iaf_trigger ON public.acreditacion_norma_iaf;
+CREATE TRIGGER audit_acreditacion_norma_iaf_trigger AFTER INSERT OR UPDATE OR DELETE ON public.acreditacion_norma_iaf FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
+DROP TRIGGER IF EXISTS audit_req_no_aplicables_trigger ON public.requisitos_no_aplicables_certificado;
+CREATE TRIGGER audit_req_no_aplicables_trigger AFTER INSERT OR UPDATE OR DELETE ON public.requisitos_no_aplicables_certificado FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
+DROP TRIGGER IF EXISTS audit_norma_trigger ON public.norma;
+CREATE TRIGGER audit_norma_trigger AFTER INSERT OR UPDATE OR DELETE ON public.norma FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
+DROP TRIGGER IF EXISTS audit_hallazgo_trigger ON public.hallazgo;
+CREATE TRIGGER audit_hallazgo_trigger AFTER INSERT OR UPDATE OR DELETE ON public.hallazgo FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
 
 -- Actualización Automática de Timestamps
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
@@ -489,6 +586,18 @@ CREATE TRIGGER update_requisito_modtime BEFORE UPDATE ON public.requisito FOR EA
 
 DROP TRIGGER IF EXISTS update_sector_iaf_modtime ON public.sector_iaf;
 CREATE TRIGGER update_sector_iaf_modtime BEFORE UPDATE ON public.sector_iaf FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_subsector_iaf_modtime ON public.subsector_iaf;
+CREATE TRIGGER update_subsector_iaf_modtime BEFORE UPDATE ON public.subsector_iaf FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_organismo_acreditacion_modtime ON public.organismo_acreditacion;
+CREATE TRIGGER update_organismo_acreditacion_modtime BEFORE UPDATE ON public.organismo_acreditacion FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_acreditacion_norma_iaf_modtime ON public.acreditacion_norma_iaf;
+CREATE TRIGGER update_acreditacion_norma_iaf_modtime BEFORE UPDATE ON public.acreditacion_norma_iaf FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_requisitos_no_aplicables_modtime ON public.requisitos_no_aplicables_certificado;
+CREATE TRIGGER update_requisitos_no_aplicables_modtime BEFORE UPDATE ON public.requisitos_no_aplicables_certificado FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 DROP TRIGGER IF EXISTS update_estatus_modtime ON public.estatus;
 CREATE TRIGGER update_estatus_modtime BEFORE UPDATE ON public.estatus FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();

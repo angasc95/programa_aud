@@ -22,12 +22,22 @@ CREATE INDEX IF NOT EXISTS idx_norma_auditor_norma_lookup ON public.norma_audito
 CREATE INDEX IF NOT EXISTS idx_sector_iaf_auditor_compuesta ON public.sector_iaf_auditor (id_auditor, id_sector_iaf);
 CREATE INDEX IF NOT EXISTS idx_sector_iaf_auditor_sector_lookup ON public.sector_iaf_auditor (id_sector_iaf, id_auditor);
 
-CREATE INDEX IF NOT EXISTS idx_sitio_certificado ON public.sitio (id_certificado, numero_sitio);
+-- Índices de Sub-Sectores IAF y Acreditaciones (Fase 1)
+CREATE INDEX IF NOT EXISTS idx_subsector_sector ON public.subsector_iaf (id_sector_iaf, codigo);
+CREATE INDEX IF NOT EXISTS idx_subsector_codigo ON public.subsector_iaf (codigo);
+CREATE INDEX IF NOT EXISTS idx_subsector_auditor ON public.subsector_iaf_auditor (id_auditor, id_subsector_iaf);
+CREATE INDEX IF NOT EXISTS idx_acreditacion_norma_org ON public.acreditacion_norma_iaf (id_organismo, id_norma, id_sector_iaf);
+CREATE INDEX IF NOT EXISTS idx_organismo_codigo ON public.organismo_acreditacion (codigo);
+
+-- Índices de Sitios (Site 0 first), Procesos y Requisitos
+CREATE INDEX IF NOT EXISTS idx_sitio_cert_numero ON public.sitio (id_certificado, numero_sitio);
+CREATE INDEX IF NOT EXISTS idx_proceso_cert_tipo ON public.proceso (id_certificado, tipo);
 CREATE INDEX IF NOT EXISTS idx_proceso_certificado ON public.proceso (id_certificado);
 CREATE INDEX IF NOT EXISTS idx_turnos_por_sitio_lookup ON public.turnos_por_sitio (id_sitio, id_turno);
 CREATE INDEX IF NOT EXISTS idx_req_proceso_lookup ON public.requisitos_por_proceso (id_proceso, id_requisito);
 CREATE INDEX IF NOT EXISTS idx_req_no_aplicables_certificado ON public.requisitos_no_aplicables_certificado (id_certificado, id_requisito);
 
+-- Índices de Auditorías y Evaluaciones de Campo
 CREATE INDEX IF NOT EXISTS idx_equipo_auditor_lookup ON public.equipo_auditor (id_auditoria, id_auditor);
 CREATE INDEX IF NOT EXISTS idx_sitios_auditoria_compuesto ON public.sitios_por_auditoria (id_auditoria, id_sitio);
 CREATE INDEX IF NOT EXISTS idx_proc_sitio_aud_compuesto ON public.procesos_sitio_auditoria (id_sitios_por_auditoria, id_proceso, id_turnos_sitio_auditoria);
@@ -35,4 +45,6 @@ CREATE INDEX IF NOT EXISTS idx_procesos_sitio_auditoria_compuesto ON public.proc
 
 CREATE INDEX IF NOT EXISTS idx_auditoria_fecha ON public.auditoria (fecha_programacion);
 CREATE INDEX IF NOT EXISTS idx_hallazgo_auditoria ON public.hallazgo (id_auditoria, tipo);
-CREATE INDEX IF NOT EXISTS idx_audit_log_record ON public.audit_log (table_name, record_id);
+
+-- Índice Forense de Trazabilidad Inmutable
+CREATE INDEX IF NOT EXISTS idx_audit_log_entity_lookup ON public.audit_log (table_name, record_id);
