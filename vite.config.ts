@@ -45,6 +45,46 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),
       'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(supabaseAnonKey),
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/@supabase')) {
+              return 'supabase';
+            }
+            if (id.includes('/src/lib/')) {
+              return 'domain-lib';
+            }
+            if (
+              id.includes('/src/views/auditoriasView') ||
+              id.includes('/src/views/programacionView') ||
+              id.includes('/src/views/calendarioView') ||
+              id.includes('/src/views/resultadoView') ||
+              id.includes('/src/views/auditLogModal')
+            ) {
+              return 'views-audit';
+            }
+            if (
+              id.includes('/src/views/extraView') ||
+              id.includes('/src/views/normaView') ||
+              id.includes('/src/views/sectorIafView') ||
+              id.includes('/src/views/estatusView') ||
+              id.includes('/src/views/tipoAuditoriaView') ||
+              id.includes('/src/views/metodologiaAuditoriaView') ||
+              id.includes('/src/views/certificacionView') ||
+              id.includes('/src/views/certificadoView') ||
+              id.includes('/src/views/organizacionView') ||
+              id.includes('/src/views/auditorView')
+            ) {
+              return 'views-domains';
+            }
+            if (id.includes('/src/views/')) {
+              return 'views-shell';
+            }
+          },
+        },
+      },
+    },
     server: {
       host: '0.0.0.0',
       port: 3000,

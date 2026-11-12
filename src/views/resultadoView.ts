@@ -216,7 +216,7 @@ export function renderResultadoView(props: ResultadoViewProps): string {
 
         <!-- Filter Controls -->
         <div class="pt-3 border-t border-slate-100 grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
-          <div class="lg:col-span-4 relative">
+          <div class="lg:col-span-4 relative min-w-0">
             <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-xs" aria-hidden="true">🔍</span>
             <input
               type="text"
@@ -224,15 +224,15 @@ export function renderResultadoView(props: ResultadoViewProps): string {
               value="${escapeHtml(state.searchQuery)}"
               placeholder="Buscar por código, cláusula, proceso, evidencia..."
               aria-label="Buscar hallazgos"
-              class="w-full text-xs rounded-lg border border-slate-300 bg-white pl-8 pr-3 py-2"
+              class="w-full min-w-0 text-xs rounded-lg border border-slate-300 bg-white pl-8 pr-3 py-2"
             />
           </div>
 
-          <div class="lg:col-span-3">
+          <div class="lg:col-span-3 min-w-0">
             <select
               id="resultadoBoardAuditFilter"
               aria-label="Filtrar tablero por auditoría"
-              class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2"
+              class="w-full min-w-0 text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2"
             >
               <option value="ALL" ${state.selectedAuditId === 'ALL' ? 'selected' : ''}>Todas las auditorías (${findings.length})</option>
               ${audits
@@ -244,11 +244,11 @@ export function renderResultadoView(props: ResultadoViewProps): string {
             </select>
           </div>
 
-          <div class="lg:col-span-2">
+          <div class="lg:col-span-2 min-w-0">
             <select
               id="resultadoLifecycleFilter"
               aria-label="Filtrar por estado de ciclo de vida"
-              class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2"
+              class="w-full min-w-0 text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2"
             >
               <option value="ALL" ${state.filterLifecycle === 'ALL' ? 'selected' : ''}>Todos los estados</option>
               <option value="OPEN_ONLY" ${state.filterLifecycle === 'OPEN_ONLY' ? 'selected' : ''}>Solo Abiertos</option>
@@ -260,7 +260,7 @@ export function renderResultadoView(props: ResultadoViewProps): string {
             </select>
           </div>
 
-          <div class="lg:col-span-3 flex flex-wrap gap-1 justify-start lg:justify-end">
+          <div class="lg:col-span-3 min-w-0 flex flex-wrap gap-1 justify-start lg:justify-end">
             ${renderClassificationFilterButton('ALL', 'Todos', state.filterType)}
             ${renderClassificationFilterButton('NC_MAYOR', '🚨 Mayor', state.filterType)}
             ${renderClassificationFilterButton('NC_MENOR', '⚠️ Menor', state.filterType)}
@@ -326,7 +326,7 @@ function renderRecommendationEngineCard(
   return `
     <section class="border-2 rounded-xl p-5 shadow-2xs space-y-4 ${containerTheme}" aria-label="Motor de Recomendación ISO/IEC 17021-1">
       <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div class="space-y-1">
+        <div class="space-y-1 min-w-0">
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-xs font-bold uppercase tracking-wider text-slate-600">
               Motor de Decisión ISO/IEC 17021-1:2015 (Cláusula 9.5)
@@ -340,13 +340,13 @@ function renderRecommendationEngineCard(
           </p>
         </div>
 
-        <div class="flex items-center gap-2 shrink-0">
-          <label for="decisionAuditSelector" class="text-xs font-bold text-slate-700 whitespace-nowrap">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 min-w-0 w-full lg:w-auto lg:max-w-md shrink-0">
+          <label for="decisionAuditSelector" class="text-xs font-bold text-slate-700 whitespace-nowrap shrink-0">
             Auditoría Evaluada:
           </label>
           <select
             id="decisionAuditSelector"
-            class="text-xs font-semibold rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 shadow-2xs"
+            class="w-full sm:w-auto min-w-0 max-w-full text-xs font-semibold rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 shadow-2xs"
           >
             ${allAudits
               .map(
@@ -463,7 +463,7 @@ function renderRecommendationEngineCard(
                   type="submit"
                   id="submitRecommendationBtn"
                   ${!isApproved ? 'disabled' : ''}
-                  class="px-4 py-2 rounded-lg text-xs font-bold transition-colors ${
+                  class="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-bold text-center transition-colors ${
                     isApproved
                       ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
                       : 'bg-slate-200 text-slate-500 cursor-not-allowed'

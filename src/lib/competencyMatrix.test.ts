@@ -167,6 +167,53 @@ describe('Phase 4.3 - Technical Competency Matching (ISO 17021-1 clause 7.2)', (
     assert.equal(countDistinctQualifiedSectors(sampleCompetencies), 3);
     assert.equal(countDistinctQualifiedSubsectors(sampleCompetencies), 2);
   });
+
+  it('handles empty competency lists, string IAF sector IDs, and prefers valid credential when an expired duplicate exists', () => {
+    const emptyRes = isAuditorQualifiedForScope([], 'ISO 9001:2015', 17, '17.1', '2025-01-01');
+    assert.equal(emptyRes.qualified, false);
+    assert.ok(emptyRes.reason?.includes('no posee competencias'));
+
+    const stringSectorRes = isAuditorQualifiedForScope(
+      sampleCompetencies,
+      'ISO 9001:2015',
+      '17',
+      '17.1',
+      '2025-01-01'
+    );
+    assert.equal(stringSectorRes.qualified, true);
+
+    const mixedWithRenewal: CompetenciaAuditorEntity[] = [
+      ...sampleCompetencies,
+      {
+        ...sampleCompetencies[2],
+        id: 'c3-renewed',
+        fecha_calificacion: '2024-01-01',
+        fecha_vencimiento: '2028-12-31',
+        rol_calificado: 'Auditor Líder',
+      },
+    ];
+    const renewedRes = isAuditorQualifiedForScope(
+      mixedWithRenewal,
+      'ISO 45001:2018',
+      14,
+      undefined,
+      '2025-01-01'
+    );
+    assert.equal(renewedRes.qualified, true);
+    assert.equal(renewedRes.matchedRole, 'Auditor Líder');
+    assert.equal(renewedRes.isExpired, false);
+
+    // Seeded auditor Carlos Mendoza is qualified for ISO 9001:2015 / Sector 17 / Subsector 17.1
+    const carlos = INITIAL_AUDITORES_DETAILED.find((a) => a.nombre.includes('Carlos Mendoza'))!;
+    const carlosCheck = isAuditorQualifiedForScope(
+      carlos.competencias,
+      'ISO 9001:2015',
+      17,
+      '17.1',
+      '2025-01-01'
+    );
+    assert.equal(carlosCheck.qualified, true);
+  });
 });
 
 describe('Phase 4.3 - Auditor Directory Filtering & Visual Helpers', () => {

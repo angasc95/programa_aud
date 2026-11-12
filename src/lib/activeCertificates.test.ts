@@ -126,6 +126,27 @@ describe('Active Certificates Calculation Engine (Phase 4.1 Specification)', () 
     const allOrg1 = getCertificatesByOrganizacion(sampleCertificates, 'org-1');
     assert.equal(allOrg1.length, 5);
   });
+
+  it('handles global active counts, organizacion_id alias, English statuses, and empty arrays', () => {
+    assert.equal(countActiveCertificates([]), 0);
+    // Global count across sampleCertificates: c1 (Activo), c2 (Estudio), c6 (ACTIVO), c7 (EN_PROCESO) = 4
+    assert.equal(countActiveCertificates(sampleCertificates), 4);
+
+    assert.equal(isActiveCertificateStatus('Planificado'), true);
+    assert.equal(isActiveCertificateStatus('En Ejecución'), true);
+    assert.equal(isActiveCertificateStatus('Vigente'), true);
+    assert.equal(isActiveCertificateStatus('cancelled'), false);
+    assert.equal(isActiveCertificateStatus('inactive'), false);
+    assert.equal(isActiveCertificateStatus('suspended'), false);
+
+    const aliasCerts: CertificadoSummary[] = [
+      { id: 'x1', numero_certificado: 'FN-1', organizacion_id: 'org-alias', norma: 'ISO 9001:2015', estatus: 'En Ejecución' },
+      { id: 'x2', numero_certificado: 'FN-2', organizacion_id: 'org-alias', norma: 'ISO 9001:2015', estatus: 'Cancelado' },
+      { id: 'x3', numero_certificado: 'FN-3', organizacion_id: 'org-alias', norma: 'ISO 9001:2015', estatus: 'En Espera' },
+    ];
+    assert.equal(countActiveCertificates(aliasCerts, 'org-alias'), 1);
+    assert.equal(filterActiveCertificates(aliasCerts, 'org-alias').length, 1);
+  });
 });
 
 describe('Organización Directory Filtering and RIF Validation', () => {

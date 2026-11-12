@@ -214,6 +214,70 @@ test('ISO/IEC 17021-1 recommendation engine strictly blocks approval on open NC_
     evaluation: evalRestored,
   });
   assert.equal(validSig.valid, true);
+
+  // Clean audit with zero findings is immediately APROBADA
+  const evalClean = evaluateIso17021Recommendation([], 'audit-clean-001');
+  assert.equal(evalClean.status, 'APROBADA');
+  assert.equal(evalClean.canApprove, true);
+  assert.equal(evalClean.totalFindings, 0);
+
+  // Observations and Opportunities for Improvement alone never block approval
+  const obsOnly: Phase5FindingEntity[] = [
+    {
+      ...INITIAL_PHASE5_FINDINGS[2],
+      id: 'obs-only-1',
+      id_auditoria: 'audit-obs-only',
+      tipo: 'OBSERVACION',
+      estado_ciclo: 'Abierto',
+      cerrado: false,
+    },
+    {
+      ...INITIAL_PHASE5_FINDINGS[2],
+      id: 'om-only-1',
+      id_auditoria: 'audit-obs-only',
+      tipo: 'OPORTUNIDAD_MEJORA',
+      estado_ciclo: 'Abierto',
+      cerrado: false,
+    },
+  ];
+  const evalObsOnly = evaluateIso17021Recommendation(obsOnly, 'audit-obs-only');
+  assert.equal(evalObsOnly.status, 'APROBADA');
+  assert.equal(evalObsOnly.canApprove, true);
+  assert.equal(evalObsOnly.observationsCount, 1);
+  assert.equal(evalObsOnly.opportunitiesCount, 1);
+
+  // NC_MENOR in 'Causa Raíz Analizada' without submitted corrective action plan still blocks approval
+  const minorRootCauseOnly: Phase5FindingEntity = {
+    ...INITIAL_PHASE5_FINDINGS[0],
+    id: 'nc-menor-rc',
+    id_auditoria: 'audit-rc-only',
+    codigo_hallazgo: 'HAL-RC-001',
+    tipo: 'NC_MENOR',
+    estado_ciclo: 'Causa Raíz Analizada',
+    plan_accion_correctiva: 'Acción temporal pendiente',
+    cerrado: false,
+  };
+  const evalRcOnly = evaluateIso17021Recommendation([minorRootCauseOnly], 'audit-rc-only');
+  assert.equal(evalRcOnly.status, 'DENEGADA / CONDICIONADA');
+  assert.equal(evalRcOnly.canApprove, false);
+
+  // Signature validation rejects short electronic signature or short comments even when approved
+  assert.equal(
+    validateRecommendationSignature({
+      firma_electronica: 'AB',
+      comentarios: 'Justificación técnica suficientemente extensa.',
+      evaluation: evalClean,
+    }).valid,
+    false
+  );
+  assert.equal(
+    validateRecommendationSignature({
+      firma_electronica: 'AUD-REG-2021-05',
+      comentarios: 'Corto',
+      evaluation: evalClean,
+    }).valid,
+    false
+  );
 });
 
 test('Finding input, CAPA lifecycle transition validation, filtering, and KPI stats work reliably', () => {

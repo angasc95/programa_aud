@@ -70,6 +70,23 @@ describe('Phase 4.2 - Multisite Sampling & Site 0 Placement Rules', () => {
     const sorted = sortSitesWithPrincipalFirst(branchOnlySites);
     assert.strictEqual(sorted[0].numero_sitio, 2);
     assert.strictEqual(sorted[1].numero_sitio, 5);
+    // Ensure original array is not mutated
+    assert.strictEqual(branchOnlySites[0].numero_sitio, 5);
+  });
+
+  it('verifies every seeded certificate in INITIAL_CERTIFICADOS_DETAILED enforces Site 0 principal site and accurate branch count', () => {
+    for (const cert of INITIAL_CERTIFICADOS_DETAILED) {
+      const sorted = sortSitesWithPrincipalFirst(cert.sitios);
+      assert.ok(sorted.length >= 1, `${cert.numero_certificado} must have at least Site 0`);
+      assert.strictEqual(isPrincipalSite(sorted[0]), true, `${cert.numero_certificado} index 0 must be Site 0`);
+      const branches = countMultisiteBranches(cert.sitios);
+      assert.strictEqual(branches, cert.sitios.length - 1);
+      if (cert.multisitio) {
+        assert.ok(branches >= 1, `Multisite cert ${cert.numero_certificado} must have >= 1 branch besides Site 0`);
+      } else {
+        assert.strictEqual(branches, 0, `Single-site cert ${cert.numero_certificado} must have 0 branches`);
+      }
+    }
   });
 });
 
@@ -105,14 +122,32 @@ describe('Phase 4.2 - Non-Applicability Justification Requirements', () => {
     assert.strictEqual(emptyRes.valid, false);
     assert.ok(emptyRes.error?.includes('obligatoria'));
 
+    const whitespaceRes = validateJustificacionNoAplicable('     \t\n  ');
+    assert.strictEqual(whitespaceRes.valid, false);
+
     const shortRes = validateJustificacionNoAplicable('N/A');
     assert.strictEqual(shortRes.valid, false);
+
+    const fourCharsRes = validateJustificacionNoAplicable('ABCD');
+    assert.strictEqual(fourCharsRes.valid, false);
+
+    const exactMinRes = validateJustificacionNoAplicable('ABCDE');
+    assert.strictEqual(exactMinRes.valid, true);
 
     const validRes = validateJustificacionNoAplicable(
       'La organización no realiza diseño ni desarrollo de productos; la fabricación se ejecuta bajo especificaciones provistas por los clientes.'
     );
     assert.strictEqual(validRes.valid, true);
     assert.strictEqual(validRes.error, undefined);
+  });
+
+  it('validates all seeded non-applicable exclusions in INITIAL_CERTIFICADOS_DETAILED', () => {
+    const exclusions = INITIAL_CERTIFICADOS_DETAILED.flatMap((c) => c.noAplicables);
+    assert.ok(exclusions.length >= 2);
+    for (const excl of exclusions) {
+      const check = validateJustificacionNoAplicable(excl.justificacion);
+      assert.strictEqual(check.valid, true, `Invalid justification on ${excl.requisito_codigo}`);
+    }
   });
 });
 

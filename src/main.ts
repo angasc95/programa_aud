@@ -109,6 +109,7 @@ import {
   INITIAL_SUBSECTORES_IAF,
   INITIAL_ORGANISMOS,
   INITIAL_REQUISITOS_LTREE,
+  type AcreditacionNormaIaf,
 } from './lib/extraDomain';
 import {
   INITIAL_ORGANIZACIONES,
@@ -1824,24 +1825,26 @@ function bindAuthenticatedEvents(): void {
     const orgId = (form.querySelector('[name="id_organismo"]') as HTMLSelectElement)?.value;
     const numero = (form.querySelector('[name="numero_acreditacion"]') as HTMLInputElement)?.value;
     const fecha = (form.querySelector('[name="fecha_concesion"]') as HTMLInputElement)?.value;
-    const estatus = (form.querySelector('[name="estatus"]') as HTMLSelectElement)?.value || 'Vigente';
-    const org = INITIAL_ORGANISMOS.find((o) => o.id === orgId);
-    const norma = INITIAL_NORMAS.find((n) => n.id === state.extraDomain.selectedNormaId);
-    if (org && norma) {
-      INITIAL_ACREDITACIONES.push({
-        id: `acred-${Date.now()}`,
-        id_norma: norma.id,
-        norma_codigo: norma.codigo,
-        id_organismo: org.id,
-        organismo_codigo: org.codigo,
-        organismo_nombre: org.nombre,
-        organismo_pais: org.pais,
-        numero_acreditacion: numero || `ACR-${Date.now().toString().slice(-4)}`,
-        fecha_concesion: fecha || new Date().toISOString().slice(0, 10),
-        estatus: estatus as any,
-      });
-      norma.acreditaciones_count += 1;
-    }
+      const rawEstatus = (form.querySelector('[name="estatus"]') as HTMLSelectElement | null)?.value;
+      const estatus: AcreditacionNormaIaf['estatus'] =
+        rawEstatus === 'En Renovación' || rawEstatus === 'Suspendida' ? rawEstatus : 'Activa';
+      const org = INITIAL_ORGANISMOS.find((o) => o.id === orgId);
+      const norma = INITIAL_NORMAS.find((n) => n.id === state.extraDomain.selectedNormaId);
+      if (org && norma) {
+        INITIAL_ACREDITACIONES.push({
+          id: `acred-${Date.now()}`,
+          id_norma: norma.id,
+          norma_codigo: norma.codigo,
+          id_organismo: org.id,
+          organismo_codigo: org.codigo,
+          organismo_nombre: org.nombre,
+          organismo_pais: org.pais,
+          numero_acreditacion: numero || `ACR-${Date.now().toString().slice(-4)}`,
+          fecha_concesion: fecha || new Date().toISOString().slice(0, 10),
+          estatus,
+        });
+        norma.acreditaciones_count += 1;
+      }
     state.extraDomain.isAddAccreditationModalOpen = false;
     render();
   });
@@ -1955,7 +1958,9 @@ function bindAuthenticatedEvents(): void {
     const form = e.target as HTMLFormElement;
     const codigo = (form.querySelector('[name="codigo"]') as HTMLInputElement)?.value;
     const desc = (form.querySelector('[name="descripcion"]') as HTMLTextAreaElement)?.value;
-    const riesgo = (form.querySelector('[name="categoria_riesgo"]') as HTMLSelectElement)?.value || 'MEDIO';
+    const rawRiesgo = (form.querySelector('[name="categoria_riesgo"]') as HTMLSelectElement | null)?.value;
+    const categoriaRiesgo: 'ALTO' | 'MEDIO' | 'BAJO' =
+      rawRiesgo === 'ALTO' || rawRiesgo === 'BAJO' ? rawRiesgo : 'MEDIO';
     const sec = INITIAL_SECTORES_IAF.find(
       (s) => s.id === state.extraDomain.selectedSectorId || String(s.sector) === state.extraDomain.selectedSectorId
     );
@@ -1966,7 +1971,7 @@ function bindAuthenticatedEvents(): void {
         sector_numero: sec.sector,
         codigo,
         descripcion: desc,
-        categoria_riesgo: riesgo as any,
+        categoria_riesgo: categoriaRiesgo,
         auditores_nombres: ['Ing. Carlos Mendoza (Auditor Líder)'],
       });
       sec.subsectores_count += 1;
@@ -2820,7 +2825,7 @@ function bindAuthenticatedEvents(): void {
   // 5. Facet: Calificación status
   document.querySelectorAll<HTMLElement>('[data-auditor-filter-calificacion]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.auditorDomain.selectedCalificacion = (btn.dataset.auditorFilterCalificacion || 'ALL') as any;
+      state.auditorDomain.selectedCalificacion = btn.dataset.auditorFilterCalificacion || 'ALL';
       render();
     });
   });

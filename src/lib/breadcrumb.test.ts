@@ -185,4 +185,49 @@ test('renderHeader enforces Top-Header Reset Rule with data-nav-reset on all glo
   assert.ok(html.includes('data-nav="certificacion"'));
   assert.ok(html.includes('data-nav="extra"'));
   assert.ok(html.includes('data-nav-reset="true"'));
+
+  // Boundary truncation at exact 24 chars vs 25 chars and empty string
+  const exact24 = '123456789012345678901234';
+  assert.equal(exact24.length, 24);
+  assert.deepEqual(truncateBreadcrumbLabel(exact24), { display: exact24, truncated: false });
+
+  const exact25 = '1234567890123456789012345';
+  const trunc25 = truncateBreadcrumbLabel(exact25);
+  assert.equal(trunc25.truncated, true);
+  assert.equal(trunc25.display.length, 24);
+  assert.equal(trunc25.display.endsWith('…'), true);
+  assert.deepEqual(truncateBreadcrumbLabel(''), { display: '', truncated: false });
+
+  // Root domain resets across dashboard, approvals, database, drilldown, and domain-without-subview
+  assert.equal(resetBreadcrumbToDomain('approvals')[0].id, 'approvals');
+  assert.equal(resetBreadcrumbToDomain('database')[0].id, 'database');
+  assert.equal(resetBreadcrumbToDomain('drilldown').length, 2);
+  assert.equal(resetBreadcrumbToDomain('extra').length, 1);
+
+  // Backtracking by matching entityId even when segment id differs
+  const trail = resetBreadcrumbToDomain('certificacion', 'organizations');
+  const withOrg = pushBreadcrumb(trail, {
+    id: 'org-a',
+    label: 'Org A',
+    route: 'certificacion',
+    entityId: 'same-entity',
+  });
+  const withCert = pushBreadcrumb(withOrg, {
+    id: 'cert-b',
+    label: 'Cert B',
+    route: 'certificacion',
+    entityId: 'other-entity',
+  });
+  const backByEntity = pushBreadcrumb(withCert, {
+    id: 'org-a-updated',
+    label: 'Org A Actualizada',
+    route: 'certificacion',
+    entityId: 'same-entity',
+  });
+  assert.equal(backByEntity.length, 3);
+  assert.equal(backByEntity[2].label, 'Org A Actualizada');
+
+  // Verify ALL domain dropdown menuitems carry data-nav-reset="true"
+  const navResetCount = (html.match(/data-nav-reset="true"/g) || []).length;
+  assert.ok(navResetCount >= 10, 'Every top-nav link and dropdown item must trigger breadcrumb reset');
 });
