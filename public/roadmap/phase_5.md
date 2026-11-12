@@ -26,26 +26,33 @@ Phase 5 implements the operational field execution and governance workflows unde
 
 ### 2.1 Programación de Auditorías (`src/views/programacionView.ts`)
 
-#### A. List / Directory View (Universal Template)
-- Displays scheduled and planned audit events across client organizations and certificates.
-- **Columns & Data Cards:**
-  - **Código de Auditoría:** Unique audit identifier (e.g., `AUD-2024-001`).
-  - **Organización & Certificado:** Human-readable client company name and certificate code.
-  - **Tipo de Auditoría:** Canonical modality badge (`Etapa 1`, `Etapa 2`, `Seguimiento 1`, `Renovación`, etc.).
-  - **Metodología:** Canonical method badge (`Presencial`, `Remota`, `Mixta`).
-  - **Fechas Planificadas:** Start date, end date, and total planned auditor-days.
-  - **Auditor Líder:** Lead auditor assigned to direct the evaluation.
-  - **Estatus:** Operational status badge (`Planificado`, `En Ejecución`, `En Espera`).
+#### A. List & Grid Views (Repeatable View Architecture Pattern)
+- **Standard List Mode:** High-density table displaying scheduled and planned audit events across client organizations and certificates:
+  - Columns: `Código ▲▼`, `Organización ▲▼`, `Certificado ▲▼`, `Tipo de Auditoría ▲▼`, `Metodología ▲▼`, `Fechas Planificadas ▲▼`, `Auditor Líder ▲▼`, `Estatus ▲▼`, `Acciones`.
+  - Excel-style sorting and column filter popovers.
+  - Interactive row click appends audit record to breadcrumb and drills down to the Detail View.
+- **Standard Grid Mode:** Responsive visual cards highlighting audit modality badge, client company, certificate code, lead auditor avatar, and execution date pill.
 - **Sidebar Filtering:** Fast facets for audit type, methodology, status, and lead auditor.
 
-#### B. Audit Planning Detail View & Child Tabs
-- **Upper Attributes Card:** Audit code, client company link, certificate link, normative schemes, execution dates, lead auditor, and changelog button (`🕒 Historial de Cambios`).
-- **Tab 1: Equipo Evaluador (`equipo_auditor`)**
-  - List of assigned team members, roles (`Auditor Líder`, `Auditor de Equipo`, `Experto Técnico`), and evaluated competency scopes.
-- **Tab 2: Sedes y Muestreo (`alcance_auditoria_sitio`)**
-  - Multi-site sampling schedule detailing which sites will be visited on-site vs. evaluated remotely, with dedicated date allocations.
-- **Tab 3: Matriz de Verificación Normativa**
-  - Checklist of normative clauses (`requisito`) scheduled for verification during the audit event.
+#### B. Audit Planning Detail View (4-Zone Architecture)
+Adheres strictly to the Standardized Detail Page Architecture:
+
+1. **Header & Changelog:** Audit Code (e.g., `AUD-2024-001`), Modality Badge (`Etapa 2`), Status Badge (`Planificado`), and top-right `🕒 Historial de Cambios` modal button.
+2. **Zone 1: Parent Data Section (Upper Zone):**
+   - Clickable linked entities:
+     - `Organización Titular:` 🏢 [CyberCloud Solutions S.L.]
+     - `Certificado Amparado:` 📜 [FN-QMS-2024-001] (with scope tooltip: `alcance`)
+     - `Norma Aplicable:` 📘 [ISO 9001:2015]
+     - `Tipo de Auditoría:` 🏷️ [Etapa 2]
+     - `Metodología:` 🌐 [Presencial]
+3. **Zone 2: Visual Separator:** Clean minimal divider rule.
+4. **Zone 3: Direct Record Attributes (Multi-Column View/Edit):**
+   - Read-only & Edit modes: Start Date, End Date, Planned Auditor-Days, Lead Auditor Selector, Audit Language, and Evaluation Objectives.
+5. **Zone 4: Multipage / Child Tabs Section (Lower Zone):**
+   - **Tab 1: Equipo Evaluador (`equipo_auditor`):** Assigned auditors, evaluated competency scopes (IAF sectors/sub-sectors), and roles (`Auditor Líder`, `Auditor de Equipo`, `Experto Técnico`).
+   - **Tab 2: Sedes y Muestreo (`alcance_auditoria_sitio`):** Multi-site sampling schedule (Site 0 principal site first, followed by sampled branch locations) with allocated visit dates.
+   - **Tab 3: Procesos Auditables:** List of client operational processes evaluated, displaying their mandatory `tipo` tag (`Estratégico`, `Medular`, `De Apoyo`, `Otro`) and mapped clauses.
+   - **Tab 4: Matriz de Verificación Normativa:** Interactive checklist of normative clauses (`requisito`) scheduled for verification.
 
 ---
 

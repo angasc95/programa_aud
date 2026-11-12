@@ -82,6 +82,10 @@ The pure business logic modules are decoupled and verified via automated test su
   - Validates Site 0 principal site handling: verifies that `numero_sitio = 0` is excluded from the multisite branch count and rendered first in site listings.
 - **`src/lib/nonApplicability.test.ts`:**
   - Validates requirement non-applicability validation: verifies that an empty or missing `justificacion` string fails validation.
+- **`src/lib/processClassification.test.ts`:**
+  - Validates process categorization logic: verifies that `proceso.tipo` strictly validates against the four allowed options (`'Estratégico'`, `'Medular'`, `'De Apoyo'`, `'Otro'`) and rejects arbitrary strings.
+- **`src/lib/certificateScope.test.ts`:**
+  - Validates certification scope statement length: verifies that `certificado.alcance` strictly enforces the 10 to 1000 character length constraint, testing boundary conditions (9 chars fails, 10 chars passes, 1000 chars passes, 1001 chars fails, empty/whitespace fails).
 - **`src/lib/competencyMatrix.test.ts`:**
   - Validates matching algorithms between auditor qualifications and standard/IAF sub-sector requirements.
 - **`src/lib/recommendationEngine.test.ts`:**
@@ -96,17 +100,21 @@ The pure business logic modules are decoupled and verified via automated test su
 - [ ] **Milestone 6.1:** Forensic audit trail verified with `public.audit_log` triggers and `🕒 Historial de Cambios` modal testing.
 - [ ] **Milestone 6.2:** Zero-UUID policy audit executed and verified across 100% of rendered views.
 - [ ] **Milestone 6.3:** Breadcrumb navigation, truncation, and top-nav reset rules fully tested across view transitions.
-- [ ] **Milestone 6.4:** RLS policies verified across all four user roles and unapproved account states.
-- [ ] **Milestone 6.5:** Automated test suite expanded in `src/lib/` and executed via `node --test` with 100% passing tests.
-- [ ] **Milestone 6.6:** Production build (`npm run build`) and TypeScript type-check (`tsc --noEmit`) verified with zero warnings or errors.
-- [ ] **Milestone 6.7:** Technical documentation synchronized across `public/doc/architecture/` and `public/project_resume.md`.
+- [ ] **Milestone 6.4:** Repeatable View Architecture Pattern (List Mode, Grid Mode, Detail Mode) and standardized 4-zone detail page structure verified across all entity views.
+- [ ] **Milestone 6.5:** Validation rules for `proceso.tipo` (4 canonical options) and `certificado.alcance` (10-1000 chars) verified at both database and UI client levels.
+- [ ] **Milestone 6.6:** RLS policies verified across all four user roles and unapproved account states.
+- [ ] **Milestone 6.7:** Automated test suite expanded in `src/lib/` and executed via `node --test` with 100% passing tests.
+- [ ] **Milestone 6.8:** Production build (`npm run build`) and TypeScript type-check (`tsc --noEmit`) verified with zero warnings or errors.
+- [ ] **Milestone 6.9:** Technical documentation synchronized across `public/doc/architecture/` and `public/project_resume.md`.
 
 ---
 
 ## 4. Acceptance Criteria & Quality Gates
 
 1. **Test Suite Execution:** All automated unit tests in `src/lib/*.test.ts` pass cleanly via `npm test` without flakes or skipped assertions.
-2. **Type Safety:** `tsc --noEmit` compiles cleanly with strict type-checking and zero `any` evasions.
-3. **Build Output:** `npm run build` produces optimized, production-ready static bundles in `dist/`.
-4. **Zero Layout Regressions:** Viewports from 375px (mobile) to 1920px (desktop) render responsive layouts without horizontal scrollbars.
-5. **Compliance Alignment:** The complete operational workflow strictly reflects the mandates of ISO/IEC 17021-1:2015 and ISO 19011:2018.
+2. **Schema Invariant Enforcement:** `proceso.tipo` and `certificado.alcance` constraints are validated by automated unit tests and database check constraints.
+3. **4-Zone Detail Page Architecture:** 100% of entity detail pages (`Organización`, `Certificado`, `Sitio`, `Auditor`, `Norma`, `Programación`) conform to the 4 vertical zones: Parent Data -> Visual Separator -> Direct Attributes (View/Edit) -> Multipage Child Tabs.
+4. **Type Safety:** `tsc --noEmit` compiles cleanly with strict type-checking and zero `any` evasions.
+5. **Build Output:** `npm run build` produces optimized, production-ready static bundles in `dist/`.
+6. **Zero Layout Regressions:** Viewports from 375px (mobile) to 1920px (desktop) render responsive layouts without horizontal scrollbars.
+7. **Compliance Alignment:** The complete operational workflow strictly reflects the mandates of ISO/IEC 17021-1:2015 and ISO 19011:2018.

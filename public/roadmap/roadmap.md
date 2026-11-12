@@ -36,16 +36,26 @@ This master roadmap establishes the architectural blueprints, UX paradigms, and 
                     ┌───────────────────────┴────────────────────────┐
                     ▼                                                ▼
 ┌───────────────────────────────────────┐ ┌──────────────────────────────────────────────┐
-│     UNIVERSAL LIST/GRID TEMPLATE      │ │         STANDARDIZED DETAIL PAGE             │
+│     UNIVERSAL LIST/GRID TEMPLATE      │ │    STANDARDIZED REPEATABLE DETAIL PAGE       │
 │ ┌───────────┐ ┌─────────────────────┐ │ │ ┌──────────────────────────────────────────┐ │
-│ │  SIDEBAR  │ │ Title & Subtitle    │ │ │ │ Header: Name, Badge, [Changelog Button]  │ │
+│ │  SIDEBAR  │ │ Title & Subtitle    │ │ │ │ Header: Name, Badge, [🕒 Historial Modal] │ │
 │ │  FACETS   │ │ Search Bar & Mode ⊞ │ │ │ ├──────────────────────────────────────────┤ │
-│ │           │ ├─────────────────────┤ │ │ │ Direct Record Attributes (Inline Edit)   │ │
-│ │ • Status  │ │ Excel-Like Columns  │ │ │ ├──────────────────────────────────────────┤ │
-│ │ • Sector  │ │ Sort, Filter, Tools │ │ │ │ Multi-Page Child Tabs (Related Tables)   │ │
-│ │ • Schema  │ ├─────────────────────┤ │ │ │  [Tab 1] [Tab 2] [Tab 3] [Tab 4]        │ │
-│ │ • Standard│ │ Cards OR Dense Grid │ │ │ │  • Human-readable clickable links        │ │
-│ └───────────┘ └─────────────────────┘ │ │ └──────────────────────────────────────────┘ │
+│ │           │ ├─────────────────────┤ │ │ │ ZONE 1: PARENT DATA (FK Friendly Links)   │ │
+│ │ • Status  │ │ Excel-Like Columns  │ │ │ │  Organización: [CyberCloud S.L.] (Click)  │ │
+│ │ • Sector  │ │ Sort, Filter, Tools │ │ │ │  Norma: [ISO 9001:2015] · Estatus: [Activo]│ │
+│ │ • Schema  │ ├─────────────────────┤ │ │ ├──────────────────────────────────────────┤ │
+│ │ • Standard│ │ Cards OR Dense Grid │ │ │ │ ─── VISUAL SEPARATOR (Minimal Divider) ──│ │
+│ │           │ │ (Click row/card     │ │ │ ├──────────────────────────────────────────┤ │
+│ │           │ │  drills to Detail)  │ │ │ │ ZONE 2: DIRECT RECORD ATTRIBUTES          │ │
+│ └───────────┘ └─────────────────────┘ │ │ │  • Multi-column read-only OR edit mode   │ │
+│                                       │ │ │  • Option selectors, textboxes, textarea │ │
+│                                       │ │ │    (e.g., 'alcance' 10-1000 characters)  │ │
+│                                       │ │ ├──────────────────────────────────────────┤ │
+│                                       │ │ │ ZONE 3: MULTIPAGE / CHILD TABS (Lower)   │ │
+│                                       │ │ │  [🏢 Sitios] [⚙️ Procesos] [📋 Auditorías] │ │
+│                                       │ │ │  • High-density child list views         │ │
+│                                       │ │ │  • Clickable rows drill down in tree     │ │
+│                                       │ │ └──────────────────────────────────────────┘ │
 └───────────────────────────────────────┘ └──────────────────────────────────────────────┘
 ```
 
@@ -63,12 +73,23 @@ This master roadmap establishes the architectural blueprints, UX paradigms, and 
   - **Pending:** Amber hourglass/clock icon (`⏳` / pending state indicator).
   - **Rejected:** Rose restriction/denial icon (`❌` / rejected state indicator).
 
-### 2. Universal List/Grid View Architecture
-All primary record lists share a unified structural component layout:
-- **Header Section:** Standardized semantic title (`h1`) and explanatory subtitle, accompanied by a universal real-time search input with shortcut indicators (`/` to focus, `Esc` to clear).
-- **Presentation Toggle:** Dual-state switcher allowing instantaneous switching between **Relational Grid Cards** and **High-Density Data Table**, persisted in local storage.
-- **Left-Hand Facet Sidebar:** Fast single-click filtering on primary attributes (operational statuses, normative schemes, IAF classifications, execution modes).
-- **Excel-Style Data Table Capabilities:** Column headers equipped with multi-attribute sort triggers (ascending/descending/reset) and column-specific quick filter popovers.
+### 2. Repeatable View Architecture Pattern
+To ensure absolute architectural consistency across all application modules and phases, every business entity conforms to a standardized tripartite view pattern:
+
+1. **Standard List View (High-Density Tabular Mode):**
+   - Ideal for data scanning, batch review, and rapid operational audits.
+   - Excel-style sortable column headers with visual state indicators (▲ ascending, ▼ descending, neutral).
+   - Column-level quick filter popovers and row action triggers.
+   - Clean truncation of long strings with title tooltips.
+   - Entire row or primary identifier is clickable, pushing the entity to the breadcrumb trail and transitioning to the Detail View.
+
+2. **Standard Grid View (Responsive Relational Cards Mode):**
+   - Optimized for executive overviews, card scanning, and mobile/tablet responsive viewports.
+   - Standardized card anatomy: Entity Title, Status/Classification Badge, Core Meta Badges, direct KPI metrics (e.g., active certificates count, covered clauses, auditor qualifications).
+   - Clickable card surface triggering seamless drill-down to the Detail View.
+
+3. **Standard Detail View (Relational 4-Zone Structure):**
+   - Detailed in Section 4 below, governing the structured representation of parent metadata, direct attributes with dynamic read/edit controls, and multipage child relationship tables.
 
 ### 3. Persistent Drill-Down & Breadcrumb Trail
 - Located permanently above the active content canvas.
@@ -78,10 +99,33 @@ All primary record lists share a unified structural component layout:
 - **Top Header Reset Rule:** Clicking any link in the top global navigation header (`Auditorías`, `Certificación`, `Extra`) instantly resets the breadcrumb trail to the root of the targeted domain.
 
 ### 4. Standardized Detail Pages & Multi-Page Child Relational Tabs
-- **Direct Attributes Card:** Upper zone displays core entity fields with inline/modal edit controls for authorized roles (`ADMIN`, `WORKER`, and assigned `AUDITOR`).
-- **Audit Trail & Changelog Button:** A dedicated history trigger (`🕒 Historial de Cambios`) in the top-right corner opens a modal inspect panel displaying all chronological entries from `public.audit_log` matching the entity ID and table name (`old_data` vs. `new_data` diffs, timestamp, and actor).
-- **Child Tables via `multipage` Tabs:** Lower zone organizes all foreign-key child relations into tabbed views.
-- **Strict No-UUID Exposure Mandate:** Raw database UUIDs (`40000000-0000-...`) are strictly forbidden in UI presentation. All relational references must resolve to human-readable names (e.g., *CyberCloud Solutions S.L.* instead of `id_organizacion`). Clicking any related record name seamlessly navigates to that entity's detail page and appends a segment to the breadcrumb trail.
+Every entity detail page across the platform follows an uncompromising, repeatable relational architecture:
+
+1. **Header & Forensic Audit Trail Action:**
+   - Semantic title, canonical status/classification badge, back button, and a dedicated top-right trigger: `🕒 Historial de Cambios`.
+   - Opens a modal inspect panel displaying all chronological entries from `public.audit_log` matching the entity ID and table name (`old_data` vs. `new_data` diffs, timestamp, and actor).
+
+2. **Parent Data Section (Upper Zone - Multi-Column Optional):**
+   - Displays all direct foreign-key parent entity references (e.g., for a certificate: `id_organizacion`, `id_estatus`, `id_norma`, `id_sector_iaf`).
+   - **Zero Raw IDs Mandate:** Foreign references must never render raw UUIDs (`40000000-0000-...`). They are displayed as friendly, readable linked entity names (e.g., *CyberCloud Solutions S.L.*, *ISO 9001:2015*, *Activo*, *Sector 17 - Metales*).
+   - **Breadcrumb Activation:** Clicking any parent link activates the breadcrumb bar and navigates directly to that parent entity's detail view.
+
+3. **Visual Separator:**
+   - A clean, minimal divider dividing parent metadata from the record's direct attributes.
+
+4. **Direct Record Attributes Section (Multi-Column Optional):**
+   - Displays fields belonging directly to the record in a clean multi-column layout showing field label and value.
+   - **Dynamic UI States:**
+     - **Read-Only View Mode:** Clean typographic presentation with formatted dates, status tokens, and text containers.
+     - **Edit Mode:** Interactive inputs appropriate to data types:
+       - Small textboxes for numeric codes, site numbers, and tax IDs.
+       - Option selectors (`<select>`) for canonical statuses and categorical values.
+       - Large multiline text areas with live character counters for narrative fields such as certificate `alcance` (10 to 1000 characters).
+
+5. **Multipage / Child Tabs Section (Lower Zone):**
+   - Organizes all foreign-key child relations (such as `sitio` linked via `id_certificado`, `proceso`, `turno`, `hallazgo`) into tabbed multipage views.
+   - Inside each tab, child records appear in a structured list view with defined columns.
+   - Child rows are clickable, seamlessly triggering drill-down navigation and appending a child segment to the persistent breadcrumb trail.
 
 ---
 
@@ -93,39 +137,45 @@ To maintain zero technical debt, ensure flawless database integrity, and allow c
 Phase 1: Database Architecture & Schema Modernization
    │     • Sub-sectors in IAF (hierarchical codes e.g. 17.1, 17.2)
    │     • Standards expansion: code, title, status & Accreditation schema
+   │     • Table 'proceso' update: add 'tipo' ('Estratégico', 'Medular', 'De Apoyo', 'Otro')
+   │     • Table 'certificado' update: add 'alcance' string (10 to 1000 characters)
    │     • Non-applicability justification text in certificate exclusions
    │     • Site 0 convention for Principal Sites & Catalog standardizations
    ▼
 Phase 2: Global UI/UX Shell, Universal Templates & Navigation Engine
    │     • Minimalist role & status iconography in header & accounts
    │     • Persistent interactive breadcrumb bar with ellipsis & reset rules
-   │     • Universal list/grid template (search, sidebar facets, Excel sorting)
-   │     • Standardized detail page layout & record changelog modal engine
+   │     • Repeatable View Architecture Pattern (Standard List, Grid, Detail)
+   │     • Standardized Detail Page Blueprint (Parent Data Zone, Separator,
+   │       Direct Attributes [View/Edit], Multipage Child Tabs & Changelog Modal)
    ▼
 Phase 3: Domain "Extra" — Master Catalogs & Accreditation Management
-   │     • Norma: list & detail with [Acreditación] and [Requisitos] child tabs
-   │     • Sector IAF: list & detail with [Sub-Sector] child tab
+   │     • Norma: list, grid & detail with [Acreditación] and [Requisitos] child tabs
+   │     • Sector IAF: list, grid & detail with [Sub-Sector] child tab
    │     • Estatus: 8 standardized statuses list & detail views
    │     • Tipo: 9 audit modalities list & detail views
    │     • Metodología: 3 execution methods list & detail views
    ▼
 Phase 4: Domain "Certificación" — Organizations, Certificates & Competencies
    │     • Organización: list with active cert count, detail with [Certificados] tab
-   │     • Certificado: list (clean layout) & detail with 5 tabs:
-   │       [Sitios (Site 0 first)], [Procesos], [Turnos], [No Aplicables], [Auditorías]
+   │     • Certificado: list & standardized detail (Parent metadata zone,
+   │       direct attributes with 'alcance' textarea [10-1000 chars], and 5 child tabs:
+   │       [Sitios (Site 0 first)], [Procesos (with 'tipo')], [Turnos], [No Aplicables], [Auditorías])
+   │     • Proceso: integration of 'tipo' (Estratégico, Medular, De Apoyo, Otro)
    │     • Auditor: directory & detail with ISO standard + IAF sub-sector matrix
    ▼
 Phase 5: Domain "Auditorías" — Planning, Calendar & Field Outcomes
    │     • Programación: audit event planning, modalities, scope & team
    │     • Calendario: interactive chronological timeline & execution schedule
    │     • Resultado: field execution, findings lifecycle (NC Mayor/Menor, Obs, OM)
-   │       & ISO 17021-1 certification issuance readiness evaluation
+   │       connected to process types and ISO 17021-1 certification readiness
    ▼
 Phase 6: System Integration, Audit Trail Hardening & Final Verification
          • End-to-end breadcrumb & changelog verification across all transitions
+         • Validation of 'proceso.tipo' and 'certificado.alcance' constraints
+         • Verification of 4-zone detail page and repeatable view pattern
          • Strict RLS audit boundary enforcement (Admin, Worker, Auditor, Client)
          • Node:test automated test suite expansion & build verification
-         • Final operational handover & documentation synchronization
 ```
 
 ---

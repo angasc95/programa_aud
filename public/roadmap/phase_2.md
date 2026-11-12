@@ -57,68 +57,118 @@ A persistent breadcrumb component is mounted above the primary card canvas:
 - **Ellipsis Truncation (`...`):** To preserve horizontal balance and prevent wrapping on smaller screens, segments exceeding 24 characters are truncated using CSS text ellipsis with HTML `title` tooltips displaying the full entity name.
 - **State Integration:** The breadcrumb state is managed through the central application state container (`AppState`) and synchronized with browser history where applicable.
 
-### 2.4 Universal List/Grid View Template
-To guarantee visual and behavioral consistency across all system directories, a standard list/grid layout component is established:
+### 2.4 Repeatable View Architecture Pattern (List, Grid, Detail)
+To ensure absolute architectural consistency across all application modules and operational phases, every business entity conforms to a standardized tripartite view pattern:
 
-```text
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ Titulo de la Sección                                                                   │
-│ Breve descripción contextual o alcance normativo                                       │
-│                                                                                        │
-│ [ 🔍 Buscar por código, nombre, RIF... (Presione '/' para enfocar) ]   [⊞ Grid | ☰ List]│
-├───────────────────┬────────────────────────────────────────────────────────────────────┤
-│ SIDEBAR FACETAS   │ CONTENIDO DE DATOS                                                 │
-│                   │                                                                    │
-│ • Estatus         │ EN MODO TABLA (LIST VIEW):                                         │
-│   [ ] Activo (12) │ ┌──────────────────┬──────────────┬─────────────┬────────────────┐ │
-│   [ ] Estudio (4) │ │ Nombre/Código ▲▼ │ Esquema ▲▼   │ Estado ▲▼   │ Acciones       │ │
-│ • Esquema / Norma │ ├──────────────────┼──────────────┼─────────────┼────────────────┤ │
-│   [ ] ISO 9001    │ │ CyberCloud S.L.  │ ISO 9001:15  │ Activo      │ [Ver Detalle]  │ │
-│   [ ] ISO 27001   │ └──────────────────┴──────────────┴─────────────┴────────────────┘ │
-│ • Sector IAF      │                                                                    │
-│   [ ] 17 - Metales│ EN MODO TARJETA (GRID VIEW):                                       │
-│   [ ] 28 - Constru│ ┌───────────────────────┐  ┌───────────────────────┐               │
-│                   │ │ CyberCloud Solutions  │  │ Iberometal Comp. S.A. │               │
-│ [Limpiar Filtros] │ │ RIF: J-40192831-2     │  │ RIF: J-30918274-1     │               │
-│                   │ └───────────────────────┘  └───────────────────────┘               │
-└───────────────────┴────────────────────────────────────────────────────────────────────┘
-```
+#### A. Standard List View (High-Density Tabular Mode)
+- **Use Case:** High-throughput administrative work, scanning large registries, comparing operational statuses, and conducting batch data audits.
+- **Structural Blueprint:**
+  - **Header Zone:** Standardized semantic title (`h1`), contextual subtitle, search input with clear trigger (`✕`) and keyboard focus (`/`), and layout switcher (`⊞ Grid | ☰ List`).
+  - **Facet Sidebar (Left Pane):** Filter counts for active statuses, norms, sectors, and audit modalities.
+  - **Data Table Canvas (Right Pane):**
+    - High-density table with sticky headers.
+    - Multi-attribute sortable column headers with visual state indicators (▲ ascending, ▼ descending, neutral).
+    - Column-specific popovers for quick filtering and text matching.
+    - Formatted data cells with clean text truncation and HTML `title` tooltips.
+    - Interactive row selection: clicking anywhere on a row or its primary identifier adds the record to the persistent breadcrumb trail and navigates to the **Detail View**.
 
-- **Header Controls:** Semantic title, descriptive subtitle, and unified real-time search input with clear button (`✕`) and match counter badge.
-- **Presentation Switcher:** Instant toggle between high-density tabular view and responsive relational cards, persisted in `localStorage`.
-- **Left-Hand Facet Sidebar:** Collapsible filter pane for quick single-click filtering on statuses, standards, and sectors with match count badges.
-- **Excel-Style Column Tools:** Table columns feature sort triggers (ascending, descending, neutral) and quick filter popovers.
+#### B. Standard Grid View (Responsive Relational Cards Mode)
+- **Use Case:** Executive overviews, visual exploration, tablet/mobile touch viewports, and card scanning.
+- **Structural Blueprint:**
+  - Shares the exact same header zone and left-hand facet sidebar as the List View.
+  - **Relational Card Anatomy:**
+    - **Card Header:** Primary Entity Name / Code, Canonical Status Badge, and Type Indicator.
+    - **Card Body:** Key relational parent metadata (e.g., Parent Organization, Standard, IAF Sector) rendered as human-readable tags.
+    - **KPI Metrics Strip:** 2 to 3 high-value counters (e.g., Active Sites count, Total Clauses covered, Scheduled Audits).
+    - **Card Action Footer:** Dedicated primary link (*"Ver Detalle / Gestionar"*) plus contextual secondary actions.
+    - Entire card surface is clickable, seamlessly transitioning to the **Detail View**.
+
+#### C. Standard Detail View (Structured Relational 4-Zone Layout)
+- Specified in Section 2.5 below, establishing a strictly predictable 4-zone layout across all relational entities.
+
+---
 
 ### 2.5 Standardized Detail Page Architecture & Audit Trail Modal
-Every system record detail page adheres to a standardized structural blueprint:
+
+Detail pages across the platform follow a standardized, repeatable structure based on relational entities (e.g., referencing `organizacion`, `certificado`, `sitio`, `proceso`, `auditoria`). The architecture is partitioned into four distinct vertical zones:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ ← Volver a la Lista                                    [🕒 Historial de Cambios]       │
+│ ← Volver a la Lista de Certificados                    [🕒 Historial de Cambios (14)]  │
 │                                                                                        │
-│ [Icono Entidad] NOMBRE DE LA ENTIDAD / CÓDIGO                         [Badge Estatus]  │
-│ Subtítulo descriptivo o identificador fiscal / sector                                  │
+│ 📜 CERTIFICADO: FN-QMS-2024-001                                      [Badge: ACTIVO]   │
+│ Certificación de Sistemas de Gestión de la Calidad (ISO 9001:2015)                     │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ ATRIBUTOS DIRECTOS DEL REGISTRO                                                        │
-│ ┌──────────────────────┬──────────────────────┬──────────────────────────────────────┐ │
-│ │ Campo 1: Valor       │ Campo 2: Valor       │ Campo 3: Valor                       │ │
-│ │ Campo 4: Valor       │ Campo 5: Valor       │ Campo 6: Valor                       │ │
-│ └──────────────────────┴──────────────────────┴──────────────────────────────────────┘ │
+│ ZONE 1: PARENT DATA SECTION (UPPER ZONE - MULTI-COLUMN RELATIONAL METADATA)            │
+│ ┌───────────────────────────────┬───────────────────────────────┬────────────────────┐ │
+│ │ Organización Titular:         │ Norma Aplicable:              │ Sector IAF:        │ │
+│ │ 🏢 [Iberometal Componentes S.A.]│ 📘 [ISO 9001:2015]           │ 🏭 [Sector 17]     │ │
+│ │ (Click abre detalle de Org)   │ (Click abre detalle de Norma) │ (Click abre Sector)│ │
+│ ├───────────────────────────────┼───────────────────────────────┼────────────────────┤ │
+│ │ Estatus del Certificado:      │ Organismo Acreditador:        │ Sub-Sector IAF:    │ │
+│ │ 🏷️ [Activo]                  │ 🏛️ [ENAC (01/C-SC001)]        │ ⚙️ [17.1 Metales]   │ │
+│ └───────────────────────────────┴───────────────────────────────┴────────────────────┘ │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ PESTAÑAS MULTI-PÁGINA (RELACIONES HIJAS)                                              │
-│ [ Pestaña 1 (Conteo) ]  [ Pestaña 2 (Conteo) ]  [ Pestaña 3 (Conteo) ]                 │
+│ ──────────────────────── VISUAL SEPARATOR (CLEAN MINIMAL RULE) ─────────────────────── │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ ZONE 2: DIRECT RECORD ATTRIBUTES SECTION (MULTI-COLUMN VIEW / EDIT STATE)              │
+│ [ Modo: Visualización | ✏️ Editar Atributos ]                                          │
 │                                                                                        │
-│ • Listado interactivo de registros relacionados                                        │
-│ • Enlaces humanos y legibles (CERO UUIDs expuestos en la interfaz)                    │
-│ • Clic en un registro hijo navega a su detalle y añade segmento al breadcrumb          │
+│ ┌──────────────────────────────┬──────────────────────────────┬──────────────────────┐ │
+│ │ Número de Certificado:       │ Fecha de Emisión:            │ Fecha de Vencimiento:│ │
+│ │ FN-QMS-2024-001 (Textbox)    │ 2024-03-15 (Datepicker)      │ 2027-03-14           │ │
+│ ├──────────────────────────────┼──────────────────────────────┼──────────────────────┤ │
+│ │ Esquema Multisitio:          │ Sedes Sucursales:            │ Turnos Totales:      │ │
+│ │ Sí (Checkbox / Switch)       │ 2 sedes (Sitio 0 excluido)   │ 3 turnos rotativos   │ │
+│ ├──────────────────────────────┴──────────────────────────────┴──────────────────────┤ │
+│ │ Alcance de la Certificación (10 a 1000 caracteres):                                │ │
+│ │ [ Textarea Multilínea con Contador Dinámico de Caracteres: (184 / 1000) ]           │ │
+│ │ "Diseño, manufactura, estampado, fundición y comercialización de piezas metálicas y │ │
+│ │ componentes troquelados para la industria automotriz y de línea blanca nacional."  │ │
+│ └────────────────────────────────────────────────────────────────────────────────────┘ │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ ZONE 3: MULTIPAGE / CHILD TABS SECTION (LOWER ZONE - RELATIONAL CHILD TABLES)          │
+│ [ 🏢 Sitios (3) ] [ ⚙️ Procesos (4) ] [ ⏱️ Turnos (2) ] [ 🚫 No Aplicables (1) ] [ 📋 Auditorías (2) ]│
+│                                                                                        │
+│ ┌────────┬───────────────────────┬───────────────────────────────┬───────────────────┐ │
+│ │ No.    │ Nombre de la Sede     │ Dirección Física              │ Tipo de Sede      │ │
+│ ├────────┼───────────────────────┼───────────────────────────────┼───────────────────┤ │
+│ │ 0      │ Sede Principal HQ     │ Av. Industrial 100, Valencia  │ ★ Principal (HQ)  │ │
+│ │ 1      │ Planta Ensamblaje     │ Zona Industrial Norte, Lote 4 │ Sucursal Operativa│ │
+│ │ 2      │ Centro Distribución   │ Puerto Cabello, Galpón 12     │ Almacén / Logíst. │ │
+│ └────────┴───────────────────────┴───────────────────────────────┴───────────────────┘ │
+│ • Filas interactivas: Clic en 'Planta Ensamblaje' abre el detalle de Sitio y          │
+│   actualiza el breadcrumb: Certificado > FN-QMS-2024-001 > Planta Ensamblaje (Sitio 1) │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Top-Right Changelog Trigger (`🕒 Historial de Cambios`):**
-  - Always positioned at the top-right of the detail view.
-  - Opens a dedicated modal overlay querying `public.audit_log` filtered by `table_name` and `record_id`.
-  - Displays chronological audit entries: mutation action (`INSERT`, `UPDATE`, `DELETE`), actor username/email, formatted timestamp, and side-by-side JSON diffs of modified fields.
-- **Strict No-UUID Policy:** No raw database UUIDs (e.g. `40000000-0000-...`) may ever be displayed in labels, tooltips, or table cells. All foreign references must resolve to human-readable names with clickable links.
+#### Detailed Specifications of the Four Zones:
+
+1. **Header & Forensic Audit Trail Action:**
+   - Standardized entity identification banner including Entity Glyph, Canonical Name/Code, and Status Token.
+   - **Changelog Modal Button (`🕒 Historial de Cambios`):** Dedicated top-right trigger that opens the `public.audit_log` modal. Queries mutation events filtered by target table and record ID, presenting an interactive timeline with actor attribution, timestamps, and JSON diffs (`old_data` vs. `new_data`).
+
+2. **Parent Data Section (Upper Zone - Multi-Column Optional):**
+   - Displays direct foreign-key parent entity references (e.g., `id_organizacion`, `id_norma`, `id_estatus`, `id_sector_iaf`).
+   - **Zero Raw IDs Mandate:** Under no circumstance is a raw UUID displayed. Every parent reference resolves to human-readable names with contextual icons (e.g., `🏢 Iberometal Componentes S.A.` instead of `30000000-0000-...`).
+   - **Breadcrumb Activation:** Every parent reference is an active navigational link. Clicking a parent immediately activates the drill-down breadcrumb bar, navigating directly to the parent entity's detail view.
+
+3. **Visual Separator:**
+   - A crisp, minimalist horizontal divider dividing parent metadata from the record's direct attributes.
+
+4. **Direct Record Attributes Section (Multi-Column Optional):**
+   - Displays fields belonging directly to the record in a responsive multi-column layout.
+   - **Dynamic UI State Management:**
+     - **Read-Only View Mode:** Formatted text display, status tokens, formatted currency/dates, and structured narrative containers.
+     - **Edit Mode:** Authorized roles (`ADMIN`, `WORKER`, and assigned `AUDITOR`) can toggle inline editing:
+       - Small textboxes for numeric codes, site numbers, and tax identification numbers.
+       - Option selectors (`<select>`) for canonical statuses and categorical values.
+       - Large multiline text areas (`<textarea>`) with live character counters for narrative fields such as certificate `alcance` (enforcing the 10 to 1000 character length constraint).
+
+5. **Multipage / Child Tabs Section (Lower Zone):**
+   - Foreign-key child relations (e.g., `sitio` linked via `id_certificado`, `proceso`, `turno`, `hallazgo`) are organized into tabbed multipage views.
+   - Inside each tab, child records appear in a structured, high-density list view with explicitly defined operational columns.
+   - Child rows are clickable: selecting a child record seamlessly triggers drill-down navigation and appends a child segment to the persistent breadcrumb trail.
 
 ---
 
@@ -126,8 +176,8 @@ Every system record detail page adheres to a standardized structural blueprint:
 
 - [ ] **Milestone 2.1:** Header component updated with the 3 operational blocks and minimalist role/status iconography.
 - [ ] **Milestone 2.2:** Persistent breadcrumb bar component implemented with interactive navigation callbacks, text truncation, and top-nav reset logic.
-- [ ] **Milestone 2.3:** Universal List/Grid View component created with search debouncing, sidebar facet filtering, and Excel-style column sorting.
-- [ ] **Milestone 2.4:** Standardized Detail Page template built with upper attribute card and child relationship tab switcher.
+- [ ] **Milestone 2.3:** Universal List/Grid View component created with search debouncing, sidebar facet filtering, and Excel-style column sorting adhering to the Repeatable View Pattern.
+- [ ] **Milestone 2.4:** Standardized 4-zone Detail Page template built with Parent Data upper zone, visual separator, direct attributes with view/edit states (including textboxes, selectors, and textarea character counters), and multipage child relationship tabs.
 - [ ] **Milestone 2.5:** Record-level changelog modal component implemented, connected to `public.audit_log` with diff visualization.
 - [ ] **Milestone 2.6:** Unit tests created in `src/lib/` for breadcrumb state transformations, search filtering, and active facet evaluation.
 
