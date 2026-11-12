@@ -103,12 +103,12 @@ Field evaluators record audit findings categorized into the four formal ISO clas
 
 ## 3. Key Implementation Milestones
 
-- [ ] **Milestone 5.1:** Header Block 1 restructured to provide direct navigation to `Programación`, `Calendario`, and `Resultado`.
-- [ ] **Milestone 5.2:** `Programación` list and detail views implemented with team assignment and site sampling child tabs.
-- [ ] **Milestone 5.3:** `Calendario` chronological view implemented with month/timeline modes, multi-criteria filtering, and event drawer.
-- [ ] **Milestone 5.4:** `Resultado` view implemented with findings board supporting `NC_MAYOR`, `NC_MENOR`, `OBSERVACION`, and `OPORTUNIDAD_MEJORA`.
-- [ ] **Milestone 5.5:** Corrective action tracking workflow and ISO 17021-1 certification recommendation engine implemented.
-- [ ] **Milestone 5.6:** Unit tests created in `src/lib/` validating finding classification rules and recommendation algorithms.
+- [x] **Milestone 5.1:** Header Block 1 restructured to provide direct navigation to `Programación`, `Calendario`, and `Resultado`.
+- [x] **Milestone 5.2:** `Programación` list and detail views implemented with team assignment and site sampling child tabs.
+- [x] **Milestone 5.3:** `Calendario` chronological view implemented with month/timeline modes, multi-criteria filtering, and event drawer.
+- [x] **Milestone 5.4:** `Resultado` view implemented with findings board supporting `NC_MAYOR`, `NC_MENOR`, `OBSERVACION`, and `OPORTUNIDAD_MEJORA`.
+- [x] **Milestone 5.5:** Corrective action tracking workflow and ISO 17021-1 certification recommendation engine implemented.
+- [x] **Milestone 5.6:** Unit tests created in `src/lib/` validating finding classification rules and recommendation algorithms.
 
 ---
 
