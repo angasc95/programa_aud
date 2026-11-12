@@ -3,7 +3,6 @@
 ## 1. Executive Summary & Phase Scope
 
 Phase 1 establishes the structural, relational, and data-integrity foundation required for the major upgrade of `programa_aud`. In accordance with **ISO/IEC 17021-1:2015** (Conformity assessment — Requirements for bodies providing audit and certification of management systems), this phase modernizes the PostgreSQL database schema deployed via Supabase (`public/supabase/queries/`), expanding normative standards, accreditation relationships, technical sub-sectors, site conventions, and non-applicability justifications.
-
 All modifications in this phase maintain strict backward compatibility while establishing clean foreign-key relationships, database-level integrity constraints, and immutable audit logging.
 
 ---
@@ -48,7 +47,6 @@ Certification bodies operate under official accreditation granted by national or
   - `id_organismo UUID NOT NULL REFERENCES public.organismo_acreditacion(id) ON DELETE CASCADE`
   - `id_norma UUID NOT NULL REFERENCES public.norma(id) ON DELETE CASCADE`
   - `id_sector_iaf UUID REFERENCES public.sector_iaf(id) ON DELETE SET NULL`
-  - `id_subsector_iaf UUID REFERENCES public.subsector_iaf(id) ON DELETE SET NULL`
   - `numero_acreditacion VARCHAR(100) NOT NULL` (e.g., `'01/C-SC001'`)
   - `fecha_concesion DATE NOT NULL`
   - `fecha_vencimiento DATE`
@@ -64,10 +62,34 @@ Under ISO 9001:2015 clause 4.3 and ISO 17021-1, any requirement determined as no
 
 ### 2.5 Site 0 Convention for Principal Sites (`sitio`)
 To standardize multisite certificate management across the application:
-- **Principal Site Convention:** The central office / headquarters of the client organization is consistently assigned `numero_sitio = 0`.
-- **Multisite Count Rule:** The count of multisite locations displayed on certificate records represents subsidiary or branch sites (`numero_sitio > 0`). The principal site (`numero_sitio = 0`) is listed first in all site grids/tables with a prominent visual identifier and is excluded from the secondary site count.
+- **Principal Site Convention:** The site with more processes / central office / headquarters of the client organization is consistently assigned `numero_sitio = 0`.
+- **Multisite Count Rule:** The count of multisite locations displayed on certificate records represents subsidiary or branch sites (`numero_sitio > 0`). The principal site (`numero_sitio = 0`) is listed first in all site grids/tables with a prominent visual identifier and is excluded from the site count.
 
-### 2.6 Standardization of Master Catalog Values
+### 2.6 Table `proceso` Update: Process Categorization (`tipo`)
+Under ISO 9001:2015, ISO 14001:2015, and ISO/IEC 17021-1, certification audits require clear categorization of operational processes according to their role in the client organization's management system. The `public.proceso` table is updated with a mandatory `tipo` classification:
+
+- **Field Addition:**
+  - `tipo VARCHAR(30) NOT NULL DEFAULT 'Medular'`
+  - **Integrity Constraint:**
+    ```sql
+    CONSTRAINT check_proceso_tipo CHECK (tipo IN ('Estratégico', 'Medular', 'De Apoyo', 'Otro'))
+    ```
+- **Normative Categorization Definitions:**
+  - **`Estratégico` (Strategic / Management):** Processes related to governance, leadership, strategic planning, policy definition, internal audit, and management review (ISO 9001 clauses 5 and 9).
+  - **`Medular` (Core / Operational):** Core value-generating processes directly responsible for product or service design, manufacturing, operational delivery, and customer relationship (ISO 9001 clause 8).
+  - **`De Apoyo` (Support):** Enabling processes that provide required infrastructure, resource allocation, human talent, information technology, purchasing, and equipment maintenance (ISO 9001 clause 7).
+  - **`Otro` (Other):** Transversal or specialized processes not classified under standard categories.
+
+### 2.7 Table `certificado` Update: Comprehensive Scope Statement (`alcance`)
+In accordance with **ISO/IEC 17021-1:2015 clause 8.2.2**, certification documents must unambiguously describe the formal scope of certification for the certified client, clearly delineating the activities, products, services, and operational boundaries covered:
+
+- **Field Addition:**
+  - `alcance VARCHAR(1000) NOT NULL`
+- **Audit & Regulatory Impact:**
+  - Replaces vague or missing scope descriptions with a legally binding narrative scope statement (e.g., *"Diseño, manufactura, estampado, ensamble final y comercialización de piezas metálicas y componentes troquelados para la industria automotriz y de línea blanca.*").
+  - Evaluated during audit planning (Etapa 1 and Etapa 2) to ensure that the audit team qualifications (IAF sectors/sub-sectors) match the full scope declared in `alcance`.
+
+### 2.8 Standardization of Master Catalog Values
 The catalog values stored in `public.estatus`, `public.tipo_auditoria`, and `public.metodologia_auditoria` are standardized to clean, canonical title-case records:
 
 1. **`estatus` (8 Canonical Values):**
@@ -104,18 +126,18 @@ The migration files located in `public/supabase/queries/` must be updated sequen
 
 | Script | Upgrade Modifications |
 | :--- | :--- |
-| `01_creacion.sql` | Add `subsector_iaf`, `organismo_acreditacion`, and `acreditacion_norma_iaf`. Add `codigo`, `titulo`, and `estatus` to `norma`. Add `justificacion` to `requisitos_no_aplicables_certificado`. Attach audit log triggers to new tables. |
-| `02_cobertura_normativa.sql` | Update competency validation stored procedures to evaluate auditor qualifications against both primary IAF sectors and specific `subsector_iaf` classifications. |
-| `03_indices_optimizacion.sql` | Add composite indexes: `idx_subsector_sector`, `idx_acreditacion_norma_org`, `idx_sitio_cert_numero` (`id_certificado`, `numero_sitio`), and `idx_audit_log_entity_lookup` (`target_table`, `record_id`). |
+| `01_creacion.sql` | Add `subsector_iaf`, `organismo_acreditacion`, and `acreditacion_norma_iaf`. Add `codigo`, `titulo`, and `estatus` to `norma`. Add `justificacion` to `requisitos_no_aplicables_certificado`. **Add `tipo` with `CHECK (tipo IN ('Estratégico', 'Medular', 'De Apoyo', 'Otro'))` to `proceso`. Add `alcance VARCHAR(1000)` to `certificado`.** Attach audit log triggers to new tables. |
+| `02_cobertura_normativa.sql` | Update competency validation stored procedures to evaluate auditor qualifications against both primary IAF sectors and specific `subsector_iaf` classifications, and integrate process `tipo` into coverage calculations. |
+| `03_indices_optimizacion.sql` | Add composite indexes: `idx_subsector_sector`, `idx_acreditacion_norma_org`, `idx_sitio_cert_numero` (`id_certificado`, `numero_sitio`), `idx_proceso_cert_tipo` (`id_certificado`, `tipo`), and `idx_audit_log_entity_lookup` (`target_table`, `record_id`). |
 | `04_rls.sql` | Extend Row Level Security (RLS) policies: `organismo_acreditacion`, `subsector_iaf`, and `acreditacion_norma_iaf` readable by all authenticated users, writable exclusively by `ADMIN` and `WORKER`. Update helper functions. |
-| `06_datos_prueba.sql` | Seed comprehensive sample records: 8 canonical statuses, 9 audit types, 3 methodologies, ISO standards with title and code, ENAC/UKAS accreditation entities, sub-sectors (`17.1`, `17.2`, `28.1`, `33.1`), and sample certificates featuring Site 0 principal sites and justified clause exclusions. |
+| `06_datos_prueba.sql` | Seed comprehensive sample records: 8 canonical statuses, 9 audit types, 3 methodologies, ISO standards with title and code, ENAC/UKAS accreditation entities, sub-sectors (`17.1`, `17.2`, `28.1`, `33.1`), **realistic certification scopes (`alcance`) for all certificates**, **processes tagged with realistic `tipo` (`Estratégico`, `Medular`, `De Apoyo`, `Otro`)**, and sample certificates featuring Site 0 principal sites and justified clause exclusions. |
 
 ---
 
 ## 4. Key Implementation Milestones
 
 - [ ] **Milestone 1.1:** DDL schema definitions written and verified for `subsector_iaf`, `organismo_acreditacion`, and `acreditacion_norma_iaf`.
-- [ ] **Milestone 1.2:** Existing tables (`norma`, `requisitos_no_aplicables_certificado`, `sitio`) updated with required columns and constraints.
+- [ ] **Milestone 1.2:** Existing tables (`norma`, `requisitos_no_aplicables_certificado`, `sitio`, `proceso`, `certificado`) updated with required columns (`proceso.tipo`, `certificado.alcance`) and check constraints.
 - [ ] **Milestone 1.3:** Audit log triggers (`audit_trigger_func`) attached to all new and updated entities to maintain complete forensic traceability.
 - [ ] **Milestone 1.4:** Standardized catalog values (8 statuses, 9 audit types, 3 methodologies) synchronized across migration seeds.
 - [ ] **Milestone 1.5:** RLS policies and `SECURITY DEFINER` procedures verified and validated against test accounts (`ADMIN`, `WORKER`, `AUDITOR`, `CLIENT`).
@@ -126,6 +148,7 @@ The migration files located in `public/supabase/queries/` must be updated sequen
 ## 5. Acceptance Criteria & Quality Gates
 
 1. **Foreign Key Integrity:** All relationships between standards, accreditation bodies, and sub-sectors enforce strict relational integrity (`ON DELETE RESTRICT` or `CASCADE` where appropriate).
-2. **Audit Logging Coverage:** Every `INSERT`, `UPDATE`, and `DELETE` on `subsector_iaf`, `organismo_acreditacion`, `acreditacion_norma_iaf`, and `requisitos_no_aplicables_certificado` writes an entry to `public.audit_log`.
-3. **Principal Site Determinism:** Querying `sitio` with `ORDER BY numero_sitio ASC` consistently positions the principal site (`numero_sitio = 0`) at the first index.
-4. **Zero Breaking Changes:** Existing application queries in `src/` continue to function through backward-compatible columns and aliased views.
+2. **Process Classification Constraint:** Any attempt to insert or update `proceso.tipo` with a value outside of `'Estratégico'`, `'Medular'`, `'De Apoyo'`, `'Otro'` is rejected by PostgreSQL check constraint `check_proceso_tipo`.
+3. **Audit Logging Coverage:** Every `INSERT`, `UPDATE`, and `DELETE` on `subsector_iaf`, `organismo_acreditacion`, `acreditacion_norma_iaf`, `proceso`, and `certificado` writes an entry to `public.audit_log`.
+4. **Principal Site Determinism:** Querying `sitio` with `ORDER BY numero_sitio ASC` consistently positions the principal site (`numero_sitio = 0`) at the first index.
+5. **Zero Breaking Changes:** Existing application queries in `src/` continue to function through backward-compatible defaults and non-breaking column additions.
