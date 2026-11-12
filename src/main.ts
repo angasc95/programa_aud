@@ -83,6 +83,7 @@ import {
 import {
   canEditAuditScheduleOrTeam,
   canMutateAuditExecution,
+  canViewAuditLogForEntity,
   isApprovedStaffProfile,
   scopeCertificateRecordsForProfile,
   scopeDetailedCertsForProfile,
@@ -1168,17 +1169,30 @@ function bindAuthenticatedEvents(): void {
       const segId = btn.dataset.breadcrumbId;
       if (!segId) return;
       const targetSeg = state.breadcrumbs.find((s) => s.id === segId);
+      if (targetSeg && !canAccessRoute(state.profile, targetSeg.route)) return;
+
       state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, segId);
 
       if (targetSeg) {
         state.activeRoute = targetSeg.route;
         state.activeSubSection = targetSeg.subview || null;
-        if (targetSeg.route === 'drilldown') {
-          if (targetSeg.id === 'drilldown-root') {
+        if (
+          targetSeg.route === 'drilldown' ||
+          (targetSeg.route === 'certificacion' && targetSeg.subview === 'drilldown')
+        ) {
+          if (
+            targetSeg.id === 'drilldown-root' ||
+            targetSeg.id === 'subview-certificacion-drilldown'
+          ) {
             state.drilldown.selectedOrgId = null;
             state.drilldown.selectedCertId = null;
           } else if (targetSeg.id.startsWith('org-')) {
-            state.drilldown.selectedOrgId = targetSeg.entityId || null;
+            const orgId = targetSeg.entityId || null;
+            state.drilldown.selectedOrgId = orgId;
+            const orgCert = orgId
+              ? state.exploration.records.find((c) => c.organizacion_id === orgId)
+              : null;
+            state.drilldown.selectedCertId = orgCert?.id || null;
           }
         } else if (targetSeg.route === 'extra') {
           if (targetSeg.id.startsWith('domain-') || targetSeg.id.startsWith('subview-')) {
@@ -1189,12 +1203,21 @@ function bindAuthenticatedEvents(): void {
             state.extraDomain.selectedMetodologiaId = null;
           }
         } else if (targetSeg.route === 'certificacion') {
+          if (targetSeg.id.startsWith('domain-')) {
+            state.drilldown.selectedOrgId = null;
+            state.drilldown.selectedCertId = null;
+          }
           if (
             targetSeg.id.startsWith('domain-') ||
             targetSeg.id === 'subview-certificacion-organizations'
           ) {
             state.organizacionDomain.selectedOrganizacionId = null;
             state.organizacionDomain.isEditingAttributes = false;
+          } else if (targetSeg.id.startsWith('org-')) {
+            state.organizacionDomain.selectedOrganizacionId = targetSeg.entityId || null;
+            state.organizacionDomain.isEditingAttributes = false;
+            state.certificadoDomain.selectedCertId = null;
+            state.certificadoDomain.isEditingAttributes = false;
           }
           if (
             targetSeg.id.startsWith('domain-') ||
@@ -2344,6 +2367,7 @@ function bindAuthenticatedEvents(): void {
       const secNum = btn.dataset.sectorNumber || '17';
       state.activeRoute = 'extra';
       state.activeSubSection = 'iaf';
+      state.extraDomain.selectedSectorId = null;
       state.extraDomain.iafSearchQuery = secNum;
       state.breadcrumbs = resetBreadcrumbToDomain('extra', 'iaf');
       syncUrlHash('extra', 'iaf');
@@ -2661,11 +2685,25 @@ function bindAuthenticatedEvents(): void {
   // 14. Nav link: view standard (norma) from certificate Zone 1
   document.querySelectorAll<HTMLElement>('[data-action="view-norma-from-cert"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const normaId = btn.dataset.normaId;
+      const normaId = btn.dataset.normaId || null;
       state.activeRoute = 'extra';
       state.activeSubSection = 'standards';
-      state.extraDomain.selectedNormaId = normaId || null;
+      state.extraDomain.selectedNormaId = normaId;
       state.breadcrumbs = resetBreadcrumbToDomain('extra', 'standards');
+      if (normaId) {
+        const matchedNorma =
+          INITIAL_NORMAS.find((n) => n.id === normaId) ||
+          state.domainData.standards.find((s) => s.id === normaId);
+        const normaLabel = matchedNorma?.norma || 'Norma ISO';
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `norma-${normaId}`,
+          label: normaLabel,
+          route: 'extra',
+          subview: 'standards',
+          entityId: normaId,
+          tooltip: `Norma ISO > ${normaLabel}`,
+        });
+      }
       syncUrlHash('extra', 'standards');
       render();
     });
@@ -2674,11 +2712,25 @@ function bindAuthenticatedEvents(): void {
   // 15. Nav link: view IAF sector from certificate Zone 1
   document.querySelectorAll<HTMLElement>('[data-action="view-iaf-from-cert"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const sectorId = btn.dataset.sectorId;
+      const sectorId = btn.dataset.sectorId || null;
       state.activeRoute = 'extra';
       state.activeSubSection = 'iaf';
-      state.extraDomain.selectedSectorId = sectorId || null;
+      state.extraDomain.selectedSectorId = sectorId;
       state.breadcrumbs = resetBreadcrumbToDomain('extra', 'iaf');
+      if (sectorId) {
+        const matchedSector =
+          INITIAL_SECTORES_IAF.find((s) => s.id === sectorId || String(s.sector) === sectorId) ||
+          state.domainData.iafSectors.find((s) => s.id === sectorId || String(s.sector) === sectorId);
+        const secLabel = matchedSector ? `Sector ${matchedSector.sector}` : 'Sector IAF';
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `sector-${sectorId}`,
+          label: secLabel,
+          route: 'extra',
+          subview: 'iaf',
+          entityId: sectorId,
+          tooltip: `Sector IAF > ${matchedSector?.descripcion || secLabel}`,
+        });
+      }
       syncUrlHash('extra', 'iaf');
       render();
     });
@@ -3095,7 +3147,21 @@ function bindPhase5AuditoriasEvents(): void {
           )
         ).filter((c) => c.organizacion_id === orgId);
         state.drilldown.selectedCertId = orgCerts[0]?.id || null;
-        state.breadcrumbs = resetBreadcrumbToDomain('drilldown');
+        state.breadcrumbs = [
+          {
+            id: 'domain-auditorias',
+            label: 'Auditorías',
+            route: 'auditorias',
+            subview: 'scheduling',
+            tooltip: 'Dominio Auditorías',
+          },
+          {
+            id: 'drilldown-root',
+            label: 'Drill-Down',
+            route: 'drilldown',
+            tooltip: 'Navegación jerárquica en profundidad',
+          },
+        ];
         if (org) {
           state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
             id: `org-${org.id}`,
@@ -3144,8 +3210,29 @@ function bindPhase5AuditoriasEvents(): void {
         state.activeSubSection = null;
         state.drilldown.selectedOrgId = cert?.id_organizacion || null;
         state.drilldown.selectedCertId = certId;
-        state.breadcrumbs = resetBreadcrumbToDomain('drilldown');
+        state.breadcrumbs = [
+          {
+            id: 'domain-auditorias',
+            label: 'Auditorías',
+            route: 'auditorias',
+            subview: 'scheduling',
+            tooltip: 'Dominio Auditorías',
+          },
+          {
+            id: 'drilldown-root',
+            label: 'Drill-Down',
+            route: 'drilldown',
+            tooltip: 'Navegación jerárquica en profundidad',
+          },
+        ];
         if (cert) {
+          state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+            id: `org-${cert.id_organizacion}`,
+            label: cert.organizacion_nombre,
+            route: 'drilldown',
+            entityId: cert.id_organizacion,
+            tooltip: `Organización > ${cert.organizacion_nombre}`,
+          });
           state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
             id: `cert-${cert.id}`,
             label: cert.numero_certificado,
@@ -4610,48 +4697,122 @@ function buildActorDirectory(): Record<string, ActorDirectoryEntry> {
   return directory;
 }
 
+function resolveUuidDisplayLabel(idVal: string): string {
+  const matchedAudit =
+    state.domainData.programacionAudits.find((a) => a.id === idVal) ||
+    state.domainData.audits.find((a) => a.id === idVal);
+  if (matchedAudit) {
+    return 'codigo_auditoria' in matchedAudit
+      ? matchedAudit.codigo_auditoria
+      : matchedAudit.numero_certificado;
+  }
+
+  const matchedAuditor =
+    state.domainData.allAuditorsDetailed.find((a) => a.id === idVal) ||
+    state.domainData.auditors.find((a) => a.id === idVal);
+  if (matchedAuditor) return matchedAuditor.nombre;
+
+  const matchedOrg =
+    state.domainData.allOrganizaciones.find((o) => o.id === idVal) ||
+    state.domainData.organizations.find((o) => o.id === idVal) ||
+    INITIAL_ORGANIZACIONES.find((o) => o.id === idVal);
+  if (matchedOrg) return matchedOrg.nombre;
+
+  const matchedCert =
+    state.exploration.records.find((c) => c.id === idVal) ||
+    state.domainData.allCertificadosDetailed.find((c) => c.id === idVal) ||
+    INITIAL_CERTIFICADOS_DETAILED.find((c) => c.id === idVal);
+  if (matchedCert) return matchedCert.numero_certificado;
+
+  const matchedNorma =
+    state.domainData.standards.find((s) => s.id === idVal) ||
+    INITIAL_NORMAS.find((n) => n.id === idVal);
+  if (matchedNorma) return matchedNorma.norma;
+
+  const matchedSector =
+    state.domainData.iafSectors.find((s) => s.id === idVal) ||
+    INITIAL_SECTORES_IAF.find((s) => s.id === idVal);
+  if (matchedSector) return `Sector IAF ${matchedSector.sector}`;
+
+  const matchedSubsector = INITIAL_SUBSECTORES_IAF.find((s) => s.id === idVal);
+  if (matchedSubsector) return `${matchedSubsector.codigo} — ${matchedSubsector.descripcion}`;
+
+  const matchedEstatus = INITIAL_ESTATUS_CATALOG.find((e) => e.id === idVal);
+  if (matchedEstatus) return matchedEstatus.estatus;
+
+  const matchedTipo = INITIAL_TIPOS_AUDITORIA_CATALOG.find((t) => t.id === idVal);
+  if (matchedTipo) return matchedTipo.tipo;
+
+  const matchedMet = INITIAL_METODOLOGIAS_CATALOG.find((m) => m.id === idVal);
+  if (matchedMet) return matchedMet.metodologia;
+
+  const matchedOrgAcred = INITIAL_ORGANISMOS.find((o) => o.id === idVal);
+  if (matchedOrgAcred) return `${matchedOrgAcred.codigo} (${matchedOrgAcred.nombre})`;
+
+  const matchedSite = state.domainData.sites.find((s) => s.id === idVal);
+  if (matchedSite) return matchedSite.nombre_sitio;
+
+  for (const certDetail of state.domainData.allCertificadosDetailed) {
+    const nestedSite = certDetail.sitios?.find((s) => s.id === idVal);
+    if (nestedSite) return nestedSite.nombre_sitio;
+    const nestedProc = certDetail.procesos?.find((p) => p.id === idVal);
+    if (nestedProc) return nestedProc.nombre_proceso;
+  }
+
+  const matchedReq =
+    state.domainData.requirements.find((r) => r.id === idVal) ||
+    INITIAL_REQUISITOS_LTREE.find((r) => r.id === idVal);
+  if (matchedReq) return `Cláusula ${matchedReq.codigo}`;
+
+  const matchedProc = state.domainData.processes.find((p) => p.id === idVal);
+  if (matchedProc) return matchedProc.nombre_proceso;
+
+  const matchedProfile = state.approvals.profiles.find((p) => p.id === idVal);
+  if (matchedProfile) return matchedProfile.nombre;
+
+  const seededActor = SEEDED_ACTOR_DIRECTORY[idVal];
+  if (seededActor) return seededActor.nombre;
+
+  return 'Referencia registrada';
+}
+
+function sanitizeAuditLogValue(value: unknown): unknown {
+  const exactUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const inlineUuidPattern = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (exactUuidPattern.test(trimmed)) {
+      return resolveUuidDisplayLabel(trimmed);
+    }
+    return value.replace(inlineUuidPattern, (match) => resolveUuidDisplayLabel(match));
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeAuditLogValue(item));
+  }
+  if (value && typeof value === 'object') {
+    return sanitizeAuditLogDataMap(value as Record<string, unknown>);
+  }
+  return value;
+}
+
 function sanitizeAuditLogDataMap(
   raw: Record<string, unknown> | null | undefined
 ): Record<string, unknown> | null {
   if (!raw) return null;
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const exactUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const out: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(raw)) {
     if (key === 'id' || key === 'created_by' || key === 'updated_by') {
       continue;
     }
-    if (typeof value === 'string' && uuidPattern.test(value.trim())) {
-      const idVal = value.trim();
-      const matchedAudit = state.domainData.programacionAudits.find((a) => a.id === idVal);
-      if (matchedAudit) {
-        out[key.replace(/^id_/, '')] = matchedAudit.codigo_auditoria;
-        continue;
-      }
-      const matchedAuditor = state.domainData.allAuditorsDetailed.find((a) => a.id === idVal);
-      if (matchedAuditor) {
-        out[key.replace(/^id_/, '')] = matchedAuditor.nombre;
-        continue;
-      }
-      const matchedCert = state.exploration.records.find((c) => c.id === idVal);
-      if (matchedCert) {
-        out[key.replace(/^id_/, '')] = matchedCert.numero_certificado;
-        continue;
-      }
-      const matchedReq = state.domainData.requirements.find((r) => r.id === idVal);
-      if (matchedReq) {
-        out[key.replace(/^id_/, '')] = matchedReq.codigo;
-        continue;
-      }
-      const matchedProc = state.domainData.processes.find((p) => p.id === idVal);
-      if (matchedProc) {
-        out[key.replace(/^id_/, '')] = matchedProc.nombre_proceso;
-        continue;
-      }
-      out[key.replace(/^id_/, '')] = 'Referencia registrada';
+    if (typeof value === 'string' && exactUuidPattern.test(value.trim())) {
+      const labelKey = key.replace(/^id_/, '');
+      out[labelKey] = resolveUuidDisplayLabel(value.trim());
       continue;
     }
-    out[key] = value;
+    out[key] = sanitizeAuditLogValue(value);
   }
 
   return out;
@@ -4663,6 +4824,41 @@ async function openAuditLogModal(
   entityName: string
 ): Promise<void> {
   const actorDirectory = buildActorDirectory();
+  const scopedAudits = scopeProgramacionAuditsForProfile(
+    state.domainData.programacionAudits,
+    state.profile,
+    state.authorizedClientOrgIds
+  );
+  const scopedFindings = scopePhase5FindingsForProfile(
+    state.domainData.phase5Findings,
+    scopedAudits,
+    state.profile
+  );
+
+  if (
+    !canViewAuditLogForEntity(
+      state.profile,
+      tableName,
+      recordId,
+      scopedAudits,
+      scopedFindings
+    )
+  ) {
+    state.auditLogModal = {
+      isOpen: true,
+      entityName,
+      tableName,
+      recordId,
+      entries: [],
+      actorDirectory,
+      loading: false,
+      errorMessage:
+        'Acceso forense restringido por política RLS (audit_log_select_authorized): disponible exclusivamente para ADMIN, WORKER y Auditores asignados sobre sus auditorías y hallazgos.',
+    };
+    render();
+    return;
+  }
+
   const targetAuditCode = state.domainData.programacionAudits.find(
     (a) => a.id === recordId
   )?.codigo_auditoria;
@@ -4735,11 +4931,21 @@ async function openAuditLogModal(
 
     const { data, error } = await query.limit(20);
 
-    if (error || !data || data.length === 0) {
+    if (error) {
       state.auditLogModal.loading = false;
-      const fallback = generateFallbackAuditEntries(tableName, recordId, entityName);
-      state.auditLogModal.entries =
-        sessionMatches.length > 0 ? [...sessionMatches, ...fallback] : fallback;
+      state.auditLogModal.errorMessage = translateDatabaseError(error);
+      state.auditLogModal.entries = sessionMatches;
+      render();
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      state.auditLogModal.loading = false;
+      if (sessionMatches.length > 0) {
+        state.auditLogModal.entries = sessionMatches;
+      } else {
+        state.auditLogModal.entries = [];
+      }
       render();
       return;
     }
@@ -5950,6 +6156,7 @@ window.addEventListener('hashchange', () => {
       state.activeRoute = route;
       state.activeSubSection = subview;
       state.openMenu = null;
+      state.breadcrumbs = resetBreadcrumbToDomain(route, subview);
       render();
       if (route === 'approvals' && isApprovedStaff()) {
         void loadApprovalProfiles();

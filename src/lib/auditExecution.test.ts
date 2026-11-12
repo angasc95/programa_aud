@@ -34,7 +34,7 @@ const TEST_ADMIN_PROFILE: UserProfile = {
   id: '00000000-0000-0000-0000-000000000001',
   nombre: 'Admin Certificación',
   role: 'ADMIN',
-  activo: true,
+  status: 'APPROVED',
 };
 
 const TEST_CERTIFICATES: CertificateRecord[] = [

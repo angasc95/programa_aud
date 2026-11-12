@@ -156,7 +156,7 @@ export function renderCertificacionView(
     };
 
     const orgList: OrganizacionEntity[] =
-      state.allOrganizaciones && state.allOrganizaciones.length > 0
+      state.allOrganizaciones !== undefined
         ? state.allOrganizaciones
         : INITIAL_ORGANIZACIONES;
 
@@ -202,7 +202,7 @@ export function renderCertificacionView(
     };
 
     const audList: AuditorDetailEntity[] =
-      state.allAuditorsDetailed && state.allAuditorsDetailed.length > 0
+      state.allAuditorsDetailed !== undefined
         ? state.allAuditorsDetailed
         : INITIAL_AUDITORES_DETAILED;
 
@@ -373,7 +373,7 @@ export function renderCertificacionView(
     };
 
     const certList: CertificadoDetailEntity[] =
-      state.allCertificadosDetailed && state.allCertificadosDetailed.length > 0
+      state.allCertificadosDetailed !== undefined
         ? state.allCertificadosDetailed
         : INITIAL_CERTIFICADOS_DETAILED;
 

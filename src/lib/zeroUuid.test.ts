@@ -48,3 +48,40 @@ test('assertZeroUuidExposure confirms compliance when only friendly names are re
   assert.equal(check.compliant, true);
   assert.equal(check.exposedUuids.length, 0);
 });
+
+test('findExposedUuidsInHtml catches raw UUIDs in tooltips, aria-labels, placeholders, and visible inputs', () => {
+  const leakedTooltipHtml = `
+    <button title="Organización 30000000-0000-0000-0000-000000000001">Iberometal</button>
+  `;
+  assert.equal(assertZeroUuidExposure(leakedTooltipHtml).compliant, false);
+  assert.deepEqual(findExposedUuidsInHtml(leakedTooltipHtml), [
+    '30000000-0000-0000-0000-000000000001',
+  ]);
+
+  const leakedAriaHtml = `
+    <button aria-label="Editar 40000000-0000-0000-0000-000000000002">Editar</button>
+  `;
+  assert.equal(assertZeroUuidExposure(leakedAriaHtml).compliant, false);
+
+  const leakedInputHtml = `
+    <form>
+      <input type="text" name="org" value="50000000-0000-0000-0000-000000000003" />
+    </form>
+  `;
+  assert.equal(assertZeroUuidExposure(leakedInputHtml).compliant, false);
+});
+
+test('findExposedUuidsInHtml ignores hidden inputs, select option values, and data-* attributes', () => {
+  const safeFormHtml = `
+    <form data-record-id="30000000-0000-0000-0000-000000000001">
+      <input type="hidden" name="id_norma" value="10000000-0000-0000-0000-000000000001" />
+      <input type="text" disabled value="ISO 9001:2015 — Gestión de Calidad" />
+      <select name="id_organizacion">
+        <option value="30000000-0000-0000-0000-000000000001">Iberometal Componentes S.A.</option>
+      </select>
+    </form>
+  `;
+  const check = assertZeroUuidExposure(safeFormHtml);
+  assert.equal(check.compliant, true);
+  assert.equal(check.exposedUuids.length, 0);
+});

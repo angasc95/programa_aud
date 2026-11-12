@@ -1,19 +1,15 @@
 import type { UserProfile } from './healthCheck';
-import type { OrganizacionEntity } from './activeCertificates';
+import type { ProgramacionAuditEntity, Phase5FindingEntity } from './auditExecution';
 import type { CertificateRecord } from './searchControls';
 import type { CertificadoDetailEntity } from './multisiteSampling';
+import type { OrganizacionEntity } from './activeCertificates';
 import type { FindingRecord } from './drillDown';
-import type {
-  Phase5FindingEntity,
-  ProgramacionAuditEntity,
-} from './auditExecution';
+import type { AuditRecord } from '../views/auditoriasView';
+import type { OrganizationRecord } from '../views/certificacionView';
 
 /**
- * Pure Phase 6.1 Access Isolation & RBAC Scoping Helpers
- * Enforces ISO/IEC 17021-1 and RLS boundaries at the application layer
- * across ADMIN, WORKER, AUDITOR, CLIENT, and PENDING/REJECTED states.
+ * Checks whether the profile is an APPROVED staff member (ADMIN or WORKER).
  */
-
 export function isApprovedStaffProfile(
   profile: UserProfile | null | undefined
 ): boolean {
@@ -21,268 +17,307 @@ export function isApprovedStaffProfile(
   return profile.role === 'ADMIN' || profile.role === 'WORKER';
 }
 
-export function isApprovedAdminProfile(
-  profile: UserProfile | null | undefined
-): boolean {
-  if (!profile || profile.status !== 'APPROVED') return false;
-  return profile.role === 'ADMIN';
-}
-
+/**
+ * Only APPROVED ADMIN and WORKER staff may plan, reschedule, assign teams, or edit multisite sampling.
+ */
 export function canEditAuditScheduleOrTeam(
   profile: UserProfile | null | undefined
 ): boolean {
   return isApprovedStaffProfile(profile);
 }
 
-export function isAuditAssignedToProfile(
-  audit: Pick<ProgramacionAuditEntity, 'auditor_lider_id' | 'auditor_lider' | 'equipo'> | null | undefined,
+/**
+ * Determines whether a user can mutate audit execution artifacts
+ * (findings, normative verification checklist, and ISO 17021-1 recommendations)
+ * for a given audit.
+ * - ADMIN / WORKER: full write access
+ * - AUDITOR: strictly restricted to audits where they are assigned in equipo_auditor or auditor_lider
+ * - CLIENT / PENDING / REJECTED: strictly read-only / denied
+ */
+export function canMutateAuditExecution(
+  audit: ProgramacionAuditEntity | null | undefined,
   profile: UserProfile | null | undefined
 ): boolean {
-  if (!audit || !profile || profile.status !== 'APPROVED') return false;
+  if (!profile || profile.status !== 'APPROVED') return false;
+  if (!audit) return false;
   if (profile.role === 'ADMIN' || profile.role === 'WORKER') return true;
-  if (profile.role !== 'AUDITOR') return false;
-
-  if (audit.auditor_lider_id === profile.id) return true;
-  if (audit.equipo.some((member) => member.id_auditor === profile.id)) return true;
-
-  // Defensive fallback match by exact name if an un-ID'd seed row exists
-  if (
-    profile.nombre &&
-    audit.auditor_lider &&
-    audit.auditor_lider.trim().toLowerCase() === profile.nombre.trim().toLowerCase()
-  ) {
-    return true;
+  if (profile.role === 'AUDITOR') {
+    return (
+      audit.auditor_lider_id === profile.id ||
+      audit.equipo.some((member) => member.id_auditor === profile.id)
+    );
   }
   return false;
 }
 
-export function canMutateAuditExecution(
-  audit: Pick<ProgramacionAuditEntity, 'auditor_lider_id' | 'auditor_lider' | 'equipo'> | null | undefined,
-  profile: UserProfile | null | undefined
+/**
+ * Checks whether a user profile is authorized by RLS rules to inspect forensic
+ * entries in public.audit_log for a given table and record.
+ * - ADMIN / WORKER: authorized for all tables
+ * - AUDITOR: authorized only for 'auditoria' and 'hallazgo' on assigned audits
+ * - CLIENT / PENDING / REJECTED: denied
+ */
+export function canViewAuditLogForEntity(
+  profile: UserProfile | null | undefined,
+  tableName: string,
+  recordId: string,
+  scopedAudits: ProgramacionAuditEntity[] = [],
+  scopedFindings: Phase5FindingEntity[] = []
 ): boolean {
   if (!profile || profile.status !== 'APPROVED') return false;
   if (profile.role === 'ADMIN' || profile.role === 'WORKER') return true;
   if (profile.role === 'AUDITOR') {
-    return isAuditAssignedToProfile(audit, profile);
+    if (tableName === 'auditoria') {
+      if (!recordId) return scopedAudits.length > 0;
+      return scopedAudits.some((a) => a.id === recordId && canMutateAuditExecution(a, profile));
+    }
+    if (tableName === 'hallazgo') {
+      if (!recordId) return scopedAudits.length > 0;
+      const isAssignedAuditId = scopedAudits.some(
+        (a) => a.id === recordId && canMutateAuditExecution(a, profile)
+      );
+      if (isAssignedAuditId) return true;
+      const finding = scopedFindings.find((f) => f.id === recordId);
+      if (!finding) return false;
+      return scopedAudits.some(
+        (a) => a.id === finding.id_auditoria && canMutateAuditExecution(a, profile)
+      );
+    }
+    return false;
   }
   return false;
 }
 
+/**
+ * Scopes Phase 5 Programación audits according to role-based RLS boundaries.
+ */
 export function scopeProgramacionAuditsForProfile(
   audits: ProgramacionAuditEntity[],
   profile: UserProfile | null | undefined,
-  clientOrgIds: string[]
+  authorizedClientOrgIds: string[]
 ): ProgramacionAuditEntity[] {
   if (!profile || profile.status !== 'APPROVED') return [];
-  if (profile.role === 'ADMIN' || profile.role === 'WORKER') return audits;
+  if (isApprovedStaffProfile(profile)) return audits;
+
   if (profile.role === 'AUDITOR') {
-    return audits.filter((audit) => isAuditAssignedToProfile(audit, profile));
+    return audits.filter(
+      (a) =>
+        a.auditor_lider_id === profile.id ||
+        a.equipo.some((member) => member.id_auditor === profile.id)
+    );
   }
+
   if (profile.role === 'CLIENT') {
-    const allowedOrgs = new Set(clientOrgIds);
-    return audits.filter((audit) => allowedOrgs.has(audit.id_organizacion));
+    const allowedOrgIds = new Set(authorizedClientOrgIds);
+    return audits.filter((a) => allowedOrgIds.has(a.id_organizacion));
   }
+
   return [];
 }
 
+/**
+ * Scopes Phase 5 findings to the audits visible to the current profile.
+ */
 export function scopePhase5FindingsForProfile(
   findings: Phase5FindingEntity[],
   scopedAudits: ProgramacionAuditEntity[],
   profile: UserProfile | null | undefined
 ): Phase5FindingEntity[] {
   if (!profile || profile.status !== 'APPROVED') return [];
-  if (profile.role === 'ADMIN' || profile.role === 'WORKER') return findings;
+  if (isApprovedStaffProfile(profile)) return findings;
+
   const allowedAuditIds = new Set(scopedAudits.map((a) => a.id));
-  return findings.filter((finding) => allowedAuditIds.has(finding.id_auditoria));
+  return findings.filter((f) => allowedAuditIds.has(f.id_auditoria));
 }
 
-export function getAssignedScopeSets(
-  scopedAudits: ProgramacionAuditEntity[]
-): {
-  assignedAuditIds: Set<string>;
-  assignedCertIds: Set<string>;
-  assignedCertNumbers: Set<string>;
-  assignedOrgIds: Set<string>;
-} {
-  const assignedAuditIds = new Set<string>();
-  const assignedCertIds = new Set<string>();
-  const assignedCertNumbers = new Set<string>();
-  const assignedOrgIds = new Set<string>();
-
-  for (const audit of scopedAudits) {
-    assignedAuditIds.add(audit.id);
-    if (audit.id_certificado) assignedCertIds.add(audit.id_certificado);
-    if (audit.numero_certificado) assignedCertNumbers.add(audit.numero_certificado);
-    if (audit.id_organizacion) assignedOrgIds.add(audit.id_organizacion);
-  }
-
-  return {
-    assignedAuditIds,
-    assignedCertIds,
-    assignedCertNumbers,
-    assignedOrgIds,
-  };
-}
-
+/**
+ * Scopes summary certificate records (Dashboard / Exploration / Certificación list).
+ */
 export function scopeCertificateRecordsForProfile(
   records: CertificateRecord[],
   profile: UserProfile | null | undefined,
-  clientOrgIds: string[],
+  authorizedClientOrgIds: string[],
   scopedAudits: ProgramacionAuditEntity[]
 ): CertificateRecord[] {
   if (!profile || profile.status !== 'APPROVED') return [];
-  if (profile.role === 'ADMIN' || profile.role === 'WORKER') return records;
+  if (isApprovedStaffProfile(profile)) return records;
 
-  if (profile.role === 'CLIENT') {
-    const allowedOrgs = new Set(clientOrgIds);
+  if (profile.role === 'AUDITOR') {
+    const allowedCertIds = new Set(scopedAudits.map((a) => a.id_certificado));
+    const allowedCertNums = new Set(scopedAudits.map((a) => a.numero_certificado));
     return records.filter(
-      (cert) => Boolean(cert.organizacion_id && allowedOrgs.has(cert.organizacion_id))
+      (r) => allowedCertIds.has(r.id) || allowedCertNums.has(r.numero_certificado)
     );
   }
 
-  if (profile.role === 'AUDITOR') {
-    const { assignedCertIds, assignedCertNumbers } = getAssignedScopeSets(scopedAudits);
+  if (profile.role === 'CLIENT') {
+    const allowedOrgIds = new Set(authorizedClientOrgIds);
+    const allowedCertIds = new Set(scopedAudits.map((a) => a.id_certificado));
     return records.filter(
-      (cert) =>
-        assignedCertIds.has(cert.id) ||
-        assignedCertNumbers.has(cert.numero_certificado)
+      (r) =>
+        (r.organizacion_id && allowedOrgIds.has(r.organizacion_id)) ||
+        allowedCertIds.has(r.id)
     );
   }
 
   return [];
 }
 
+/**
+ * Scopes detailed multisite certificates (Certificado 4-Zone Detail View).
+ */
 export function scopeDetailedCertsForProfile(
   certs: CertificadoDetailEntity[],
   profile: UserProfile | null | undefined,
-  clientOrgIds: string[],
+  authorizedClientOrgIds: string[],
   scopedAudits: ProgramacionAuditEntity[]
 ): CertificadoDetailEntity[] {
   if (!profile || profile.status !== 'APPROVED') return [];
-  if (profile.role === 'ADMIN' || profile.role === 'WORKER') return certs;
-
-  if (profile.role === 'CLIENT') {
-    const allowedOrgs = new Set(clientOrgIds);
-    return certs.filter((cert) => allowedOrgs.has(cert.id_organizacion));
-  }
+  if (isApprovedStaffProfile(profile)) return certs;
 
   if (profile.role === 'AUDITOR') {
-    const { assignedCertIds, assignedCertNumbers } = getAssignedScopeSets(scopedAudits);
+    const allowedCertIds = new Set(scopedAudits.map((a) => a.id_certificado));
+    const allowedCertNums = new Set(scopedAudits.map((a) => a.numero_certificado));
     return certs.filter(
-      (cert) =>
-        assignedCertIds.has(cert.id) ||
-        assignedCertNumbers.has(cert.numero_certificado)
+      (c) => allowedCertIds.has(c.id) || allowedCertNums.has(c.numero_certificado)
     );
   }
-
-  return [];
-}
-
-export function scopeOrganizationsForProfile<T extends { id: string }>(
-  orgs: T[],
-  profile: UserProfile | null | undefined,
-  clientOrgIds: string[],
-  scopedAudits: ProgramacionAuditEntity[],
-  scopedCerts?: Array<{ organizacion_id?: string; id_organizacion?: string }>
-): T[] {
-  if (!profile || profile.status !== 'APPROVED') return [];
-  if (profile.role === 'ADMIN' || profile.role === 'WORKER') return orgs;
 
   if (profile.role === 'CLIENT') {
-    const allowedOrgs = new Set(clientOrgIds);
-    return orgs.filter((org) => allowedOrgs.has(org.id));
-  }
-
-  if (profile.role === 'AUDITOR') {
-    const allowedOrgs = new Set<string>(
-      getAssignedScopeSets(scopedAudits).assignedOrgIds
-    );
-    if (scopedCerts) {
-      for (const cert of scopedCerts) {
-        if (cert.organizacion_id) allowedOrgs.add(cert.organizacion_id);
-        if (cert.id_organizacion) allowedOrgs.add(cert.id_organizacion);
-      }
-    }
-    return orgs.filter((org) => allowedOrgs.has(org.id));
+    const allowedOrgIds = new Set(authorizedClientOrgIds);
+    return certs.filter((c) => allowedOrgIds.has(c.id_organizacion));
   }
 
   return [];
 }
 
+/**
+ * Scopes OrganizacionEntity list for Certificación -> Organizaciones.
+ */
 export function scopeOrganizacionEntitiesForProfile(
   orgs: OrganizacionEntity[],
   profile: UserProfile | null | undefined,
-  clientOrgIds: string[],
+  authorizedClientOrgIds: string[],
   scopedAudits: ProgramacionAuditEntity[]
 ): OrganizacionEntity[] {
-  return scopeOrganizationsForProfile(orgs, profile, clientOrgIds, scopedAudits);
-}
-
-export function scopeSitesOrProcessesForCertificates<
-  T extends { numero_certificado?: string; id_certificado?: string }
->(
-  items: T[],
-  scopedCerts: Array<{ id: string; numero_certificado: string }>,
-  profile: UserProfile | null | undefined
-): T[] {
   if (!profile || profile.status !== 'APPROVED') return [];
-  if (profile.role === 'ADMIN' || profile.role === 'WORKER') return items;
-
-  const allowedCertIds = new Set(scopedCerts.map((c) => c.id));
-  const allowedCertNums = new Set(scopedCerts.map((c) => c.numero_certificado));
-
-  return items.filter(
-    (item) =>
-      (item.id_certificado && allowedCertIds.has(item.id_certificado)) ||
-      (item.numero_certificado && allowedCertNums.has(item.numero_certificado))
-  );
-}
-
-export function scopeLegacyAuditsForProfile<
-  T extends { id: string; numero_certificado: string; id_certificado?: string }
->(
-  audits: T[],
-  profile: UserProfile | null | undefined,
-  scopedProgramacionAudits: ProgramacionAuditEntity[],
-  scopedCerts: Array<{ id: string; numero_certificado: string }>
-): T[] {
-  if (!profile || profile.status !== 'APPROVED') return [];
-  if (profile.role === 'ADMIN' || profile.role === 'WORKER') return audits;
+  if (isApprovedStaffProfile(profile)) return orgs;
 
   if (profile.role === 'AUDITOR') {
-    const allowedAuditIds = new Set(scopedProgramacionAudits.map((a) => a.id));
-    return audits.filter((audit) => allowedAuditIds.has(audit.id));
+    const allowedOrgIds = new Set(scopedAudits.map((a) => a.id_organizacion));
+    const allowedOrgNames = new Set(scopedAudits.map((a) => a.organizacion_nombre));
+    return orgs.filter(
+      (o) => allowedOrgIds.has(o.id) || allowedOrgNames.has(o.nombre)
+    );
   }
 
   if (profile.role === 'CLIENT') {
-    const allowedCertIds = new Set(scopedCerts.map((c) => c.id));
-    const allowedCertNums = new Set(scopedCerts.map((c) => c.numero_certificado));
-    return audits.filter(
-      (audit) =>
-        (audit.id_certificado && allowedCertIds.has(audit.id_certificado)) ||
-        allowedCertNums.has(audit.numero_certificado)
+    const allowedOrgIds = new Set(authorizedClientOrgIds);
+    return orgs.filter((o) => allowedOrgIds.has(o.id));
+  }
+
+  return [];
+}
+
+/**
+ * Scopes OrganizationRecord list for Drill-Down and legacy summaries.
+ */
+export function scopeOrganizationsForProfile(
+  orgs: OrganizationRecord[],
+  profile: UserProfile | null | undefined,
+  authorizedClientOrgIds: string[],
+  scopedAudits: ProgramacionAuditEntity[],
+  scopedCerts: CertificateRecord[]
+): OrganizationRecord[] {
+  if (!profile || profile.status !== 'APPROVED') return [];
+  if (isApprovedStaffProfile(profile)) return orgs;
+
+  if (profile.role === 'AUDITOR') {
+    const allowedOrgIds = new Set<string>([
+      ...scopedAudits.map((a) => a.id_organizacion),
+      ...scopedCerts
+        .map((c) => c.organizacion_id)
+        .filter((id): id is string => Boolean(id)),
+    ]);
+    const allowedOrgNames = new Set<string>([
+      ...scopedAudits.map((a) => a.organizacion_nombre),
+      ...scopedCerts.map((c) => c.organizacion_nombre),
+    ]);
+    return orgs.filter(
+      (o) => allowedOrgIds.has(o.id) || allowedOrgNames.has(o.nombre)
+    );
+  }
+
+  if (profile.role === 'CLIENT') {
+    const allowedOrgIds = new Set(authorizedClientOrgIds);
+    const allowedOrgNames = new Set(scopedCerts.map((c) => c.organizacion_nombre));
+    return orgs.filter(
+      (o) => allowedOrgIds.has(o.id) || allowedOrgNames.has(o.nombre)
     );
   }
 
   return [];
 }
 
+/**
+ * Scopes legacy AuditRecord entries for Drill-Down.
+ */
+export function scopeLegacyAuditsForProfile(
+  audits: AuditRecord[],
+  profile: UserProfile | null | undefined,
+  scopedAudits: ProgramacionAuditEntity[],
+  scopedCerts: CertificateRecord[]
+): AuditRecord[] {
+  if (!profile || profile.status !== 'APPROVED') return [];
+  if (isApprovedStaffProfile(profile)) return audits;
+
+  const allowedAuditIds = new Set(scopedAudits.map((a) => a.id));
+  const allowedCertIds = new Set(scopedCerts.map((c) => c.id));
+  const allowedCertNums = new Set(scopedCerts.map((c) => c.numero_certificado));
+
+  return audits.filter(
+    (a) =>
+      allowedAuditIds.has(a.id) ||
+      (a.id_certificado && allowedCertIds.has(a.id_certificado)) ||
+      allowedCertNums.has(a.numero_certificado)
+  );
+}
+
+/**
+ * Scopes legacy FindingRecord entries for Drill-Down.
+ */
 export function scopeLegacyFindingsForProfile(
   findings: FindingRecord[],
-  scopedLegacyAudits: Array<{ id: string }>,
-  scopedCerts: Array<{ numero_certificado: string }>,
+  scopedLegacyAudits: AuditRecord[],
+  scopedCerts: CertificateRecord[],
   profile: UserProfile | null | undefined
 ): FindingRecord[] {
   if (!profile || profile.status !== 'APPROVED') return [];
-  if (profile.role === 'ADMIN' || profile.role === 'WORKER') return findings;
+  if (isApprovedStaffProfile(profile)) return findings;
 
   const allowedAuditIds = new Set(scopedLegacyAudits.map((a) => a.id));
   const allowedCertNums = new Set(scopedCerts.map((c) => c.numero_certificado));
 
   return findings.filter(
-    (finding) =>
-      allowedAuditIds.has(finding.id_auditoria) ||
-      (profile.role === 'CLIENT' &&
-        Boolean(finding.numero_certificado && allowedCertNums.has(finding.numero_certificado)))
+    (f) =>
+      allowedAuditIds.has(f.id_auditoria) ||
+      (f.numero_certificado && allowedCertNums.has(f.numero_certificado))
   );
+}
+
+/**
+ * Scopes SiteRecord or ProcessRecord lists by the visible certificates.
+ */
+export function scopeSitesOrProcessesForCertificates<
+  T extends { numero_certificado: string }
+>(
+  items: T[],
+  scopedCerts: CertificateRecord[],
+  profile: UserProfile | null | undefined
+): T[] {
+  if (!profile || profile.status !== 'APPROVED') return [];
+  if (isApprovedStaffProfile(profile)) return items;
+
+  const allowedCertNums = new Set(scopedCerts.map((c) => c.numero_certificado));
+  return items.filter((item) => allowedCertNums.has(item.numero_certificado));
 }

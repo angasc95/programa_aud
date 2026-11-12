@@ -236,7 +236,7 @@ export function renderHeader(opts: HeaderOptions): string {
           data-nav="dashboard"
           data-nav-reset="true"
           title="Programa de Auditoría — Ir al Inicio"
-          class="order-1 py-2.5 lg:py-0 inline-flex items-center gap-2 sm:gap-2.5 text-sm sm:text-base font-bold tracking-tight text-slate-900 whitespace-nowrap min-w-0 hover:text-slate-700 transition-colors cursor-pointer"
+          class="order-1 py-2.5 lg:py-0 inline-flex items-center gap-2 sm:gap-2.5 text-sm sm:text-base font-bold tracking-tight text-slate-900 whitespace-nowrap min-w-0 flex-1 lg:flex-initial hover:text-slate-700 transition-colors cursor-pointer"
         >
           <span class="inline-flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-900 text-white text-[11px] sm:text-xs font-bold shrink-0" aria-hidden="true">PA</span>
           <span class="truncate">Programa de Auditoría</span>
@@ -252,14 +252,14 @@ export function renderHeader(opts: HeaderOptions): string {
             aria-haspopup="menu"
             aria-expanded="${accountMenuOpen ? 'true' : 'false'}"
             title="${escapeHtml(identity.tooltip)}"
-            class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-slate-300 bg-white transition-colors cursor-pointer whitespace-nowrap shadow-2xs"
+            class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-slate-300 bg-white transition-colors cursor-pointer whitespace-nowrap shadow-2xs"
           >
             <span class="text-base select-none shrink-0" aria-hidden="true">${identity.icon}</span>
             <div class="text-left leading-tight min-w-0">
-              <div class="text-xs font-bold text-slate-900 truncate max-w-32 sm:max-w-44">
+              <div class="text-xs font-bold text-slate-900 truncate max-w-20 sm:max-w-44">
                 ${escapeHtml(profile.nombre)}
               </div>
-              <div class="text-[10px] text-slate-500 font-medium truncate">
+              <div class="text-[10px] text-slate-500 font-medium truncate max-w-20 sm:max-w-none">
                 ${escapeHtml(identity.subtitle)}
               </div>
             </div>

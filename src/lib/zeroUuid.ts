@@ -11,11 +11,47 @@ export function extractVisibleTextFromHtml(html: string): string {
 }
 
 /**
- * Finds all raw UUIDs exposed in the visible text of an HTML string.
+ * Extracts user-visible HTML attribute text (tooltips, aria-labels, placeholders,
+ * and visible non-hidden <input> values) while ignoring hidden inputs, <option value>,
+ * and internal data-* attributes.
+ */
+export function extractVisibleAttributeTextFromHtml(html: string): string {
+  const parts: string[] = [];
+
+  // Tooltips, accessibility labels, and placeholders
+  const attrRegex = /\b(?:title|aria-label|placeholder)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+  let attrMatch: RegExpExecArray | null;
+  while ((attrMatch = attrRegex.exec(html)) !== null) {
+    const val = attrMatch[1] ?? attrMatch[2] ?? '';
+    if (val) parts.push(val);
+  }
+
+  // Visible <input> values (exclude type="hidden")
+  const inputTagRegex = /<input\b([^>]*)>/gi;
+  let inputMatch: RegExpExecArray | null;
+  while ((inputMatch = inputTagRegex.exec(html)) !== null) {
+    const attrs = inputMatch[1] || '';
+    if (/\btype\s*=\s*(?:"hidden"|'hidden'|hidden\b)/i.test(attrs)) {
+      continue;
+    }
+    const valMatch = attrs.match(/\bvalue\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+    if (valMatch) {
+      const val = valMatch[1] ?? valMatch[2] ?? '';
+      if (val) parts.push(val);
+    }
+  }
+
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Finds all raw UUIDs exposed in visible text, tooltips, or visible form inputs of an HTML string.
  */
 export function findExposedUuidsInHtml(html: string): string[] {
   const visibleText = extractVisibleTextFromHtml(html);
-  const matches = visibleText.match(UUID_REGEX);
+  const visibleAttrs = extractVisibleAttributeTextFromHtml(html);
+  const combined = `${visibleText} ${visibleAttrs}`;
+  const matches = combined.match(UUID_REGEX);
   return matches ? Array.from(new Set(matches)) : [];
 }
 

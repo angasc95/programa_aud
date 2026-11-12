@@ -195,18 +195,23 @@ export function getActionVisualMeta(action: string): {
   }
 }
 
+const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
 /**
- * Formats a raw value safely for display in a diff.
+ * Formats a raw value safely for display in a diff without exposing raw UUIDs.
  */
 export function formatDiffValue(val: unknown): string {
   if (val === null || val === undefined) return '—';
   if (typeof val === 'boolean') return val ? 'true' : 'false';
+  let str: string;
   if (typeof val === 'object') {
     try {
-      return JSON.stringify(val);
+      str = JSON.stringify(val);
     } catch {
-      return String(val);
+      str = String(val);
     }
+  } else {
+    str = String(val);
   }
-  return String(val);
+  return str.replace(UUID_PATTERN, 'Referencia registrada');
 }

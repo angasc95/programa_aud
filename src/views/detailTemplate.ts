@@ -88,9 +88,11 @@ export function renderDetailPageTemplate(props: DetailPageTemplateProps): string
               ? `
                 <button
                   type="button"
-                  data-nav="${escapeHtml(parentInfo.navAction.nav)}"
-                  ${parentInfo.navAction.subview ? `data-subview="${escapeHtml(parentInfo.navAction.subview)}"` : ''}
-                  ${parentInfo.navAction.entityId ? `data-drilldown-select-org="${escapeHtml(parentInfo.navAction.entityId)}"` : ''}
+                  ${
+                    parentInfo.navAction.entityId
+                      ? `data-drilldown-select-org="${escapeHtml(parentInfo.navAction.entityId)}"`
+                      : `data-nav="${escapeHtml(parentInfo.navAction.nav)}"${parentInfo.navAction.subview ? ` data-subview="${escapeHtml(parentInfo.navAction.subview)}"` : ''}`
+                  }
                   class="font-bold text-indigo-600 hover:text-indigo-800 hover:underline transition-colors cursor-pointer inline-flex items-center gap-1"
                 >
                   <span>🏢</span>

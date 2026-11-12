@@ -1,4 +1,5 @@
 import { escapeHtml } from '../lib/html';
+import { truncateBreadcrumbLabel } from '../lib/breadcrumb';
 import type { UserProfile } from '../lib/healthCheck';
 import type { CertificateRecord } from '../lib/searchControls';
 import type {
@@ -107,29 +108,39 @@ export function renderDrillDownView(
 
       ${
         selectedOrg
-          ? `
+          ? (() => {
+              const orgTruncated = truncateBreadcrumbLabel(selectedOrg.nombre);
+              return `
             <button
               type="button"
               data-drilldown-select-org="${escapeHtml(selectedOrg.id)}"
+              title="${escapeHtml(selectedOrg.nombre)}"
               class="font-medium hover:text-slate-900 transition-colors cursor-pointer inline-flex items-center gap-1 ${
                 !selectedCert ? 'text-indigo-600 font-bold' : 'text-slate-700'
               }"
             >
-              <span class="truncate max-w-48 sm:max-w-64">${escapeHtml(selectedOrg.nombre)}</span>
+              <span class="truncate max-w-48 sm:max-w-64">${escapeHtml(orgTruncated.display)}</span>
             </button>
-          `
+          `;
+            })()
           : `<span class="text-slate-400 italic">Seleccione organización</span>`
       }
 
       ${
         selectedCert
-          ? `
+          ? (() => {
+              const certTruncated = truncateBreadcrumbLabel(selectedCert.numero_certificado);
+              return `
             <span class="text-slate-300">/</span>
-            <span class="font-bold text-slate-900 font-mono inline-flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded text-[11px]">
-              <span>📜</span>
-              <span>${escapeHtml(selectedCert.numero_certificado)}</span>
+            <span
+              title="${escapeHtml(selectedCert.numero_certificado)}"
+              class="font-bold text-slate-900 font-mono inline-flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded text-[11px] max-w-48 sm:max-w-64 truncate"
+            >
+              <span aria-hidden="true">📜</span>
+              <span class="truncate">${escapeHtml(certTruncated.display)}</span>
             </span>
-          `
+          `;
+            })()
           : ''
       }
     </nav>
@@ -937,10 +948,10 @@ export function renderDrillDownView(
       <section class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div class="space-y-1">
-            <div class="flex items-center gap-2">
-              <span class="text-lg">🏢</span>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-lg shrink-0">🏢</span>
               <h2 class="text-lg font-bold text-slate-900">${escapeHtml(selectedOrg.nombre)}</h2>
-              <span class="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+              <span class="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
                 ${escapeHtml(selectedOrg.rif)}
               </span>
             </div>
@@ -1052,6 +1063,7 @@ export function renderDrillDownView(
                     id="detailScopeInput"
                     maxlength="1000"
                     rows="2"
+                    ${!['ADMIN', 'WORKER'].includes(profile.role) ? 'readonly' : ''}
                     class="w-full text-xs rounded-lg border border-slate-300 p-2.5 bg-slate-50/50 text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
                   >${escapeHtml(selectedCert.alcance || 'Fabricación, mecanizado y comercialización de componentes mecánicos y metálicos para uso industrial automotriz.')}</textarea>
                 </div>

@@ -9,6 +9,8 @@ import {
   MAX_BREADCRUMB_CHAR_LENGTH,
   type BreadcrumbSegment,
 } from './breadcrumb';
+import { renderBreadcrumbBar } from '../views/breadcrumbView';
+import { renderHeader } from '../views/header';
 
 test('truncateBreadcrumbLabel preserves labels <= 24 characters', () => {
   const shortLabel = 'Planta Central';
@@ -121,4 +123,66 @@ test('containsRawUuid detects exposed UUIDs to enforce Zero-UUID mandate', () =>
   assert.equal(containsRawUuid('CyberCloud Solutions S.L.'), false);
   assert.equal(containsRawUuid('FN-QMS-2024-001 (ISO 9001:2015)'), false);
   assert.equal(containsRawUuid('Sede Central (Sitio 0)'), false);
+});
+
+test('renderBreadcrumbBar truncates labels > 24 chars with ellipsis and preserves full title tooltip', () => {
+  const longOrgName = 'Petroquímica del Centro C.A.';
+  assert.equal(longOrgName.length > MAX_BREADCRUMB_CHAR_LENGTH, true);
+
+  let trail = resetBreadcrumbToDomain('certificacion', 'organizations');
+  trail = pushBreadcrumb(trail, {
+    id: 'org-petro',
+    label: longOrgName,
+    route: 'certificacion',
+    subview: 'organizations',
+    entityId: 'org-petro',
+    tooltip: `Organización > ${longOrgName}`,
+  });
+  trail = pushBreadcrumb(trail, {
+    id: 'cert-long',
+    label: 'FN-QMS-2024-001-MULTISITIO-EXTENDIDO',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityId: 'cert-1',
+    tooltip: 'Certificado > FN-QMS-2024-001-MULTISITIO-EXTENDIDO',
+  });
+
+  const html = renderBreadcrumbBar({ trail });
+  assert.ok(html.includes('data-breadcrumb-id="domain-certificacion"'));
+  assert.ok(html.includes('data-breadcrumb-id="subview-certificacion-organizations"'));
+  assert.ok(html.includes('data-breadcrumb-id="org-petro"'));
+  // Ancestor org truncated to 24 chars max with ellipsis, full name in title
+  assert.ok(html.includes('Petroquímica del Centro…'));
+  assert.ok(html.includes('title="Organización &gt; Petroquímica del Centro C.A."'));
+  // Active leaf truncated with CSS truncate + 24-char truncation + full title
+  assert.ok(html.includes('FN-QMS-2024-001-MULTISI…'));
+  assert.ok(html.includes('title="Certificado &gt; FN-QMS-2024-001-MULTISITIO-EXTENDIDO"'));
+  assert.ok(html.includes('aria-current="page"'));
+  assert.ok(html.includes('truncate'));
+
+  // Single root segment collapses the breadcrumb bar
+  assert.equal(renderBreadcrumbBar({ trail: resetBreadcrumbToDomain('dashboard') }), '');
+});
+
+test('renderHeader enforces Top-Header Reset Rule with data-nav-reset on all global nav triggers', () => {
+  const html = renderHeader({
+    profile: {
+      id: '11111111-1111-1111-1111-111111111111',
+      nombre: 'Admin FONDONORMA',
+      role: 'ADMIN',
+      status: 'APPROVED',
+    },
+    email: 'admin@fondonorma.test',
+    isAdmin: true,
+    canViewApprovals: true,
+    activeRoute: 'certificacion',
+    activeSubSection: 'organizations',
+    pendingCount: 1,
+    openMenu: null,
+  });
+
+  assert.ok(html.includes('data-nav="auditorias"'));
+  assert.ok(html.includes('data-nav="certificacion"'));
+  assert.ok(html.includes('data-nav="extra"'));
+  assert.ok(html.includes('data-nav-reset="true"'));
 });
