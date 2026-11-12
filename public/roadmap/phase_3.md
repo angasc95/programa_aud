@@ -11,7 +11,7 @@ The domain consists of five core entities accessible from the top navigation dro
 4. **`Tipo`** (Audit modalities and stages).
 5. **`Metodología`** (Audit execution formats).
 
-Every catalog entity adheres to the **Repeatable View Architecture Pattern** (Standard List, Standard Grid, Standard Detail) and the **4-Zone Standardized Detail Page Architecture** defined in Phase 2.
+Every catalog entity adheres to the Universal List/Grid View Template and Standardized Detail Page Architecture defined in Phase 2.
 
 ---
 
@@ -19,32 +19,33 @@ Every catalog entity adheres to the **Repeatable View Architecture Pattern** (St
 
 ### 2.1 Norma Management (`src/views/normaView.ts`)
 
-#### A. List & Grid Views (Repeatable Pattern)
-- **Standard List Mode:** High-density table featuring sortable columns (`Código ▲▼`, `Título ▲▼`, `Estatus ▲▼`, `Acreditaciones ▲▼`, `Total Cláusulas ▲▼`), column popover filters, and clickable rows that transition to the Detail View.
-- **Standard Grid Mode:** Responsive cards highlighting standard badge, formal title, publication year, active accreditation badges (e.g., `ENAC`, `UKAS`), and requirement count strip.
-- **Filtering & Search:** Real-time search across code and title; sidebar facets for normative status (`Vigente`, `En Revisión`, `Obsoleta`) and accreditation body.
+#### A. List / Directory View
+- **Columns & Data Cards:**
+  - **Código:** Canonical standard designation (e.g., `ISO 9001:2015`, `ISO 14001:2015`, `ISO 27001:2022`).
+  - **Título:** Official standard title (e.g., `Sistemas de Gestión de la Calidad — Requisitos`).
+  - **Estatus:** Current normative status badge (`Vigente`, `En Revisión`, `Obsoleta`).
+  - **Acreditaciones:** Active accreditation bodies recognizing this standard (e.g., `ENAC`, `UKAS`).
+  - **Total Cláusulas:** Count of registered requirements in the `ltree` hierarchy.
+- **Filtering & Search:** Real-time search across code and title; sidebar facets for status and accreditation body.
 
-#### B. Standard Detail Page (4-Zone Architecture)
-Adheres to the standardized 4-zone detail page blueprint:
+#### B. Standard Detail Page & Child Tabs
+Adheres to the Standardized Detail Page blueprint with two specialized multi-page child tabs:
 
-1. **Header & Changelog:** Standard designation (e.g., `ISO 9001:2015`), status badge (`Vigente`), and top-right `🕒 Historial de Cambios` trigger.
-2. **Parent Data Section (Upper Zone):** Displays parent management system family / committee metadata (e.g., *ISO/TC 176 Gestión y Aseguramiento de la Calidad*) with clickable navigational references.
-3. **Visual Separator:** Minimal horizontal dividing rule.
-4. **Direct Record Attributes (Multi-Column View/Edit):**
-   - Read-only formatted fields: `Código`, `Título Oficial`, `Estatus Normativo`, `Fecha de Publicación`, `Edición / Revisión`.
-   - Edit mode (for `ADMIN` and `WORKER`): small textboxes for code/edition, selector for status (`Vigente`, `En Revisión`, `Obsoleta`), datepicker for publication date.
-5. **Multipage / Child Tabs Section (Lower Zone):**
-   - **Tab 1: Acreditación (`acreditacion_norma_iaf`):** Structured list of accredited scopes:
-     - Organismo de Acreditación (clickable friendly name, e.g., *ENAC*).
+1. **Tab 1: Acreditación (`acreditacion_norma_iaf`)**
+   - Tabular display of accredited scopes for the standard:
+     - Organismo de Acreditación (human-readable name, e.g., *Entidad Nacional de Acreditación - ENAC*).
      - Número de Acreditación (e.g., `01/C-SC001`).
      - Sectores y Sub-Sectores IAF amparados.
      - Período de Validez (Fecha Concesión y Fecha Vencimiento).
      - Estado de Acreditación (`Activa`, `En Renovación`, `Suspendida`).
-   - **Tab 2: Requisitos (`requisito`):** Hierarchical interactive requirement tree powered by PostgreSQL `ltree`:
+   - Inline creation/edit modal for authorized administrators.
+
+2. **Tab 2: Requisitos (`requisito`)**
+   - Hierarchical interactive requirement tree powered by PostgreSQL `ltree`:
      - Cláusula / Código (e.g., `4`, `4.1`, `4.2`, `8.5.1`).
      - Título y Descripción del Requisito.
      - Nivel de Jerarquía y visual indenting.
-     - Acciones de inspección y edición de cláusulas. Clickable rows drill down into requirement details.
+     - Acciones de inspección y edición de cláusulas.
 
 ---
 
