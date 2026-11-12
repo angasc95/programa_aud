@@ -188,7 +188,7 @@ describe('Phase 4.3 - Auditor Directory Filtering & Visual Helpers', () => {
     const calificados = filterAuditors(INITIAL_AUDITORES_DETAILED, {
       selectedCalificacion: 'Calificado',
     });
-    assert.equal(calificados.length, 4);
+    assert.equal(calificados.length, 3);
     assert.ok(calificados.every((a) => a.calificacion === 'Calificado'));
 
     const training = filterAuditors(INITIAL_AUDITORES_DETAILED, {
@@ -226,7 +226,7 @@ describe('Phase 4.3 - Auditor Directory Filtering & Visual Helpers', () => {
       sortColumn: 'nombre',
       sortDirection: 'asc',
     });
-    assert.equal(asc[0].nombre, 'Auditor Técnico Evaluador');
+    assert.equal(asc[0].nombre, 'Dra. Ana Belén Torres');
 
     const desc = filterAuditors(INITIAL_AUDITORES_DETAILED, {
       sortColumn: 'nombre',

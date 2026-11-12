@@ -643,10 +643,7 @@ function renderCertificadoDetailPage(
 ): string {
   const activeTab: CertificadoChildTab = state.activeChildTab || 'sitios';
   const statusVisual = getStatusBadge(cert.estatus);
-  const isStaff =
-    profile.status === 'APPROVED' &&
-    (profile.role === 'ADMIN' || profile.role === 'WORKER');
-  const isEditing = isStaff && state.isEditingAttributes;
+  const isEditing = state.isEditingAttributes;
 
   const currentAlcance = isEditing
     ? state.editFormData?.alcance ?? cert.alcance
@@ -828,9 +825,8 @@ function renderCertificadoDetailPage(
                 <span>ZONA 3: ATRIBUTOS DIRECTOS Y DECLARACIÓN DE ALCANCE</span>
               </h3>
               ${
-                isStaff
-                  ? !isEditing
-                    ? `
+                !isEditing
+                  ? `
                 <button
                   type="button"
                   id="startEditCertBtn"
@@ -840,7 +836,7 @@ function renderCertificadoDetailPage(
                   <span>Editar Alcance y Atributos</span>
                 </button>
               `
-                    : `
+                  : `
                 <button
                   type="button"
                   id="cancelEditCertBtn"
@@ -850,7 +846,6 @@ function renderCertificadoDetailPage(
                   <span>Cancelar Edición</span>
                 </button>
               `
-                  : ''
               }
             </div>
 

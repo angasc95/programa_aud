@@ -570,10 +570,7 @@ function renderAuditorDetailPage(
 ): string {
   const activeTab: AuditorChildTab = state.activeChildTab || 'competencias';
   const statusVisual = getQualificationStatusVisual(auditor.calificacion);
-  const isStaff =
-    profile.status === 'APPROVED' &&
-    (profile.role === 'ADMIN' || profile.role === 'WORKER');
-  const isEditing = isStaff && state.isEditingAttributes;
+  const isEditing = state.isEditingAttributes;
 
   const currentBio = isEditing
     ? state.editFormData?.biografia ?? auditor.biografia
@@ -693,9 +690,8 @@ function renderAuditorDetailPage(
                 <span>ZONA 3: ATRIBUTOS DIRECTOS Y PERFIL PROFESIONAL</span>
               </h3>
               ${
-                isStaff
-                  ? !isEditing
-                    ? `
+                !isEditing
+                  ? `
                 <button
                   type="button"
                   id="startEditAuditorBtn"
@@ -705,7 +701,7 @@ function renderAuditorDetailPage(
                   <span>Editar Perfil</span>
                 </button>
               `
-                    : `
+                  : `
                 <button
                   type="button"
                   id="cancelEditAuditorBtn"
@@ -715,7 +711,6 @@ function renderAuditorDetailPage(
                   <span>Cancelar Edición</span>
                 </button>
               `
-                  : ''
               }
             </div>
 

@@ -75,25 +75,7 @@ import {
 } from './lib/breadcrumb';
 import { renderBreadcrumbBar } from './views/breadcrumbView';
 import { renderAuditLogModal } from './views/auditLogModal';
-import {
-  SEEDED_ACTOR_DIRECTORY,
-  type ActorDirectoryEntry,
-  type AuditLogEntry,
-} from './lib/auditLog';
-import {
-  canEditAuditScheduleOrTeam,
-  canMutateAuditExecution,
-  isApprovedStaffProfile,
-  scopeCertificateRecordsForProfile,
-  scopeDetailedCertsForProfile,
-  scopeLegacyAuditsForProfile,
-  scopeLegacyFindingsForProfile,
-  scopeOrganizacionEntitiesForProfile,
-  scopeOrganizationsForProfile,
-  scopePhase5FindingsForProfile,
-  scopeProgramacionAuditsForProfile,
-  scopeSitesOrProcessesForCertificates,
-} from './lib/accessControl';
+import type { AuditLogEntry } from './lib/auditLog';
 import {
   cycleSortDirection,
   type SortDirection,
@@ -155,7 +137,6 @@ interface AppState {
   booting: boolean;
   user: User | null;
   profile: UserProfile | null;
-  authorizedClientOrgIds: string[];
   activeRoute: ActiveRoute;
   activeSubSection: string | null;
   openMenu: HeaderDropdownId | null;
@@ -166,7 +147,6 @@ interface AppState {
     tableName: string;
     recordId: string;
     entries: AuditLogEntry[];
-    actorDirectory?: Record<string, ActorDirectoryEntry>;
     loading: boolean;
     errorMessage: string | null;
   };
@@ -497,7 +477,6 @@ const state: AppState = {
   booting: true,
   user: null,
   profile: null,
-  authorizedClientOrgIds: [],
   activeRoute: 'dashboard',
   activeSubSection: null,
   openMenu: null,
@@ -508,7 +487,6 @@ const state: AppState = {
     tableName: '',
     recordId: '',
     entries: [],
-    actorDirectory: { ...SEEDED_ACTOR_DIRECTORY },
     loading: false,
     errorMessage: null,
   },
@@ -715,18 +693,6 @@ function isApprovedAdmin(): boolean {
   return evaluateAdminAccess(state.profile).allowed;
 }
 
-function isApprovedStaff(): boolean {
-  return isApprovedStaffProfile(state.profile);
-}
-
-function canMutateAuditById(auditId: string | null | undefined): boolean {
-  if (!state.profile || state.profile.status !== 'APPROVED') return false;
-  if (isApprovedStaff()) return true;
-  if (!auditId) return false;
-  const audit = state.domainData.programacionAudits.find((a) => a.id === auditId);
-  return canMutateAuditExecution(audit, state.profile);
-}
-
 function render(): void {
   const root = document.getElementById('app');
   if (!root) return;
@@ -769,66 +735,7 @@ function render(): void {
   }
 
   const admin = isApprovedAdmin();
-  const staff = isApprovedStaff();
   const pendingCount = state.approvals.profiles.filter((p) => p.status === 'PENDING').length;
-
-  const scopedProgramacionAudits = scopeProgramacionAuditsForProfile(
-    state.domainData.programacionAudits,
-    state.profile,
-    state.authorizedClientOrgIds
-  );
-  const scopedPhase5Findings = scopePhase5FindingsForProfile(
-    state.domainData.phase5Findings,
-    scopedProgramacionAudits,
-    state.profile
-  );
-  const scopedExplorationRecords = scopeCertificateRecordsForProfile(
-    state.exploration.records,
-    state.profile,
-    state.authorizedClientOrgIds,
-    scopedProgramacionAudits
-  );
-  const scopedDetailedCerts = scopeDetailedCertsForProfile(
-    state.domainData.allCertificadosDetailed,
-    state.profile,
-    state.authorizedClientOrgIds,
-    scopedProgramacionAudits
-  );
-  const scopedAllOrganizaciones = scopeOrganizacionEntitiesForProfile(
-    state.domainData.allOrganizaciones,
-    state.profile,
-    state.authorizedClientOrgIds,
-    scopedProgramacionAudits
-  );
-  const scopedOrganizations = scopeOrganizationsForProfile(
-    state.domainData.organizations,
-    state.profile,
-    state.authorizedClientOrgIds,
-    scopedProgramacionAudits,
-    scopedExplorationRecords
-  );
-  const scopedLegacyAudits = scopeLegacyAuditsForProfile(
-    state.domainData.audits,
-    state.profile,
-    scopedProgramacionAudits,
-    scopedExplorationRecords
-  );
-  const scopedLegacyFindings = scopeLegacyFindingsForProfile(
-    state.domainData.findings,
-    scopedLegacyAudits,
-    scopedExplorationRecords,
-    state.profile
-  );
-  const scopedSites = scopeSitesOrProcessesForCertificates(
-    state.domainData.sites,
-    scopedExplorationRecords,
-    state.profile
-  );
-  const scopedProcesses = scopeSitesOrProcessesForCertificates(
-    state.domainData.processes,
-    scopedExplorationRecords,
-    state.profile
-  );
 
   let effectiveRoute: ActiveRoute = state.activeRoute;
   if (!canAccessRoute(state.profile, effectiveRoute)) {
@@ -837,17 +744,8 @@ function render(): void {
     state.activeSubSection = null;
   }
 
-  const effectiveResultadoState: ResultadoViewState = {
-    ...state.resultadoDomain,
-    activeAuditIdForDecision: scopedProgramacionAudits.some(
-      (a) => a.id === state.resultadoDomain.activeAuditIdForDecision
-    )
-      ? state.resultadoDomain.activeAuditIdForDecision
-      : scopedProgramacionAudits[0]?.id || '',
-  };
-
   let bodyHtml = '';
-  if (effectiveRoute === 'approvals' && staff) {
+  if (effectiveRoute === 'approvals' && admin) {
     bodyHtml = renderApprovalsView({
       profiles: state.approvals.profiles,
       filter: state.approvals.filter,
@@ -856,7 +754,6 @@ function render(): void {
       errorMessage: state.approvals.errorMessage,
       successMessage: state.approvals.successMessage,
       currentAdminId: state.user.id,
-      readOnly: !admin,
     });
   } else if (effectiveRoute === 'database' && admin) {
     bodyHtml = renderDatabaseStatusView(
@@ -873,16 +770,16 @@ function render(): void {
       selectedCertId: state.drilldown.selectedCertId,
       activeTab: state.drilldown.activeTab,
       orgSearchQuery: state.drilldown.orgSearchQuery,
-      organizations: scopedOrganizations,
-      certificates: scopedExplorationRecords,
-      sites: scopedSites,
-      processes: scopedProcesses,
+      organizations: state.domainData.organizations,
+      certificates: state.exploration.records,
+      sites: state.domainData.sites,
+      processes: state.domainData.processes,
       shifts: state.domainData.shifts,
       standards: state.domainData.standards,
       requirements: state.domainData.requirements,
-      audits: scopedLegacyAudits,
+      audits: state.domainData.audits,
       auditors: state.domainData.auditors,
-      findings: scopedLegacyFindings,
+      findings: state.domainData.findings,
       findingFilterType: state.drilldown.findingFilterType,
       findingFilterStatus: state.drilldown.findingFilterStatus,
       isLoggingFinding: state.drilldown.isLoggingFinding,
@@ -894,24 +791,24 @@ function render(): void {
       activeSubSection: state.activeSubSection || 'scheduling',
       programacionState: state.programacionDomain,
       calendarioState: state.calendarioDomain,
-      resultadoState: effectiveResultadoState,
-      programacionAudits: scopedProgramacionAudits,
-      phase5Findings: scopedPhase5Findings,
+      resultadoState: state.resultadoDomain,
+      programacionAudits: state.domainData.programacionAudits,
+      phase5Findings: state.domainData.phase5Findings,
       allAuditorsDetailed: state.domainData.allAuditorsDetailed,
-      certificates: scopedExplorationRecords,
-      processes: scopedProcesses,
+      certificates: state.exploration.records,
+      processes: state.domainData.processes,
       requirements: state.domainData.requirements,
       standards: state.domainData.standards,
       loading: state.domainData.loading,
     });
   } else if (effectiveRoute === 'certificacion') {
-    const filteredRecords = filterCertificateRecords(scopedExplorationRecords, {
+    const filteredRecords = filterCertificateRecords(state.exploration.records, {
       query: state.exploration.query,
       selectedStatus: state.exploration.selectedStatus,
       selectedStandard: state.exploration.selectedStandard,
     });
-    const availableStatuses = extractUniqueStatuses(scopedExplorationRecords);
-    const availableStandards = extractUniqueStandards(scopedExplorationRecords);
+    const availableStatuses = extractUniqueStatuses(state.exploration.records);
+    const availableStandards = extractUniqueStandards(state.exploration.records);
 
     bodyHtml = renderCertificacionView(state.profile, {
       activeSubSection: state.activeSubSection || 'certificates',
@@ -922,18 +819,18 @@ function render(): void {
         viewMode: state.exploration.viewMode,
       },
       filteredCertificates: filteredRecords,
-      allCertificates: scopedExplorationRecords,
+      allCertificates: state.exploration.records,
       availableStatuses,
       availableStandards,
-      organizations: scopedOrganizations,
-      sites: scopedSites,
-      processes: scopedProcesses,
+      organizations: state.domainData.organizations,
+      sites: state.domainData.sites,
+      processes: state.domainData.processes,
       shifts: state.domainData.shifts,
       loading: state.exploration.loading,
       organizacionState: state.organizacionDomain,
-      allOrganizaciones: scopedAllOrganizaciones,
+      allOrganizaciones: state.domainData.allOrganizaciones,
       certificadoState: state.certificadoDomain,
-      allCertificadosDetailed: scopedDetailedCerts,
+      allCertificadosDetailed: state.domainData.allCertificadosDetailed,
       auditorState: state.auditorDomain,
       allAuditorsDetailed: state.domainData.allAuditorsDetailed,
     });
@@ -990,13 +887,13 @@ function render(): void {
       },
     });
   } else {
-    const filteredRecords = filterCertificateRecords(scopedExplorationRecords, {
+    const filteredRecords = filterCertificateRecords(state.exploration.records, {
       query: state.exploration.query,
       selectedStatus: state.exploration.selectedStatus,
       selectedStandard: state.exploration.selectedStandard,
     });
-    const availableStatuses = extractUniqueStatuses(scopedExplorationRecords);
-    const availableStandards = extractUniqueStandards(scopedExplorationRecords);
+    const availableStatuses = extractUniqueStatuses(state.exploration.records);
+    const availableStandards = extractUniqueStandards(state.exploration.records);
 
     bodyHtml = renderDashboardView(
       state.profile,
@@ -1011,7 +908,7 @@ function render(): void {
           viewMode: state.exploration.viewMode,
         },
         filteredRecords,
-        allRecords: scopedExplorationRecords,
+        allRecords: state.exploration.records,
         availableStatuses,
         availableStandards,
         loading: state.exploration.loading,
@@ -1033,7 +930,6 @@ function render(): void {
       profile: state.profile,
       email: state.user.email || '',
       isAdmin: admin,
-      canViewApprovals: staff,
       activeRoute: effectiveRoute,
       activeSubSection: state.activeSubSection,
       pendingCount,
@@ -1279,9 +1175,9 @@ function bindAuthenticatedEvents(): void {
       syncUrlHash(target, state.activeSubSection);
       render();
 
-      if (target === 'approvals' && isApprovedStaff()) {
+      if (target === 'approvals') {
         void loadApprovalProfiles();
-      } else if (target === 'database' && isApprovedAdmin() && state.dbCheck.lastCheckedAt === null) {
+      } else if (target === 'database' && state.dbCheck.lastCheckedAt === null) {
         void runHealthChecks();
       }
     });
@@ -1553,7 +1449,6 @@ function bindAuthenticatedEvents(): void {
   // Audit Planning handlers (Phase 5 Programación + Legacy Drilldown fallback)
   document.querySelectorAll<HTMLElement>('[data-action="open-plan-audit"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (!isApprovedStaff()) return;
       state.auditPlanning.isModalOpen = true;
       state.programacionDomain.isPlanningModalOpen = true;
       render();
@@ -1570,7 +1465,6 @@ function bindAuthenticatedEvents(): void {
 
   document.getElementById('planAuditForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!isApprovedStaff()) return;
     const certSelect = document.getElementById('planCertSelect') as HTMLSelectElement | null;
     const typeSelect = document.getElementById('planTypeSelect') as HTMLSelectElement | null;
     const methodSelect = document.getElementById('planMethodologySelect') as HTMLSelectElement | null;
@@ -1606,16 +1500,6 @@ function bindAuthenticatedEvents(): void {
   document.querySelectorAll<HTMLElement>('[data-action="open-log-finding"]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const auditId = btn.dataset.auditId || null;
-      if (!isApprovedStaff() && (!auditId || !canMutateAuditById(auditId))) {
-        const hasAssigned = scopeProgramacionAuditsForProfile(
-          state.domainData.programacionAudits,
-          state.profile,
-          state.authorizedClientOrgIds
-        ).length > 0;
-        if (!(state.profile?.role === 'AUDITOR' && state.profile?.status === 'APPROVED' && hasAssigned)) {
-          return;
-        }
-      }
       state.drilldown.isLoggingFinding = true;
       state.drilldown.loggingAuditId = auditId;
       render();
@@ -1639,11 +1523,8 @@ function bindAuthenticatedEvents(): void {
     const descInput = document.getElementById('findingDescInput') as HTMLTextAreaElement | null;
     const evidenceInput = document.getElementById('findingEvidenceInput') as HTMLInputElement | null;
 
-    const targetAuditId = auditSelect?.value || '';
-    if (!canMutateAuditById(targetAuditId)) return;
-
     void handleCreateFinding({
-      id_auditoria: targetAuditId,
+      id_auditoria: auditSelect?.value || '',
       tipo: (typeSelect?.value || 'NC_MENOR') as FindingType,
       id_requisito: reqSelect?.value || '',
       id_proceso: procSelect?.value || '',
@@ -1657,8 +1538,6 @@ function bindAuthenticatedEvents(): void {
       const findingId = btn.dataset.findingId;
       const isCurrentlyClosed = btn.dataset.currentClosed === 'true';
       if (findingId) {
-        const finding = state.domainData.findings.find((f) => f.id === findingId);
-        if (!canMutateAuditById(finding?.id_auditoria)) return;
         void handleToggleFindingStatus(findingId, !isCurrentlyClosed);
       }
     });
@@ -1782,7 +1661,6 @@ function bindAuthenticatedEvents(): void {
   });
 
   document.getElementById('openNewAccreditationModalBtn')?.addEventListener('click', () => {
-    if (!isApprovedStaff()) return;
     state.extraDomain.isAddAccreditationModalOpen = true;
     render();
   });
@@ -1796,7 +1674,6 @@ function bindAuthenticatedEvents(): void {
   });
   document.getElementById('newAccreditationForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!isApprovedStaff()) return;
     const form = e.target as HTMLFormElement;
     const orgId = (form.querySelector('[name="id_organismo"]') as HTMLSelectElement)?.value;
     const numero = (form.querySelector('[name="numero_acreditacion"]') as HTMLInputElement)?.value;
@@ -1914,7 +1791,6 @@ function bindAuthenticatedEvents(): void {
   });
 
   document.getElementById('openNewSubsectorModalBtn')?.addEventListener('click', () => {
-    if (!isApprovedStaff()) return;
     state.extraDomain.isAddSubsectorModalOpen = true;
     render();
   });
@@ -1928,7 +1804,6 @@ function bindAuthenticatedEvents(): void {
   });
   document.getElementById('newSubsectorForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!isApprovedStaff()) return;
     const form = e.target as HTMLFormElement;
     const codigo = (form.querySelector('[name="codigo"]') as HTMLInputElement)?.value;
     const desc = (form.querySelector('[name="descripcion"]') as HTMLTextAreaElement)?.value;
@@ -2251,7 +2126,6 @@ function bindAuthenticatedEvents(): void {
 
   // 8. Edit mode toggling
   document.getElementById('startEditOrgBtn')?.addEventListener('click', () => {
-    if (!isApprovedStaff()) return;
     state.organizacionDomain.isEditingAttributes = true;
     state.organizacionDomain.editErrorMessage = null;
     state.organizacionDomain.saveSuccessMessage = null;
@@ -2266,7 +2140,6 @@ function bindAuthenticatedEvents(): void {
   // 9. Save edited organization attributes
   document.getElementById('editOrgForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!isApprovedStaff()) return;
     const form = e.target as HTMLFormElement;
     const nombre = (form.querySelector('[name="nombre"]') as HTMLInputElement)?.value.trim() || '';
     const rif = (form.querySelector('[name="rif"]') as HTMLInputElement)?.value.trim() || '';
@@ -2522,7 +2395,6 @@ function bindAuthenticatedEvents(): void {
 
   // 10. Edit mode toggling
   document.getElementById('startEditCertBtn')?.addEventListener('click', () => {
-    if (!isApprovedStaff()) return;
     state.certificadoDomain.isEditingAttributes = true;
     state.certificadoDomain.editErrorMessage = null;
     state.certificadoDomain.saveSuccessMessage = null;
@@ -2567,7 +2439,6 @@ function bindAuthenticatedEvents(): void {
   // 12. Save edited certificate attributes
   document.getElementById('editCertForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!isApprovedStaff()) return;
     const form = e.target as HTMLFormElement;
     const alcance = (form.querySelector('[name="alcance"]') as HTMLTextAreaElement)?.value.trim() || '';
     const fecha_emision = (form.querySelector('[name="fecha_emision"]') as HTMLInputElement)?.value || '';
@@ -2828,7 +2699,6 @@ function bindAuthenticatedEvents(): void {
 
   // 10. Edit mode toggling for Auditor Direct Attributes
   document.getElementById('startEditAuditorBtn')?.addEventListener('click', () => {
-    if (!isApprovedStaff()) return;
     state.auditorDomain.isEditingAttributes = true;
     state.auditorDomain.editErrorMessage = null;
     state.auditorDomain.saveSuccessMessage = null;
@@ -2857,7 +2727,6 @@ function bindAuthenticatedEvents(): void {
   // 11. Save edited auditor attributes
   document.getElementById('editAuditorForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!isApprovedStaff()) return;
     const form = e.target as HTMLFormElement;
     const titulo_profesional = (form.querySelector('[name="titulo_profesional"]') as HTMLInputElement)?.value.trim() || '';
     const email = (form.querySelector('[name="email"]') as HTMLInputElement)?.value.trim() || '';
@@ -2905,7 +2774,6 @@ function bindAuthenticatedEvents(): void {
   // 12. Modal / action for assigning new competency
   document.querySelectorAll<HTMLElement>('[data-action="open-add-competency-modal"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (!isApprovedAdmin()) return;
       state.auditorDomain.saveSuccessMessage =
         'Asignación de nueva competencia ISO 17021-1 disponible para directores técnicos y administradores de acreditación.';
       render();
@@ -2926,7 +2794,7 @@ function recordPhase5SessionLog(
   newData: Record<string, unknown> | null
 ): void {
   const actorEmail = state.user?.email || state.profile?.nombre || 'admin@fondonorma.test';
-  const baseEntry = createSessionAuditLogEntry({
+  const entry = createSessionAuditLogEntry({
     tableName,
     recordId,
     operation,
@@ -2934,20 +2802,15 @@ function recordPhase5SessionLog(
     oldData,
     newData,
   });
-  const entry: AuditLogEntry = {
-    ...baseEntry,
-    actor_user_id: state.user?.id || null,
-    performed_by: state.user?.id || null,
-    actor_name: state.profile?.nombre || null,
-    actor_email: state.user?.email || null,
-    performed_at: baseEntry.changed_at,
-  };
   state.domainData.sessionAuditLogs = [entry, ...state.domainData.sessionAuditLogs];
 }
 
 function bindPhase5AuditoriasEvents(): void {
-  const canPlan = canEditAuditScheduleOrTeam(state.profile);
-  const canEditSchedule = canEditAuditScheduleOrTeam(state.profile);
+  const canPlan = Boolean(state.profile && ['ADMIN', 'WORKER'].includes(state.profile.role));
+  const canEditAudit = Boolean(
+    state.profile && ['ADMIN', 'WORKER', 'AUDITOR'].includes(state.profile.role)
+  );
+  const isStaffOrAuditor = canEditAudit;
 
   // --- A. Programación de Auditorías ---
   const progSearch = document.getElementById('programacionSearchInput') as HTMLInputElement | null;
@@ -3075,45 +2938,13 @@ function bindPhase5AuditoriasEvents(): void {
     btn.addEventListener('click', () => {
       const orgId = btn.dataset.orgId;
       if (!orgId) return;
-      const org =
-        state.domainData.allOrganizaciones.find((o) => o.id === orgId) ||
-        INITIAL_ORGANIZACIONES.find((o) => o.id === orgId);
-
-      if (!canAccessRoute(state.profile, 'certificacion')) {
-        if (!canAccessRoute(state.profile, 'drilldown')) return;
-        state.activeRoute = 'drilldown';
-        state.activeSubSection = null;
-        state.drilldown.selectedOrgId = orgId;
-        const orgCerts = scopeCertificateRecordsForProfile(
-          state.exploration.records,
-          state.profile,
-          state.authorizedClientOrgIds,
-          scopeProgramacionAuditsForProfile(
-            state.domainData.programacionAudits,
-            state.profile,
-            state.authorizedClientOrgIds
-          )
-        ).filter((c) => c.organizacion_id === orgId);
-        state.drilldown.selectedCertId = orgCerts[0]?.id || null;
-        state.breadcrumbs = resetBreadcrumbToDomain('drilldown');
-        if (org) {
-          state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-            id: `org-${org.id}`,
-            label: org.nombre,
-            route: 'drilldown',
-            entityId: org.id,
-            tooltip: `Organización > ${org.nombre}`,
-          });
-        }
-        syncUrlHash('drilldown', orgId);
-        render();
-        return;
-      }
-
       state.activeRoute = 'certificacion';
       state.activeSubSection = 'organizations';
       state.organizacionDomain.selectedOrganizacionId = orgId;
       state.organizacionDomain.isEditingAttributes = false;
+      const org =
+        state.domainData.allOrganizaciones.find((o) => o.id === orgId) ||
+        INITIAL_ORGANIZACIONES.find((o) => o.id === orgId);
       state.breadcrumbs = resetBreadcrumbToDomain('certificacion', 'organizations');
       if (org) {
         state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
@@ -3134,36 +2965,14 @@ function bindPhase5AuditoriasEvents(): void {
     btn.addEventListener('click', () => {
       const certId = btn.dataset.certId;
       if (!certId) return;
-      const cert =
-        state.domainData.allCertificadosDetailed.find((c) => c.id === certId) ||
-        INITIAL_CERTIFICADOS_DETAILED.find((c) => c.id === certId);
-
-      if (!canAccessRoute(state.profile, 'certificacion')) {
-        if (!canAccessRoute(state.profile, 'drilldown')) return;
-        state.activeRoute = 'drilldown';
-        state.activeSubSection = null;
-        state.drilldown.selectedOrgId = cert?.id_organizacion || null;
-        state.drilldown.selectedCertId = certId;
-        state.breadcrumbs = resetBreadcrumbToDomain('drilldown');
-        if (cert) {
-          state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-            id: `cert-${cert.id}`,
-            label: cert.numero_certificado,
-            route: 'drilldown',
-            entityId: cert.id,
-            tooltip: `Certificado > ${cert.numero_certificado}`,
-          });
-        }
-        syncUrlHash('drilldown', certId);
-        render();
-        return;
-      }
-
       state.activeRoute = 'certificacion';
       state.activeSubSection = 'certificates';
       state.certificadoDomain.selectedCertId = certId;
       state.certificadoDomain.activeChildTab = 'sitios';
       state.certificadoDomain.isEditingAttributes = false;
+      const cert =
+        state.domainData.allCertificadosDetailed.find((c) => c.id === certId) ||
+        INITIAL_CERTIFICADOS_DETAILED.find((c) => c.id === certId);
       state.breadcrumbs = resetBreadcrumbToDomain('certificacion', 'certificates');
       if (cert) {
         state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
@@ -3181,7 +2990,7 @@ function bindPhase5AuditoriasEvents(): void {
   });
 
   document.getElementById('startEditProgAuditBtn')?.addEventListener('click', () => {
-    if (!canEditSchedule) return;
+    if (!canEditAudit) return;
     state.programacionDomain.isEditingAttributes = true;
     state.programacionDomain.editErrorMessage = null;
     state.programacionDomain.saveSuccessMessage = null;
@@ -3196,7 +3005,7 @@ function bindPhase5AuditoriasEvents(): void {
 
   document.getElementById('editProgAuditForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!canEditSchedule) return;
+    if (!canEditAudit) return;
     const auditId = state.programacionDomain.selectedAuditId;
     if (!auditId) return;
 
@@ -3461,7 +3270,7 @@ function bindPhase5AuditoriasEvents(): void {
     .querySelectorAll<HTMLSelectElement>('[data-action="change-site-sampling-mode"]')
     .forEach((select) => {
       select.addEventListener('change', () => {
-        if (!canEditSchedule) return;
+        if (!canEditAudit) return;
         const auditId = select.dataset.auditId;
         const siteId = select.dataset.siteId;
         const nextMode = select.value as SiteEvaluationMode;
@@ -3503,7 +3312,7 @@ function bindPhase5AuditoriasEvents(): void {
     .querySelectorAll<HTMLInputElement>('[data-action="change-site-sampling-date"]')
     .forEach((input) => {
       input.addEventListener('change', () => {
-        if (!canEditSchedule) return;
+        if (!canEditAudit) return;
         const auditId = input.dataset.auditId;
         const siteId = input.dataset.siteId;
         const nextDate = input.value;
@@ -3543,7 +3352,7 @@ function bindPhase5AuditoriasEvents(): void {
 
   document.querySelectorAll<HTMLElement>('[data-action="toggle-site-sampled"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (!canEditSchedule) return;
+      if (!canEditAudit) return;
       const auditId = btn.dataset.auditId;
       const siteId = btn.dataset.siteId;
       if (!auditId || !siteId) return;
@@ -3584,10 +3393,11 @@ function bindPhase5AuditoriasEvents(): void {
     .querySelectorAll<HTMLSelectElement>('[data-action="change-matrix-status"]')
     .forEach((select) => {
       select.addEventListener('change', () => {
+        if (!canEditAudit) return;
         const auditId = select.dataset.auditId;
         const itemId = select.dataset.itemId;
         const nextStatus = select.value as NormativeVerificationStatus;
-        if (!auditId || !itemId || !canMutateAuditById(auditId)) return;
+        if (!auditId || !itemId) return;
 
         let clausula = '';
         let prevStatus = '';
@@ -3737,10 +3547,11 @@ function bindPhase5AuditoriasEvents(): void {
 
   document.getElementById('signRecommendationForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (!isStaffOrAuditor) return;
     const form = e.currentTarget as HTMLFormElement;
     const auditId = form.dataset.auditId || state.resultadoDomain.activeAuditIdForDecision;
     const audit = state.domainData.programacionAudits.find((a) => a.id === auditId);
-    if (!audit || !canMutateAuditExecution(audit, state.profile)) return;
+    if (!audit) return;
 
     const firma =
       (document.getElementById('recSignatureInput') as HTMLInputElement | null)?.value.trim() || '';
@@ -3819,12 +3630,7 @@ function bindPhase5AuditoriasEvents(): void {
   });
 
   document.getElementById('openNewFindingFormBtn')?.addEventListener('click', () => {
-    const hasMutableAudit = scopeProgramacionAuditsForProfile(
-      state.domainData.programacionAudits,
-      state.profile,
-      state.authorizedClientOrgIds
-    ).some((a) => canMutateAuditExecution(a, state.profile));
-    if (!hasMutableAudit) return;
+    if (!isStaffOrAuditor) return;
     state.resultadoDomain.isLoggingFinding = true;
     state.resultadoDomain.findingFormError = null;
     render();
@@ -3840,9 +3646,10 @@ function bindPhase5AuditoriasEvents(): void {
 
   document.getElementById('phase5NewFindingForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (!isStaffOrAuditor) return;
+
     const auditId =
       (document.getElementById('p5FindingAuditSelect') as HTMLSelectElement | null)?.value || '';
-    if (!canMutateAuditById(auditId)) return;
     const tipo = (
       (document.getElementById('p5FindingTypeSelect') as HTMLSelectElement | null)?.value ||
       'NC_MENOR'
@@ -4020,19 +3827,6 @@ function bindPhase5AuditoriasEvents(): void {
     const existing = state.domainData.phase5Findings.find((f) => f.id === findingId);
     if (!existing) return;
 
-    const targetAudit = state.domainData.programacionAudits.find(
-      (a) => a.id === existing.id_auditoria
-    );
-    if (!canMutateAuditExecution(targetAudit, state.profile)) {
-      const errBox = document.getElementById('findingLifecycleErrorBox');
-      if (errBox) {
-        errBox.textContent =
-          'Acceso de solo lectura: no cuenta con permisos de escritura para modificar este hallazgo.';
-        errBox.classList.remove('hidden');
-      }
-      return;
-    }
-
     const rootCause =
       (document.getElementById('modalFindingRootCause') as HTMLTextAreaElement | null)?.value.trim() ||
       '';
@@ -4046,9 +3840,9 @@ function bindPhase5AuditoriasEvents(): void {
       existing.estado_ciclo
     ) as FindingLifecycleStatus;
 
-    // Enforce RBAC for non-staff / non-assigned-auditor
+    // Enforce RBAC for CLIENT (cannot advance directly to Verificado / Cerrado)
     if (
-      !canMutateAuditExecution(targetAudit, state.profile) &&
+      !isStaffOrAuditor &&
       (nextStatus === 'Verificado' || nextStatus === 'Cerrado')
     ) {
       const errBox = document.getElementById('findingLifecycleErrorBox');
@@ -4384,7 +4178,6 @@ async function handleCreateFinding(data: {
   descripcion: string;
   evidencia?: string | null;
 }): Promise<void> {
-  if (!canMutateAuditById(data.id_auditoria)) return;
   const validation = validateFindingInput(data);
   if (!validation.valid) {
     return;
@@ -4443,9 +4236,6 @@ async function handleToggleFindingStatus(
   findingId: string,
   nextClosed: boolean
 ): Promise<void> {
-  const existingFinding = state.domainData.findings.find((f) => f.id === findingId);
-  if (!canMutateAuditById(existingFinding?.id_auditoria)) return;
-
   state.domainData.findings = state.domainData.findings.map((f) =>
     f.id === findingId ? { ...f, cerrado: nextClosed } : f
   );
@@ -4462,18 +4252,7 @@ async function handleToggleFindingStatus(
 }
 
 function updateExplorationView(): void {
-  const scopedAudits = scopeProgramacionAuditsForProfile(
-    state.domainData.programacionAudits,
-    state.profile,
-    state.authorizedClientOrgIds
-  );
-  const scopedRecords = scopeCertificateRecordsForProfile(
-    state.exploration.records,
-    state.profile,
-    state.authorizedClientOrgIds,
-    scopedAudits
-  );
-  const filtered = filterCertificateRecords(scopedRecords, {
+  const filtered = filterCertificateRecords(state.exploration.records, {
     query: state.exploration.query,
     selectedStatus: state.exploration.selectedStatus,
     selectedStandard: state.exploration.selectedStandard,
@@ -4562,7 +4341,6 @@ function generateFallbackAuditEntries(
       table_name: tableName,
       record_id: recordId,
       action: 'UPDATE',
-      actor_name: 'Administrador Principal',
       actor_email: 'admin@fondonorma.test',
       old_data: {
         estatus: 'PLANIFICADA',
@@ -4579,7 +4357,6 @@ function generateFallbackAuditEntries(
       table_name: tableName,
       record_id: recordId,
       action: 'INSERT',
-      actor_name: 'Administrador Principal',
       actor_email: 'admin@fondonorma.test',
       old_data: null,
       new_data: {
@@ -4590,24 +4367,6 @@ function generateFallbackAuditEntries(
       created_at: '2024-01-15T09:00:00Z',
     },
   ];
-}
-
-function buildActorDirectory(): Record<string, ActorDirectoryEntry> {
-  const directory: Record<string, ActorDirectoryEntry> = { ...SEEDED_ACTOR_DIRECTORY };
-  for (const prof of state.approvals.profiles) {
-    const seededEmail = directory[prof.id]?.email || null;
-    directory[prof.id] = {
-      nombre: prof.nombre,
-      email: seededEmail,
-    };
-  }
-  if (state.profile && state.user) {
-    directory[state.profile.id] = {
-      nombre: state.profile.nombre,
-      email: state.user.email || directory[state.profile.id]?.email || null,
-    };
-  }
-  return directory;
 }
 
 function sanitizeAuditLogDataMap(
@@ -4662,7 +4421,6 @@ async function openAuditLogModal(
   recordId: string,
   entityName: string
 ): Promise<void> {
-  const actorDirectory = buildActorDirectory();
   const targetAuditCode = state.domainData.programacionAudits.find(
     (a) => a.id === recordId
   )?.codigo_auditoria;
@@ -4688,7 +4446,6 @@ async function openAuditLogModal(
     tableName,
     recordId,
     entries: [],
-    actorDirectory,
     loading: true,
     errorMessage: null,
   };
@@ -4713,24 +4470,8 @@ async function openAuditLogModal(
     if (tableName) {
       query = query.eq('table_name', tableName);
     }
-
     if (recordId) {
-      if (tableName === 'hallazgo' && targetAuditCode) {
-        const { data: findingsForAudit } = await supabase
-          .from('hallazgo')
-          .select('id')
-          .eq('id_auditoria', recordId);
-        const findingIds = Array.isArray(findingsForAudit)
-          ? findingsForAudit.map((row: { id: string }) => row.id).filter(Boolean)
-          : [];
-        if (findingIds.length > 0) {
-          query = query.in('record_id', findingIds);
-        } else {
-          query = query.eq('record_id', recordId);
-        }
-      } else {
-        query = query.eq('record_id', recordId);
-      }
+      query = query.eq('record_id', recordId);
     }
 
     const { data, error } = await query.limit(20);
@@ -4744,9 +4485,8 @@ async function openAuditLogModal(
       return;
     }
 
-    const sanitizedRows = (data as Array<AuditLogEntry & { performed_at?: string; performed_by?: string | null }>).map((row) => ({
+    const sanitizedRows = (data as Array<AuditLogEntry & { performed_at?: string }>).map((row) => ({
       ...row,
-      performed_by: row.performed_by || row.changed_by || row.actor_user_id || null,
       changed_at: row.performed_at || row.changed_at,
       old_data: sanitizeAuditLogDataMap(row.old_data),
       new_data: sanitizeAuditLogDataMap(row.new_data),
@@ -4868,7 +4608,6 @@ function resetClientSessionState(): void {
   activeSessionLoadKey = null;
   state.user = null;
   state.profile = null;
-  state.authorizedClientOrgIds = [];
   state.activeRoute = 'dashboard';
   state.activeSubSection = null;
   state.openMenu = null;
@@ -4879,7 +4618,6 @@ function resetClientSessionState(): void {
     tableName: '',
     recordId: '',
     entries: [],
-    actorDirectory: { ...SEEDED_ACTOR_DIRECTORY },
     loading: false,
     errorMessage: null,
   };
@@ -5112,21 +4850,6 @@ async function loadUserSession(user: User | null): Promise<void> {
       state.profile = profileData as UserProfile;
     }
 
-    if (state.profile.role === 'CLIENT' && state.profile.status === 'APPROVED') {
-      const { data: orgAccessRows } = await supabase
-        .from('client_organization_access')
-        .select('id_organizacion')
-        .eq('id_usuario', user.id)
-        .eq('estado', 'APPROVED');
-      state.authorizedClientOrgIds = Array.isArray(orgAccessRows)
-        ? orgAccessRows
-            .map((r: { id_organizacion?: string }) => String(r.id_organizacion || ''))
-            .filter(Boolean)
-        : [];
-    } else {
-      state.authorizedClientOrgIds = [];
-    }
-
     const initialNav = parseHashRoute();
     if (canAccessRoute(state.profile, initialNav.route)) {
       state.activeRoute = initialNav.route;
@@ -5140,7 +4863,7 @@ async function loadUserSession(user: User | null): Promise<void> {
     state.openMenu = null;
     render();
 
-    if (isApprovedStaff()) {
+    if (isApprovedAdmin()) {
       void loadApprovalProfiles();
     }
 
@@ -5234,21 +4957,15 @@ async function loadLiveCertificates(): Promise<void> {
         })
       );
 
-      // Merge with sample records only for ADMIN/WORKER staff so CLIENT & AUDITOR stay strictly scoped to authorized live DB records
-      if (isApprovedStaff()) {
-        const existingCodes = new Set(loaded.map((item) => item.numero_certificado));
-        const supplemental = SAMPLE_CERTIFICATE_RECORDS.filter(
-          (s) => !existingCodes.has(s.numero_certificado)
-        );
-        state.exploration.records = [...loaded, ...supplemental];
-      } else {
-        state.exploration.records = loaded;
-      }
+      // Merge with sample records if only 1 DB seed certificate exists so user can fully test search & facets across different statuses/schemes
+      const existingCodes = new Set(loaded.map((item) => item.numero_certificado));
+      const supplemental = SAMPLE_CERTIFICATE_RECORDS.filter((s) => !existingCodes.has(s.numero_certificado));
+      state.exploration.records = [...loaded, ...supplemental];
     } else {
-      state.exploration.records = isApprovedStaff() ? [...SAMPLE_CERTIFICATE_RECORDS] : [];
+      state.exploration.records = [...SAMPLE_CERTIFICATE_RECORDS];
     }
   } catch {
-    state.exploration.records = isApprovedStaff() ? [...SAMPLE_CERTIFICATE_RECORDS] : [];
+    state.exploration.records = [...SAMPLE_CERTIFICATE_RECORDS];
   } finally {
     state.exploration.loading = false;
     render();
@@ -5567,15 +5284,11 @@ async function loadDomainData(): Promise<void> {
         };
       });
 
-      if (isApprovedStaff()) {
-        const existingIds = new Set(loadedFindings.map((f) => f.id));
-        const supplemental = INITIAL_FINDINGS.filter((f) => !existingIds.has(f.id));
-        state.domainData.findings = [...loadedFindings, ...supplemental];
-      } else {
-        state.domainData.findings = loadedFindings;
-      }
+      const existingIds = new Set(loadedFindings.map((f) => f.id));
+      const supplemental = INITIAL_FINDINGS.filter((f) => !existingIds.has(f.id));
+      state.domainData.findings = [...loadedFindings, ...supplemental];
     } else {
-      state.domainData.findings = isApprovedStaff() ? [...INITIAL_FINDINGS] : [];
+      state.domainData.findings = [...INITIAL_FINDINGS];
     }
   } catch (err) {
     console.warn('Fallback to seeded domain records:', err);
@@ -5586,7 +5299,7 @@ async function loadDomainData(): Promise<void> {
 }
 
 async function loadApprovalProfiles(): Promise<void> {
-  if (!isApprovedStaff()) return;
+  if (!isApprovedAdmin()) return;
 
   state.approvals.loading = true;
   state.approvals.errorMessage = null;
@@ -5951,9 +5664,9 @@ window.addEventListener('hashchange', () => {
       state.activeSubSection = subview;
       state.openMenu = null;
       render();
-      if (route === 'approvals' && isApprovedStaff()) {
+      if (route === 'approvals') {
         void loadApprovalProfiles();
-      } else if (route === 'database' && isApprovedAdmin() && state.dbCheck.lastCheckedAt === null) {
+      } else if (route === 'database' && state.dbCheck.lastCheckedAt === null) {
         void runHealthChecks();
       }
     }

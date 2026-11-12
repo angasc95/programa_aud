@@ -560,10 +560,7 @@ export function renderDrillDownView(
       </div>
     `;
   } else if (activeTab === 'findings') {
-    const canLogFindingHere =
-      profile.status === 'APPROVED' &&
-      (['ADMIN', 'WORKER'].includes(profile.role) ||
-        (profile.role === 'AUDITOR' && certAudits.length > 0));
+    const isAuditorOrWorker = ['ADMIN', 'WORKER', 'AUDITOR'].includes(profile.role);
 
     tabContentHtml = `
       <div class="space-y-4">
@@ -575,7 +572,7 @@ export function renderDrillDownView(
               <p class="text-xs text-slate-500">Desviaciones y evidencias identificadas según directrices ISO 19011:2018</p>
             </div>
             ${
-              canLogFindingHere
+              isAuditorOrWorker
                 ? `
                   <button
                     type="button"
@@ -713,7 +710,7 @@ export function renderDrillDownView(
 
         <!-- Finding Creation Modal / Inline Form if active -->
         ${
-          state.isLoggingFinding && canLogFindingHere
+          state.isLoggingFinding
             ? `
               <div class="bg-indigo-50/70 border-2 border-indigo-300 rounded-xl p-5 shadow-sm space-y-4 animate-in fade-in duration-150">
                 <div class="flex items-center justify-between">

@@ -1,6 +1,5 @@
 import { escapeHtml } from '../lib/html';
 import type { UserProfile } from '../lib/healthCheck';
-import { canMutateAuditExecution } from '../lib/accessControl';
 import {
   calculatePhase5FindingStats,
   evaluateIso17021Recommendation,
@@ -29,14 +28,12 @@ export interface ResultadoViewProps {
 export function renderResultadoView(props: ResultadoViewProps): string {
   const { profile, state, audits, findings, processes, requirements } = props;
 
-  const canMutateAudit = (audit: ProgramacionAuditEntity | null | undefined): boolean =>
-    canMutateAuditExecution(audit, profile);
+  const isStaffOrAuditor = ['ADMIN', 'WORKER', 'AUDITOR'].includes(profile.role);
+  const canSignDecision = ['ADMIN', 'WORKER', 'AUDITOR'].includes(profile.role);
+  const canEditCapa = ['ADMIN', 'WORKER', 'AUDITOR', 'CLIENT'].includes(profile.role);
 
   const activeAudit =
     audits.find((a) => a.id === state.activeAuditIdForDecision) || audits[0] || null;
-  const mutableAudits = audits.filter((a) => canMutateAudit(a));
-  const isStaffOrAssignedAuditor = mutableAudits.length > 0;
-  const canSignDecision = canMutateAudit(activeAudit);
 
   const recommendationEval: Iso17021RecommendationEvaluation | null = activeAudit
     ? evaluateIso17021Recommendation(findings, activeAudit.id)
@@ -58,13 +55,6 @@ export function renderResultadoView(props: ResultadoViewProps): string {
   const inspectingFinding = state.inspectingFindingId
     ? findings.find((f) => f.id === state.inspectingFindingId) || null
     : null;
-  const inspectingFindingAudit = inspectingFinding
-    ? audits.find((a) => a.id === inspectingFinding.id_auditoria) || null
-    : null;
-  const canEditInspectingFinding = Boolean(
-    inspectingFinding && canMutateAudit(inspectingFindingAudit)
-  );
-  const editableAuditIds = new Set(mutableAudits.map((a) => a.id));
 
   return `
     <div class="space-y-6">
@@ -147,7 +137,7 @@ export function renderResultadoView(props: ResultadoViewProps): string {
             }
 
             ${
-              isStaffOrAssignedAuditor
+              isStaffOrAuditor
                 ? `
                   <button
                     type="button"
@@ -201,16 +191,8 @@ export function renderResultadoView(props: ResultadoViewProps): string {
 
         <!-- Inline Registration Form -->
         ${
-          state.isLoggingFinding && isStaffOrAssignedAuditor
-            ? renderLogFindingForm(
-                mutableAudits,
-                mutableAudits.some((a) => a.id === activeAudit?.id)
-                  ? activeAudit?.id || ''
-                  : mutableAudits[0]?.id || '',
-                processes,
-                requirements,
-                state.findingFormError
-              )
+          state.isLoggingFinding && isStaffOrAuditor
+            ? renderLogFindingForm(audits, activeAudit?.id || '', processes, requirements, state.findingFormError)
             : ''
         }
 
@@ -273,14 +255,14 @@ export function renderResultadoView(props: ResultadoViewProps): string {
       <!-- Findings Board Content: Tabular vs Kanban -->
       ${
         state.displayMode === 'kanban'
-          ? renderFindingsKanbanBoard(scopedFindings, editableAuditIds)
-          : renderFindingsTable(scopedFindings, editableAuditIds)
+          ? renderFindingsKanbanBoard(scopedFindings)
+          : renderFindingsTable(scopedFindings)
       }
 
       <!-- Finding Detail / Lifecycle & CAPA Modal -->
       ${
         inspectingFinding
-          ? renderFindingDetailModal(inspectingFinding, canEditInspectingFinding)
+          ? renderFindingDetailModal(inspectingFinding, isStaffOrAuditor, canEditCapa)
           : ''
       }
     </div>
@@ -632,10 +614,7 @@ function renderLogFindingForm(
   `;
 }
 
-function renderFindingsTable(
-  findings: Phase5FindingEntity[],
-  editableAuditIds: Set<string>
-): string {
+function renderFindingsTable(findings: Phase5FindingEntity[]): string {
   if (findings.length === 0) {
     return `
       <div class="bg-white border border-slate-200 rounded-xl p-10 text-center space-y-2 shadow-2xs">
@@ -665,7 +644,6 @@ function renderFindingsTable(
               .map((f) => {
                 const typeMeta = getPhase5FindingTypeMeta(f.tipo);
                 const lifeMeta = getLifecycleStatusMeta(f.estado_ciclo);
-                const canManage = editableAuditIds.has(f.id_auditoria);
                 return `
                   <tr class="hover:bg-slate-50/80 transition-colors ${typeMeta.cardBorderClass}">
                     <td class="px-4 py-3 whitespace-nowrap">
@@ -706,9 +684,9 @@ function renderFindingsTable(
                         type="button"
                         data-action="inspect-finding"
                         data-finding-id="${escapeHtml(f.id)}"
-                        class="px-3 py-1.5 rounded-lg ${canManage ? 'bg-slate-900 hover:bg-slate-800 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'} text-xs font-semibold cursor-pointer"
+                        class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer"
                       >
-                        ${canManage ? 'Gestionar →' : 'Ver Detalle →'}
+                        Gestionar →
                       </button>
                     </td>
                   </tr>
@@ -722,10 +700,7 @@ function renderFindingsTable(
   `;
 }
 
-function renderFindingsKanbanBoard(
-  findings: Phase5FindingEntity[],
-  editableAuditIds: Set<string>
-): string {
+function renderFindingsKanbanBoard(findings: Phase5FindingEntity[]): string {
   return `
     <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4 items-start">
       ${FINDING_LIFECYCLE_ORDER.map((colStatus) => {
@@ -748,7 +723,6 @@ function renderFindingsKanbanBoard(
                   : colFindings
                       .map((f) => {
                         const typeMeta = getPhase5FindingTypeMeta(f.tipo);
-                        const canManage = editableAuditIds.has(f.id_auditoria);
                         return `
                           <article class="bg-white border border-slate-200 rounded-lg p-3 shadow-2xs space-y-2 ${typeMeta.cardBorderClass}">
                             <div class="flex items-center justify-between gap-1">
@@ -772,7 +746,7 @@ function renderFindingsKanbanBoard(
                                 data-finding-id="${escapeHtml(f.id)}"
                                 class="text-[11px] font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
                               >
-                                ${canManage ? 'Gestionar →' : 'Ver Detalle →'}
+                                Gestionar →
                               </button>
                             </div>
                           </article>
@@ -790,11 +764,14 @@ function renderFindingsKanbanBoard(
 
 function renderFindingDetailModal(
   finding: Phase5FindingEntity,
-  canEditFinding: boolean
+  isStaffOrAuditor: boolean,
+  canEditCapa: boolean
 ): string {
   const typeMeta = getPhase5FindingTypeMeta(finding.tipo);
   const lifeMeta = getLifecycleStatusMeta(finding.estado_ciclo);
-  const availableStatuses: FindingLifecycleStatus[] = [...FINDING_LIFECYCLE_ORDER];
+  const availableStatuses: FindingLifecycleStatus[] = isStaffOrAuditor
+    ? [...FINDING_LIFECYCLE_ORDER]
+    : ['Abierto', 'Causa Raíz Analizada', 'Plan de Acción Enviado'];
 
   return `
     <div
@@ -870,9 +847,9 @@ function renderFindingDetailModal(
             <textarea
               id="modalFindingRootCause"
               rows="2"
-              ${!canEditFinding ? 'readonly' : ''}
+              ${!canEditCapa ? 'readonly' : ''}
               placeholder="Describa la causa raíz identificada mediante 5 Porqués / Ishikawa..."
-              class="w-full text-xs rounded-lg border border-slate-300 px-3 py-2 ${!canEditFinding ? 'bg-slate-50' : ''}"
+              class="w-full text-xs rounded-lg border border-slate-300 px-3 py-2"
             >${escapeHtml(finding.analisis_causa_raiz)}</textarea>
           </div>
 
@@ -883,9 +860,9 @@ function renderFindingDetailModal(
             <textarea
               id="modalFindingCapa"
               rows="2"
-              ${!canEditFinding ? 'readonly' : ''}
+              ${!canEditCapa ? 'readonly' : ''}
               placeholder="Especifique acciones correctivas, responsables y evidencias de implementación..."
-              class="w-full text-xs rounded-lg border border-slate-300 px-3 py-2 ${!canEditFinding ? 'bg-slate-50' : ''}"
+              class="w-full text-xs rounded-lg border border-slate-300 px-3 py-2"
             >${escapeHtml(finding.plan_accion_correctiva)}</textarea>
           </div>
 
@@ -896,9 +873,9 @@ function renderFindingDetailModal(
             <textarea
               id="modalFindingVerification"
               rows="2"
-              ${!canEditFinding ? 'readonly' : ''}
+              ${!isStaffOrAuditor ? 'readonly' : ''}
               placeholder="Resultados de verificación documental o en sitio de la eficacia..."
-              class="w-full text-xs rounded-lg border border-slate-300 px-3 py-2 ${!canEditFinding ? 'bg-slate-50' : ''}"
+              class="w-full text-xs rounded-lg border border-slate-300 px-3 py-2 ${!isStaffOrAuditor ? 'bg-slate-50' : ''}"
             >${escapeHtml(finding.comentarios_verificacion)}</textarea>
           </div>
 
@@ -908,8 +885,8 @@ function renderFindingDetailModal(
             </label>
             <select
               id="modalFindingLifecycleSelect"
-              ${!canEditFinding ? 'disabled' : ''}
-              class="w-full text-xs font-semibold rounded-lg border border-slate-300 bg-white px-3 py-2 disabled:bg-slate-50 disabled:text-slate-600"
+              ${!canEditCapa ? 'disabled' : ''}
+              class="w-full text-xs font-semibold rounded-lg border border-slate-300 bg-white px-3 py-2"
             >
               ${availableStatuses
                 .map(
@@ -943,7 +920,7 @@ function renderFindingDetailModal(
                 Cerrar
               </button>
               ${
-                canEditFinding
+                canEditCapa
                   ? `
                     <button
                       type="submit"

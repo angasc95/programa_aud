@@ -1189,18 +1189,6 @@ export const INITIAL_PROGRAMACION_AUDITS: ProgramacionAuditEntity[] = [
         email: 'jmorales@programa-aud.com',
         telefono: '+34 912 345 679',
       },
-      {
-        id: 'eq-004',
-        id_auditor: '33333333-3333-3333-3333-333333333333',
-        nombre: 'Auditor Técnico Evaluador',
-        rol: 'Auditor de Equipo',
-        competencia_norma: 'ISO 9001:2015',
-        competencia_sector_iaf: 17,
-        credencial_codigo: 'AUD-REG-2023-33',
-        estado_credencial: 'Vigente',
-        email: 'auditor@fondonorma.test',
-        telefono: '+34 961 882 333',
-      },
     ],
     sitiosMuestreo: [
       {

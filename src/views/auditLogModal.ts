@@ -1,13 +1,11 @@
 import { escapeHtml } from '../lib/html';
 import {
   computeFieldDiffs,
-  formatAuditTimestampLocal,
   formatDiffValue,
   getActionVisualMeta,
-  resolveAuditActorDisplay,
-  type ActorDirectoryEntry,
   type AuditLogEntry,
 } from '../lib/auditLog';
+import { formatDisplayDate } from '../lib/healthCheck';
 
 export interface AuditLogModalProps {
   isOpen: boolean;
@@ -15,7 +13,6 @@ export interface AuditLogModalProps {
   tableName: string;
   recordId: string;
   entries: AuditLogEntry[];
-  actorDirectory?: Record<string, ActorDirectoryEntry>;
   loading: boolean;
   errorMessage?: string | null;
 }
@@ -25,8 +22,8 @@ export function renderAuditLogModal(props: AuditLogModalProps): string {
     isOpen,
     entityName,
     tableName,
+    recordId,
     entries,
-    actorDirectory,
     loading,
     errorMessage,
   } = props;
@@ -68,17 +65,13 @@ export function renderAuditLogModal(props: AuditLogModalProps): string {
 
         <div class="relative border-l-2 border-slate-200 pl-4 ml-2 space-y-6">
           ${entries
-            .map((entry) => {
+            .map((entry, idx) => {
               const op = entry.operation || entry.action || 'UPDATE';
-              const timestamp =
-                entry.performed_at ||
-                entry.changed_at ||
-                entry.created_at ||
-                new Date().toISOString();
+              const timestamp = entry.changed_at || entry.created_at || new Date().toISOString();
               const actionMeta = getActionVisualMeta(op);
               const diffs = computeFieldDiffs(entry.old_data, entry.new_data, op);
-              const actorInfo = resolveAuditActorDisplay(entry, actorDirectory);
-              const formattedLocal = formatAuditTimestampLocal(timestamp);
+              const actorLabel = entry.actor_email || (entry.changed_by || entry.actor_user_id ? 'Usuario Autenticado' : 'Sistema de Certificación');
+              const formattedDate = formatDisplayDate(timestamp);
 
               return `
                 <div class="relative space-y-2.5">
@@ -92,11 +85,11 @@ export function renderAuditLogModal(props: AuditLogModalProps): string {
                         <span>${escapeHtml(actionMeta.label)}</span>
                       </span>
                       <span class="text-xs font-semibold text-slate-700">
-                        ${escapeHtml(actorInfo.formatted)}
+                        ${escapeHtml(actorLabel)}
                       </span>
                     </div>
-                    <time class="text-[11px] font-mono text-slate-500" datetime="${escapeHtml(timestamp)}">
-                      ${escapeHtml(formattedLocal)}
+                    <time class="text-[11px] font-mono text-slate-400" datetime="${escapeHtml(timestamp)}">
+                      ${escapeHtml(formattedDate)} ${escapeHtml(timestamp.slice(11, 19))}
                     </time>
                   </div>
 

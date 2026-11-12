@@ -4,8 +4,6 @@ import {
   computeFieldDiffs,
   getActionVisualMeta,
   formatDiffValue,
-  resolveAuditActorDisplay,
-  formatAuditTimestampLocal,
 } from './auditLog';
 
 test('computeFieldDiffs identifies modified fields between old and new state', () => {
@@ -70,35 +68,4 @@ test('formatDiffValue formats primitives, nulls, and JSON objects cleanly', () =
   assert.equal(formatDiffValue(123), '123');
   assert.equal(formatDiffValue('Texto de prueba'), 'Texto de prueba');
   assert.equal(formatDiffValue({ a: 1 }), '{"a":1}');
-});
-
-test('resolveAuditActorDisplay resolves display name and email without exposing raw UUIDs', () => {
-  const fromDirectory = resolveAuditActorDisplay(
-    { performed_by: '99999999-9999-9999-9999-999999999999' },
-    { '99999999-9999-9999-9999-999999999999': { nombre: 'Laura Gómez', email: 'lgomez@fondonorma.test' } }
-  );
-  assert.equal(fromDirectory.displayName, 'Laura Gómez');
-  assert.equal(fromDirectory.email, 'lgomez@fondonorma.test');
-  assert.equal(fromDirectory.formatted, 'Laura Gómez (lgomez@fondonorma.test)');
-
-  const fromSeeded = resolveAuditActorDisplay({
-    performed_by: '33333333-3333-3333-3333-333333333333',
-  });
-  assert.equal(fromSeeded.displayName, 'Auditor Técnico Evaluador');
-  assert.equal(fromSeeded.email, 'auditor@fondonorma.test');
-
-  const unknownUuid = resolveAuditActorDisplay({
-    performed_by: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-  });
-  assert.equal(unknownUuid.displayName, 'Usuario del Sistema');
-  assert.equal(unknownUuid.formatted.includes('aaaaaaaa-'), false);
-
-  const systemActor = resolveAuditActorDisplay({});
-  assert.equal(systemActor.displayName, 'Sistema de Certificación');
-});
-
-test('formatAuditTimestampLocal formats ISO dates into local readable date and time', () => {
-  const formatted = formatAuditTimestampLocal('2026-11-12T15:30:45.000Z');
-  assert.match(formatted, /\d{2}\/\d{2}\/\d{4}\s\d{2}:\d{2}:\d{2}/);
-  assert.equal(formatAuditTimestampLocal(null), 'Sin fecha registrada');
 });
