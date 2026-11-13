@@ -121,3 +121,4 @@ The current breadcrumb bar (`src/views/breadcrumbView.ts`, 67 lines) and navigat
 3. Clicking `FN-QMS-2024-001` inside `Sector 17`'s Children Zone (or clicking `FN-QMS-2024-001` in the breadcrumb trail) cleanly backtracks without creating duplicate breadcrumb loops.
 4. Only clicking items in the top global header resets the breadcrumb trail to the selected domain root.
 5. Zero raw 36-character UUIDs ever appear in any breadcrumb label (`containsRawUuid(label) === false`).
+

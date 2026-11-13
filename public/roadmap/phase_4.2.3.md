@@ -75,3 +75,4 @@ With `Acreditación` and `Sitio` Detail Views operational from Phase 4.2.2, two 
 2. Clicking a `Turno` inside `Sitio > Turnos` opens **`Turno` Detail View** (`... > Sitio 0 > 07:00 - 15:00`) with accurate duration calculation (including overnight shifts) and clickable `Sedes Operativas` drill-down.
 3. `src/views/drillDownView.ts` is cleanly retired with zero broken TypeScript imports across `src/lib/*` and `src/views/*`.
 4. Zero raw UUIDs appear in `procesoView.ts`, `turnoView.ts`, or breadcrumb labels across the entire `Organización → Certificado → Sitio / Proceso → Turno` hierarchy.
+

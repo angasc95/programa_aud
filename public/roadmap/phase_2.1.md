@@ -81,3 +81,4 @@ Every header domain trigger, dropdown item, brand logo, and user-menu route link
 2. `Drill-Down`, `Sedes Multisitio`, `Mapa de Procesos`, `Turnos`, `Requisitos LTREE`, and `Todos los Catálogos` are completely absent from the top header and inline banners.
 3. Zero inline exploration cards, duplicate banner headers, or `"Volver al Dashboard"` buttons render in `Auditoría`, `Certificación`, or `Extra`.
 4. Clicking `Mi Perfil` in the user dropdown routes cleanly to `#profile` for any authenticated user.
+
