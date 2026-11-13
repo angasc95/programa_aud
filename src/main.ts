@@ -2,6 +2,7 @@ import './index.css';
 import type { User } from '@supabase/supabase-js';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './lib/supabase';
 import {
+  buildSelfProfileUpdatePayload,
   canAccessRoute,
   canModifyProfileRole,
   evaluateAdminAccess,
@@ -9,7 +10,9 @@ import {
   shouldUpdateProfileRole,
   TEST_ACCOUNTS,
   translateDatabaseError,
+  validatePasswordChangeInput,
   type ActiveRoute,
+  type DomainRoute,
   type HealthCheckItem,
   type ProfileFilter,
   type UserProfile,
@@ -19,6 +22,11 @@ import {
 import { renderHeader, type HeaderDropdownId } from './views/header';
 import { renderAuthView, type AuthViewState } from './views/authView';
 import { renderDashboardView } from './views/dashboardView';
+import {
+  renderProfileView,
+  type ClientOrgAccessSummary,
+  type ProfileFormState,
+} from './views/profileView';
 import { renderApprovalsView } from './views/approvalsView';
 import { renderDatabaseStatusView } from './views/databaseStatusView';
 import {
@@ -51,15 +59,7 @@ import {
   type CoverageBreakdown,
   type ViewMode,
 } from './lib/searchControls';
-import {
-  renderCertificateGrid,
-  renderCertificateList,
-  renderEmptySearchState,
-} from './views/searchControlsView';
-import {
-  renderDrillDownView,
-  type DrillDownSubTab,
-} from './views/drillDownView';
+import type { DrillDownSubTab } from './views/drillDownView';
 import {
   INITIAL_FINDINGS,
   validateFindingInput,
@@ -84,7 +84,9 @@ import {
   canEditAuditScheduleOrTeam,
   canMutateAuditExecution,
   canViewAuditLogForEntity,
+  computeDashboardSummaryMetrics,
   isApprovedStaffProfile,
+  normalizeDomainSubview,
   scopeCertificateRecordsForProfile,
   scopeDetailedCertsForProfile,
   scopeLegacyAuditsForProfile,
@@ -158,6 +160,8 @@ interface AppState {
   user: User | null;
   profile: UserProfile | null;
   authorizedClientOrgIds: string[];
+  clientAccessRows: ClientOrgAccessSummary[];
+  profileForm: ProfileFormState;
   activeRoute: ActiveRoute;
   activeSubSection: string | null;
   openMenu: HeaderDropdownId | null;
@@ -457,19 +461,25 @@ function parseHashRoute(): { route: ActiveRoute; subview: string | null } {
     const raw = window.location.hash.replace(/^#\/?/, '').trim();
     if (!raw) return { route: 'dashboard', subview: null };
     const parts = raw.split('/');
-    const first = parts[0] as ActiveRoute;
+    const firstRaw = (parts[0] || '').trim().toLowerCase();
     const second = parts[1] || null;
-    const valid: ActiveRoute[] = [
-      'dashboard',
-      'auditorias',
-      'certificacion',
-      'extra',
-      'approvals',
-      'database',
-      'drilldown',
-    ];
-    if (valid.includes(first)) {
-      return { route: first, subview: second };
+
+    if (firstRaw === 'drilldown') {
+      return { route: 'certificacion', subview: 'certificates' };
+    }
+
+    if (firstRaw === 'auditorias' || firstRaw === 'certificacion' || firstRaw === 'extra') {
+      const domain = firstRaw as DomainRoute;
+      return { route: domain, subview: normalizeDomainSubview(domain, second) };
+    }
+
+    if (
+      firstRaw === 'dashboard' ||
+      firstRaw === 'profile' ||
+      firstRaw === 'approvals' ||
+      firstRaw === 'database'
+    ) {
+      return { route: firstRaw as ActiveRoute, subview: null };
     }
   } catch {
     // fallback
@@ -500,6 +510,19 @@ const state: AppState = {
   user: null,
   profile: null,
   authorizedClientOrgIds: [],
+  clientAccessRows: [],
+  profileForm: {
+    nombreInput: '',
+    savingProfile: false,
+    profileFeedback: null,
+    profileError: null,
+    passwordSectionOpen: false,
+    newPasswordInput: '',
+    confirmPasswordInput: '',
+    savingPassword: false,
+    passwordFeedback: null,
+    passwordError: null,
+  },
   activeRoute: 'dashboard',
   activeSubSection: null,
   openMenu: null,
@@ -832,8 +855,15 @@ function render(): void {
     state.profile
   );
 
+  const isAuditorContextualCertAccess =
+    state.profile.role === 'AUDITOR' &&
+    state.profile.status === 'APPROVED' &&
+    state.activeRoute === 'certificacion' &&
+    (Boolean(state.organizacionDomain.selectedOrganizacionId) ||
+      Boolean(state.certificadoDomain.selectedCertId));
+
   let effectiveRoute: ActiveRoute = state.activeRoute;
-  if (!canAccessRoute(state.profile, effectiveRoute)) {
+  if (!canAccessRoute(state.profile, effectiveRoute) && !isAuditorContextualCertAccess) {
     effectiveRoute = 'dashboard';
     state.activeRoute = 'dashboard';
     state.activeSubSection = null;
@@ -866,30 +896,13 @@ function render(): void {
       state.dbCheck.running,
       state.dbCheck.lastCheckedAt
     );
-  } else if (
-    effectiveRoute === 'drilldown' ||
-    (effectiveRoute === 'certificacion' && state.activeSubSection === 'drilldown')
-  ) {
-    bodyHtml = renderDrillDownView(state.profile, {
-      selectedOrgId: state.drilldown.selectedOrgId,
-      selectedCertId: state.drilldown.selectedCertId,
-      activeTab: state.drilldown.activeTab,
-      orgSearchQuery: state.drilldown.orgSearchQuery,
-      organizations: scopedOrganizations,
-      certificates: scopedExplorationRecords,
-      sites: scopedSites,
-      processes: scopedProcesses,
-      shifts: state.domainData.shifts,
-      standards: state.domainData.standards,
-      requirements: state.domainData.requirements,
-      audits: scopedLegacyAudits,
-      auditors: state.domainData.auditors,
-      findings: scopedLegacyFindings,
-      findingFilterType: state.drilldown.findingFilterType,
-      findingFilterStatus: state.drilldown.findingFilterStatus,
-      isLoggingFinding: state.drilldown.isLoggingFinding,
-      loggingAuditId: state.drilldown.loggingAuditId,
-      loading: state.domainData.loading,
+  } else if (effectiveRoute === 'profile') {
+    bodyHtml = renderProfileView({
+      profile: state.profile,
+      userEmail: state.user.email || '',
+      formState: state.profileForm,
+      clientAccessItems: state.clientAccessRows,
+      auditorsDetailed: state.domainData.allAuditorsDetailed,
     });
   } else if (effectiveRoute === 'auditorias') {
     bodyHtml = renderAuditoriasView(state.profile, {
@@ -992,32 +1005,19 @@ function render(): void {
       },
     });
   } else {
-    const filteredRecords = filterCertificateRecords(scopedExplorationRecords, {
-      query: state.exploration.query,
-      selectedStatus: state.exploration.selectedStatus,
-      selectedStandard: state.exploration.selectedStandard,
+    const summaryMetrics = computeDashboardSummaryMetrics({
+      profile: state.profile,
+      scopedOrganizaciones: scopedAllOrganizaciones,
+      scopedCertificados: scopedDetailedCerts,
+      scopedAuditorias: scopedProgramacionAudits,
+      acreditaciones: INITIAL_ACREDITACIONES,
+      scopedHallazgos: scopedPhase5Findings,
     });
-    const availableStatuses = extractUniqueStatuses(scopedExplorationRecords);
-    const availableStandards = extractUniqueStandards(scopedExplorationRecords);
 
     bodyHtml = renderDashboardView(
       state.profile,
       state.user.email || '',
-      effectiveRoute,
-      state.activeSubSection,
-      {
-        filters: {
-          query: state.exploration.query,
-          selectedStatus: state.exploration.selectedStatus,
-          selectedStandard: state.exploration.selectedStandard,
-          viewMode: state.exploration.viewMode,
-        },
-        filteredRecords,
-        allRecords: scopedExplorationRecords,
-        availableStatuses,
-        availableStandards,
-        loading: state.exploration.loading,
-      }
+      summaryMetrics
     );
   }
 
@@ -1170,32 +1170,21 @@ function bindAuthenticatedEvents(): void {
       const segId = btn.dataset.breadcrumbId;
       if (!segId) return;
       const targetSeg = state.breadcrumbs.find((s) => s.id === segId);
-      if (targetSeg && !canAccessRoute(state.profile, targetSeg.route)) return;
+      const allowAuditorContextual =
+        state.profile?.role === 'AUDITOR' &&
+        state.profile?.status === 'APPROVED' &&
+        targetSeg?.route === 'certificacion' &&
+        Boolean(targetSeg.entityId);
+      if (targetSeg && !canAccessRoute(state.profile, targetSeg.route) && !allowAuditorContextual) {
+        return;
+      }
 
       state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, segId);
 
       if (targetSeg) {
         state.activeRoute = targetSeg.route;
         state.activeSubSection = targetSeg.subview || null;
-        if (
-          targetSeg.route === 'drilldown' ||
-          (targetSeg.route === 'certificacion' && targetSeg.subview === 'drilldown')
-        ) {
-          if (
-            targetSeg.id === 'drilldown-root' ||
-            targetSeg.id === 'subview-certificacion-drilldown'
-          ) {
-            state.drilldown.selectedOrgId = null;
-            state.drilldown.selectedCertId = null;
-          } else if (targetSeg.id.startsWith('org-')) {
-            const orgId = targetSeg.entityId || null;
-            state.drilldown.selectedOrgId = orgId;
-            const orgCert = orgId
-              ? state.exploration.records.find((c) => c.organizacion_id === orgId)
-              : null;
-            state.drilldown.selectedCertId = orgCert?.id || null;
-          }
-        } else if (targetSeg.route === 'extra') {
+        if (targetSeg.route === 'extra') {
           if (targetSeg.id.startsWith('domain-') || targetSeg.id.startsWith('subview-')) {
             state.extraDomain.selectedNormaId = null;
             state.extraDomain.selectedSectorId = null;
@@ -1204,10 +1193,6 @@ function bindAuthenticatedEvents(): void {
             state.extraDomain.selectedMetodologiaId = null;
           }
         } else if (targetSeg.route === 'certificacion') {
-          if (targetSeg.id.startsWith('domain-')) {
-            state.drilldown.selectedOrgId = null;
-            state.drilldown.selectedCertId = null;
-          }
           if (
             targetSeg.id.startsWith('domain-') ||
             targetSeg.id === 'subview-certificacion-organizations'
@@ -1256,17 +1241,19 @@ function bindAuthenticatedEvents(): void {
     el.addEventListener('click', () => {
       const target = el.dataset.nav as ActiveRoute | undefined;
       if (!target || !canAccessRoute(state.profile, target)) return;
-      const subview = el.dataset.subview || (target === 'auditorias' ? 'scheduling' : null);
+      const rawSubview = el.dataset.subview || null;
+      const subview =
+        target === 'auditorias' || target === 'certificacion' || target === 'extra'
+          ? normalizeDomainSubview(target, rawSubview)
+          : null;
       state.activeRoute = target;
       state.activeSubSection = subview;
       state.openMenu = null;
 
       // Top Header Reset Rule: instantly reset breadcrumb trail to target domain root
       state.breadcrumbs = resetBreadcrumbToDomain(target, subview);
-      if (target !== 'drilldown' && subview !== 'drilldown') {
-        state.drilldown.selectedOrgId = null;
-        state.drilldown.selectedCertId = null;
-      }
+      state.drilldown.selectedOrgId = null;
+      state.drilldown.selectedCertId = null;
       if (target === 'auditorias') {
         state.programacionDomain.selectedAuditId = null;
         state.programacionDomain.isEditingAttributes = false;
@@ -1300,6 +1287,17 @@ function bindAuthenticatedEvents(): void {
         state.extraDomain.selectedMetodologiaId = null;
       }
 
+      if (target === 'profile') {
+        state.profileForm = {
+          ...state.profileForm,
+          nombreInput: state.profile?.nombre || '',
+          profileFeedback: null,
+          profileError: null,
+          passwordFeedback: null,
+          passwordError: null,
+        };
+      }
+
       syncUrlHash(target, state.activeSubSection);
       render();
 
@@ -1309,6 +1307,50 @@ function bindAuthenticatedEvents(): void {
         void runHealthChecks();
       }
     });
+  });
+
+  // Self-service Profile handlers (Phase 2.2)
+  const profileNombreInput = document.getElementById('profileNombreInput') as HTMLInputElement | null;
+  profileNombreInput?.addEventListener('input', () => {
+    state.profileForm.nombreInput = profileNombreInput.value;
+  });
+
+  document.getElementById('profileNameForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = document.getElementById('profileNombreInput') as HTMLInputElement | null;
+    void handleUpdateOwnProfile(input?.value ?? state.profileForm.nombreInput);
+  });
+
+  document.getElementById('togglePasswordSectionBtn')?.addEventListener('click', () => {
+    state.profileForm = {
+      ...state.profileForm,
+      passwordSectionOpen: !state.profileForm.passwordSectionOpen,
+      passwordError: null,
+      passwordFeedback: null,
+      newPasswordInput: '',
+      confirmPasswordInput: '',
+    };
+    render();
+  });
+
+  const profileNewPasswordInput = document.getElementById('profileNewPasswordInput') as HTMLInputElement | null;
+  profileNewPasswordInput?.addEventListener('input', () => {
+    state.profileForm.newPasswordInput = profileNewPasswordInput.value;
+  });
+
+  const profileConfirmPasswordInput = document.getElementById('profileConfirmPasswordInput') as HTMLInputElement | null;
+  profileConfirmPasswordInput?.addEventListener('input', () => {
+    state.profileForm.confirmPasswordInput = profileConfirmPasswordInput.value;
+  });
+
+  document.getElementById('profilePasswordForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const newPassEl = document.getElementById('profileNewPasswordInput') as HTMLInputElement | null;
+    const confirmPassEl = document.getElementById('profileConfirmPasswordInput') as HTMLInputElement | null;
+    void handleUpdateOwnPassword(
+      newPassEl?.value ?? state.profileForm.newPasswordInput,
+      confirmPassEl?.value ?? state.profileForm.confirmPasswordInput
+    );
   });
 
   document.querySelectorAll<HTMLButtonElement>('[data-approval-filter]').forEach((btn) => {
@@ -1352,96 +1394,37 @@ function bindAuthenticatedEvents(): void {
     void runHealthChecks();
   });
 
-  // Search input events (real-time filtering)
-  const searchInput = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
-  searchInput?.addEventListener('input', (e) => {
-    const target = e.target as HTMLInputElement;
-    state.exploration.query = target.value;
-    updateExplorationView();
-  });
-
-  searchInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      handleClearSearch();
-    }
-  });
-
-  document.getElementById('clearSearchBtn')?.addEventListener('click', handleClearSearch);
-
-  document.getElementById('statusFacetSelect')?.addEventListener('change', (e) => {
-    const select = e.target as HTMLSelectElement;
-    state.exploration.selectedStatus = select.value;
-    render();
-  });
-
-  document.getElementById('standardFacetSelect')?.addEventListener('change', (e) => {
-    const select = e.target as HTMLSelectElement;
-    state.exploration.selectedStandard = select.value;
-    render();
-  });
-
-  document.querySelectorAll<HTMLElement>('[data-action="reset-all"]').forEach((btn) => {
-    btn.addEventListener('click', handleResetAllFilters);
-  });
-
-  document.querySelectorAll<HTMLButtonElement>('[data-action="set-view-mode"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const mode = (btn.dataset.mode || 'grid') as ViewMode;
-      if (state.exploration.viewMode !== mode) {
-        state.exploration.viewMode = mode;
-        setStoredViewMode(mode);
-        render();
-      }
-    });
-  });
-
-  // Drill-Down interactive selectors with Breadcrumb synchronization
+  // Contextual parent selectors with Breadcrumb synchronization
   document.querySelectorAll<HTMLElement>('[data-drilldown-select-org]').forEach((el) => {
     el.addEventListener('click', () => {
       const orgId = el.dataset.drilldownSelectOrg || null;
-      state.drilldown.selectedOrgId = orgId;
-      if (orgId) {
-        const orgCerts = state.exploration.records.filter(
-          (c) =>
-            c.organizacion_id === orgId ||
-            c.organizacion_nombre.toLowerCase() ===
-              state.domainData.organizations
-                .find((o) => o.id === orgId)
-                ?.nombre.toLowerCase()
-        );
-        state.drilldown.selectedCertId = orgCerts.length > 0 ? orgCerts[0].id : null;
-
-        const org = state.domainData.organizations.find((o) => o.id === orgId);
-        state.breadcrumbs = resetBreadcrumbToDomain('certificacion', 'drilldown');
-        if (org) {
-          state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-            id: `org-${org.id}`,
-            label: org.nombre,
-            route: 'drilldown',
-            entityId: org.id,
-            tooltip: `${org.nombre} — RIF: ${org.rif}`,
-          });
-        }
-        if (state.drilldown.selectedCertId) {
-          const cert = state.exploration.records.find((c) => c.id === state.drilldown.selectedCertId);
-          if (cert) {
-            state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-              id: `cert-${cert.id}`,
-              label: cert.numero_certificado,
-              route: 'drilldown',
-              entityId: cert.id,
-              tooltip: `Certificado ${cert.numero_certificado} (${cert.esquema})`,
-            });
-          }
-        }
-      } else {
-        state.drilldown.selectedCertId = null;
-        state.breadcrumbs = resetBreadcrumbToDomain('certificacion', 'drilldown');
+      if (!orgId) return;
+      if (
+        !canAccessRoute(state.profile, 'certificacion') &&
+        !(state.profile?.role === 'AUDITOR' && state.profile?.status === 'APPROVED')
+      ) {
+        return;
       }
-      state.activeRoute = 'drilldown';
-      state.activeSubSection = null;
-      syncUrlHash('drilldown', orgId);
+      const org =
+        state.domainData.allOrganizaciones.find((o) => o.id === orgId) ||
+        INITIAL_ORGANIZACIONES.find((o) => o.id === orgId);
+
+      state.activeRoute = 'certificacion';
+      state.activeSubSection = 'organizations';
+      state.organizacionDomain.selectedOrganizacionId = orgId;
+      state.organizacionDomain.isEditingAttributes = false;
+      state.breadcrumbs = resetBreadcrumbToDomain('certificacion', 'organizations');
+      if (org) {
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `org-${org.id}`,
+          label: org.nombre,
+          route: 'certificacion',
+          subview: 'organizations',
+          entityId: org.id,
+          tooltip: `Organización > ${org.nombre}`,
+        });
+      }
+      syncUrlHash('certificacion', 'organizations');
       render();
     });
   });
@@ -1449,19 +1432,33 @@ function bindAuthenticatedEvents(): void {
   document.querySelectorAll<HTMLElement>('[data-drilldown-select-cert]').forEach((el) => {
     el.addEventListener('click', () => {
       const certId = el.dataset.drilldownSelectCert || null;
-      state.drilldown.selectedCertId = certId;
-      if (certId) {
-        const cert = state.exploration.records.find((c) => c.id === certId);
-        if (cert) {
-          state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-            id: `cert-${cert.id}`,
-            label: cert.numero_certificado,
-            route: 'drilldown',
-            entityId: cert.id,
-            tooltip: `Certificado ${cert.numero_certificado} (${cert.esquema})`,
-          });
-        }
+      if (!certId) return;
+      if (
+        !canAccessRoute(state.profile, 'certificacion') &&
+        !(state.profile?.role === 'AUDITOR' && state.profile?.status === 'APPROVED')
+      ) {
+        return;
       }
+      const cert =
+        state.domainData.allCertificadosDetailed.find((c) => c.id === certId) ||
+        INITIAL_CERTIFICADOS_DETAILED.find((c) => c.id === certId);
+
+      state.activeRoute = 'certificacion';
+      state.activeSubSection = 'certificates';
+      state.certificadoDomain.selectedCertId = certId;
+      state.certificadoDomain.activeChildTab = 'sitios';
+      state.certificadoDomain.isEditingAttributes = false;
+      if (cert) {
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `cert-${cert.id}`,
+          label: cert.numero_certificado,
+          route: 'certificacion',
+          subview: 'certificates',
+          entityId: cert.id,
+          tooltip: `Certificado > ${cert.numero_certificado}`,
+        });
+      }
+      syncUrlHash('certificacion', 'certificates');
       render();
     });
   });
@@ -3137,46 +3134,23 @@ function bindPhase5AuditoriasEvents(): void {
         INITIAL_ORGANIZACIONES.find((o) => o.id === orgId);
 
       if (!canAccessRoute(state.profile, 'certificacion')) {
-        if (!canAccessRoute(state.profile, 'drilldown')) return;
-        state.activeRoute = 'drilldown';
-        state.activeSubSection = null;
-        state.drilldown.selectedOrgId = orgId;
-        const orgCerts = scopeCertificateRecordsForProfile(
-          state.exploration.records,
-          state.profile,
-          state.authorizedClientOrgIds,
-          scopeProgramacionAuditsForProfile(
-            state.domainData.programacionAudits,
-            state.profile,
-            state.authorizedClientOrgIds
-          )
-        ).filter((c) => c.organizacion_id === orgId);
-        state.drilldown.selectedCertId = orgCerts[0]?.id || null;
-        state.breadcrumbs = [
-          {
-            id: 'domain-auditorias',
-            label: 'Auditorías',
-            route: 'auditorias',
-            subview: 'scheduling',
-            tooltip: 'Dominio Auditorías',
-          },
-          {
-            id: 'drilldown-root',
-            label: 'Drill-Down',
-            route: 'drilldown',
-            tooltip: 'Navegación jerárquica en profundidad',
-          },
-        ];
+        if (!(state.profile?.role === 'AUDITOR' && state.profile?.status === 'APPROVED')) return;
+        state.activeRoute = 'certificacion';
+        state.activeSubSection = 'organizations';
+        state.organizacionDomain.selectedOrganizacionId = orgId;
+        state.organizacionDomain.isEditingAttributes = false;
+        state.breadcrumbs = resetBreadcrumbToDomain('auditorias', 'scheduling');
         if (org) {
           state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
             id: `org-${org.id}`,
             label: org.nombre,
-            route: 'drilldown',
+            route: 'certificacion',
+            subview: 'organizations',
             entityId: org.id,
             tooltip: `Organización > ${org.nombre}`,
           });
         }
-        syncUrlHash('drilldown', orgId);
+        syncUrlHash('certificacion', 'organizations');
         render();
         return;
       }
@@ -3210,43 +3184,24 @@ function bindPhase5AuditoriasEvents(): void {
         INITIAL_CERTIFICADOS_DETAILED.find((c) => c.id === certId);
 
       if (!canAccessRoute(state.profile, 'certificacion')) {
-        if (!canAccessRoute(state.profile, 'drilldown')) return;
-        state.activeRoute = 'drilldown';
-        state.activeSubSection = null;
-        state.drilldown.selectedOrgId = cert?.id_organizacion || null;
-        state.drilldown.selectedCertId = certId;
-        state.breadcrumbs = [
-          {
-            id: 'domain-auditorias',
-            label: 'Auditorías',
-            route: 'auditorias',
-            subview: 'scheduling',
-            tooltip: 'Dominio Auditorías',
-          },
-          {
-            id: 'drilldown-root',
-            label: 'Drill-Down',
-            route: 'drilldown',
-            tooltip: 'Navegación jerárquica en profundidad',
-          },
-        ];
+        if (!(state.profile?.role === 'AUDITOR' && state.profile?.status === 'APPROVED')) return;
+        state.activeRoute = 'certificacion';
+        state.activeSubSection = 'certificates';
+        state.certificadoDomain.selectedCertId = certId;
+        state.certificadoDomain.activeChildTab = 'sitios';
+        state.certificadoDomain.isEditingAttributes = false;
+        state.breadcrumbs = resetBreadcrumbToDomain('auditorias', 'scheduling');
         if (cert) {
-          state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-            id: `org-${cert.id_organizacion}`,
-            label: cert.organizacion_nombre,
-            route: 'drilldown',
-            entityId: cert.id_organizacion,
-            tooltip: `Organización > ${cert.organizacion_nombre}`,
-          });
           state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
             id: `cert-${cert.id}`,
             label: cert.numero_certificado,
-            route: 'drilldown',
+            route: 'certificacion',
+            subview: 'certificates',
             entityId: cert.id,
             tooltip: `Certificado > ${cert.numero_certificado}`,
           });
         }
-        syncUrlHash('drilldown', certId);
+        syncUrlHash('certificacion', 'certificates');
         render();
         return;
       }
@@ -4553,90 +4508,6 @@ async function handleToggleFindingStatus(
   }
 }
 
-function updateExplorationView(): void {
-  const scopedAudits = scopeProgramacionAuditsForProfile(
-    state.domainData.programacionAudits,
-    state.profile,
-    state.authorizedClientOrgIds
-  );
-  const scopedRecords = scopeCertificateRecordsForProfile(
-    state.exploration.records,
-    state.profile,
-    state.authorizedClientOrgIds,
-    scopedAudits
-  );
-  const filtered = filterCertificateRecords(scopedRecords, {
-    query: state.exploration.query,
-    selectedStatus: state.exploration.selectedStatus,
-    selectedStandard: state.exploration.selectedStandard,
-  });
-
-  const resultsContainer = document.getElementById('explorationResultsContainer');
-  if (resultsContainer) {
-    if (filtered.length === 0) {
-      resultsContainer.innerHTML = renderEmptySearchState(state.exploration.query);
-    } else if (state.exploration.viewMode === 'list') {
-      resultsContainer.innerHTML = renderCertificateList(filtered);
-    } else {
-      resultsContainer.innerHTML = renderCertificateGrid(filtered);
-    }
-  }
-
-  // Update clear button visibility
-  const searchInput = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
-  const wrapper = searchInput?.parentElement;
-  if (wrapper) {
-    const iconContainer = wrapper.querySelector('.absolute.right-0');
-    if (iconContainer) {
-      if (state.exploration.query) {
-        iconContainer.innerHTML = `
-          <button
-            type="button"
-            id="clearSearchBtn"
-            data-action="clear-search"
-            title="Limpiar búsqueda (Esc)"
-            aria-label="Limpiar búsqueda"
-            class="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
-          >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        `;
-        document.getElementById('clearSearchBtn')?.addEventListener('click', handleClearSearch);
-      } else {
-        iconContainer.innerHTML = `
-          <kbd class="hidden md:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-slate-400 bg-white border border-slate-200 rounded shadow-2xs select-none">
-            /
-          </kbd>
-        `;
-      }
-    }
-  }
-
-  // Rebind reset-all buttons in empty search state if rendered
-  document.querySelectorAll<HTMLElement>('[data-action="reset-all"]').forEach((btn) => {
-    btn.addEventListener('click', handleResetAllFilters);
-  });
-}
-
-function handleClearSearch(): void {
-  state.exploration.query = '';
-  const input = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
-  if (input) {
-    input.value = '';
-    input.focus();
-  }
-  render();
-}
-
-function handleResetAllFilters(): void {
-  state.exploration.query = '';
-  state.exploration.selectedStatus = 'ALL';
-  state.exploration.selectedStandard = 'ALL';
-  render();
-}
-
 function closeAuditLogModal(): void {
   state.auditLogModal.isOpen = false;
   state.auditLogModal.errorMessage = null;
@@ -5080,6 +4951,19 @@ function resetClientSessionState(): void {
   state.user = null;
   state.profile = null;
   state.authorizedClientOrgIds = [];
+  state.clientAccessRows = [];
+  state.profileForm = {
+    nombreInput: '',
+    savingProfile: false,
+    profileFeedback: null,
+    profileError: null,
+    passwordSectionOpen: false,
+    newPasswordInput: '',
+    confirmPasswordInput: '',
+    savingPassword: false,
+    passwordFeedback: null,
+    passwordError: null,
+  };
   state.activeRoute = 'dashboard';
   state.activeSubSection = null;
   state.openMenu = null;
@@ -5323,18 +5207,43 @@ async function loadUserSession(user: User | null): Promise<void> {
       state.profile = profileData as UserProfile;
     }
 
-    if (state.profile.role === 'CLIENT' && state.profile.status === 'APPROVED') {
+    state.profileForm = {
+      nombreInput: state.profile.nombre,
+      savingProfile: false,
+      profileFeedback: null,
+      profileError: null,
+      passwordSectionOpen: false,
+      newPasswordInput: '',
+      confirmPasswordInput: '',
+      savingPassword: false,
+      passwordFeedback: null,
+      passwordError: null,
+    };
+
+    if (state.profile.role === 'CLIENT') {
       const { data: orgAccessRows } = await supabase
         .from('client_organization_access')
-        .select('id_organizacion')
-        .eq('id_usuario', user.id)
-        .eq('estado', 'APPROVED');
-      state.authorizedClientOrgIds = Array.isArray(orgAccessRows)
-        ? orgAccessRows
-            .map((r: { id_organizacion?: string }) => String(r.id_organizacion || ''))
-            .filter(Boolean)
-        : [];
+        .select('id_organizacion, estado, fecha_solicitud, organizacion:id_organizacion ( nombre, rif )')
+        .eq('id_usuario', user.id);
+      const rows = Array.isArray(orgAccessRows) ? orgAccessRows : [];
+      state.clientAccessRows = rows.map((row: Record<string, unknown>) => {
+        const org = (row.organizacion as Record<string, unknown> | null) || null;
+        return {
+          id_organizacion: String(row.id_organizacion || ''),
+          organizacion_nombre: org?.nombre ? String(org.nombre) : 'Organización vinculada',
+          rif: org?.rif ? String(org.rif) : undefined,
+          estado: String(row.estado || 'PENDING') as UserStatus,
+          fecha_solicitud: row.fecha_solicitud ? String(row.fecha_solicitud) : undefined,
+        };
+      });
+      state.authorizedClientOrgIds =
+        state.profile.status === 'APPROVED'
+          ? state.clientAccessRows
+              .filter((r) => r.estado === 'APPROVED' && Boolean(r.id_organizacion))
+              .map((r) => r.id_organizacion)
+          : [];
     } else {
+      state.clientAccessRows = [];
       state.authorizedClientOrgIds = [];
     }
 
@@ -5881,6 +5790,117 @@ async function updateProfileRole(targetId: string, nextRole: string): Promise<vo
   await loadApprovalProfiles();
 }
 
+async function handleUpdateOwnProfile(rawNombre: string): Promise<void> {
+  if (!state.user || !state.profile || state.profileForm.savingProfile) return;
+
+  const validation = buildSelfProfileUpdatePayload(rawNombre);
+  if (!validation.ok) {
+    state.profileForm = {
+      ...state.profileForm,
+      nombreInput: rawNombre,
+      profileError: validation.error,
+      profileFeedback: null,
+    };
+    render();
+    return;
+  }
+
+  state.profileForm = {
+    ...state.profileForm,
+    nombreInput: validation.payload.nombre,
+    savingProfile: true,
+    profileError: null,
+    profileFeedback: null,
+  };
+  render();
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(validation.payload)
+    .eq('id', state.user.id)
+    .select('id, nombre, role, status, created_at')
+    .single();
+
+  if (error || !data) {
+    state.profileForm = {
+      ...state.profileForm,
+      savingProfile: false,
+      profileError: translateDatabaseError(error || 'No se pudo actualizar el perfil.'),
+      profileFeedback: null,
+    };
+    render();
+    return;
+  }
+
+  const updatedProfile = data as UserProfile;
+  state.profile = updatedProfile;
+  state.profileForm = {
+    ...state.profileForm,
+    nombreInput: updatedProfile.nombre,
+    savingProfile: false,
+    profileError: null,
+    profileFeedback: 'Nombre actualizado correctamente.',
+  };
+  render();
+}
+
+async function handleUpdateOwnPassword(
+  newPassword: string,
+  confirmPassword: string
+): Promise<void> {
+  if (!state.user || !state.profile || state.profileForm.savingPassword) return;
+
+  const validation = validatePasswordChangeInput(newPassword, confirmPassword);
+  if (!validation.ok) {
+    state.profileForm = {
+      ...state.profileForm,
+      newPasswordInput: newPassword,
+      confirmPasswordInput: confirmPassword,
+      passwordError: validation.error,
+      passwordFeedback: null,
+    };
+    render();
+    return;
+  }
+
+  state.profileForm = {
+    ...state.profileForm,
+    savingPassword: true,
+    passwordError: null,
+    passwordFeedback: null,
+  };
+  render();
+
+  const { data, error } = await supabase.auth.updateUser({
+    password: validation.password,
+  });
+
+  if (error) {
+    state.profileForm = {
+      ...state.profileForm,
+      savingPassword: false,
+      passwordError: translateDatabaseError(error),
+      passwordFeedback: null,
+    };
+    render();
+    return;
+  }
+
+  if (data.user) {
+    state.user = data.user;
+  }
+
+  state.profileForm = {
+    ...state.profileForm,
+    savingPassword: false,
+    newPasswordInput: '',
+    confirmPasswordInput: '',
+    passwordError: null,
+    passwordFeedback: 'Contraseña actualizada correctamente.',
+  };
+  render();
+}
+
 function updateHealthCheck(id: string, patch: Partial<HealthCheckItem>): void {
   state.dbCheck.checks = state.dbCheck.checks.map((item) =>
     item.id === id ? { ...item, ...patch } : item
@@ -6118,14 +6138,7 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (document.activeElement?.id === 'certificateSearchInput') {
-    if (state.exploration.query) {
-      state.exploration.query = '';
-      const input = document.getElementById('certificateSearchInput') as HTMLInputElement | null;
-      if (input) input.value = '';
-      updateExplorationView();
-    } else {
-      (document.activeElement as HTMLElement).blur();
-    }
+    (document.activeElement as HTMLElement).blur();
     return;
   }
 
@@ -6162,6 +6175,16 @@ window.addEventListener('hashchange', () => {
       state.activeSubSection = subview;
       state.openMenu = null;
       state.breadcrumbs = resetBreadcrumbToDomain(route, subview);
+      if (route === 'profile') {
+        state.profileForm = {
+          ...state.profileForm,
+          nombreInput: state.profile?.nombre || '',
+          profileFeedback: null,
+          profileError: null,
+          passwordFeedback: null,
+          passwordError: null,
+        };
+      }
       render();
       if (route === 'approvals' && isApprovedStaff()) {
         void loadApprovalProfiles();
@@ -6180,6 +6203,16 @@ window.addEventListener('popstate', () => {
       state.activeSubSection = subview;
       state.openMenu = null;
       state.breadcrumbs = resetBreadcrumbToDomain(route, subview);
+      if (route === 'profile') {
+        state.profileForm = {
+          ...state.profileForm,
+          nombreInput: state.profile?.nombre || '',
+          profileFeedback: null,
+          profileError: null,
+          passwordFeedback: null,
+          passwordError: null,
+        };
+      }
       render();
     }
   }

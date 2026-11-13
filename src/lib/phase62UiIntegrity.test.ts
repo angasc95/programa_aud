@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { assertZeroUuidExposure } from './zeroUuid';
 import { renderHeader } from '../views/header';
 import { renderDashboardView } from '../views/dashboardView';
+import { renderProfileView } from '../views/profileView';
 import { renderApprovalsView } from '../views/approvalsView';
 import { renderDrillDownView } from '../views/drillDownView';
 import { renderOrganizacionView } from '../views/organizacionView';
@@ -85,18 +86,45 @@ test('Phase 6.2 Zero-UUID audit across Header, Dashboard, Approvals, and Audit L
 
   assertClean(
     'Dashboard',
-    renderDashboardView(ADMIN_PROFILE, 'admin@fondonorma.test', 'dashboard', null, {
-      filters: {
-        query: '',
-        selectedStatus: 'ALL',
-        selectedStandard: 'ALL',
-        viewMode: 'grid',
+    renderDashboardView(ADMIN_PROFILE, 'admin@fondonorma.test', {
+      organizacionesActivas: 3,
+      certificadosVigentes: 3,
+      auditoriasProgramadas: 6,
+      acreditacionesActivas: 4,
+      hallazgosAbiertos: 3,
+    })
+  );
+
+  assertClean(
+    'Profile',
+    renderProfileView({
+      profile: {
+        ...ADMIN_PROFILE,
+        created_at: '2026-11-01T10:00:00Z',
       },
-      filteredRecords: SAMPLE_CERTIFICATE_RECORDS,
-      allRecords: SAMPLE_CERTIFICATE_RECORDS,
-      availableStatuses: ['ACTIVO', 'EN AUDITORÍA'],
-      availableStandards: ['ISO 9001:2015', 'ISO 14001:2015'],
-      loading: false,
+      userEmail: 'admin@fondonorma.test',
+      formState: {
+        nombreInput: ADMIN_PROFILE.nombre,
+        savingProfile: false,
+        profileFeedback: null,
+        profileError: null,
+        passwordSectionOpen: true,
+        newPasswordInput: '',
+        confirmPasswordInput: '',
+        savingPassword: false,
+        passwordFeedback: null,
+        passwordError: null,
+      },
+      clientAccessItems: [
+        {
+          id_organizacion: INITIAL_ORGANIZACIONES[0].id,
+          organizacion_nombre: INITIAL_ORGANIZACIONES[0].nombre,
+          rif: INITIAL_ORGANIZACIONES[0].rif,
+          estado: 'APPROVED',
+          fecha_solicitud: '2026-11-01T10:00:00Z',
+        },
+      ],
+      auditorsDetailed: INITIAL_AUDITORES_DETAILED,
     })
   );
 

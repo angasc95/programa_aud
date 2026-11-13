@@ -312,7 +312,7 @@ test('Phase 6.1 Operational Lockdown: PENDING and REJECTED dashboards suppress r
   assert.doesNotMatch(pendingHeader, /📋|🛡️|⚙️|🏢/);
   assert.doesNotMatch(pendingHeader, /Dominios Operativos/);
 
-  const pendingDash = renderDashboardView(PENDING_PROFILE, 'pending@fondonorma.test', 'dashboard');
+  const pendingDash = renderDashboardView(PENDING_PROFILE, 'pending@fondonorma.test');
   assert.match(pendingDash, /⏳/);
   assert.match(pendingDash, /PENDING/);
   assert.match(pendingDash, /Aprobación administrativa pendiente/);
@@ -333,7 +333,7 @@ test('Phase 6.1 Operational Lockdown: PENDING and REJECTED dashboards suppress r
   assert.doesNotMatch(rejectedHeader, /📋|🛡️|⚙️|🏢/);
   assert.doesNotMatch(rejectedHeader, /Dominios Operativos/);
 
-  const rejectedDash = renderDashboardView(REJECTED_PROFILE, 'rejected@fondonorma.test', 'dashboard');
+  const rejectedDash = renderDashboardView(REJECTED_PROFILE, 'rejected@fondonorma.test');
   assert.match(rejectedDash, /❌/);
   assert.match(rejectedDash, /REJECTED/);
   assert.match(rejectedDash, /Acceso no autorizado/);

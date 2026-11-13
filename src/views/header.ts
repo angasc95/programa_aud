@@ -159,26 +159,31 @@ export function renderHeader(opts: HeaderOptions): string {
   const showStaffApprovals =
     profile.status === 'APPROVED' && (isAdmin || canViewApprovals);
 
+  const profileItem = `
+    <div class="py-1 border-b border-slate-100">
+      <button
+        type="button"
+        role="menuitem"
+        data-nav="profile"
+        data-nav-reset="true"
+        title="Información de cuenta y preferencias"
+        class="w-full text-left px-4 py-2 text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer whitespace-nowrap ${
+          activeRoute === 'profile'
+            ? 'bg-slate-100 font-semibold text-slate-900'
+            : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+        }"
+      >
+        <span class="inline-flex items-center gap-2">
+          <span aria-hidden="true">👤</span>
+          <span>Mi Perfil</span>
+        </span>
+      </button>
+    </div>
+  `;
+
   const adminItems = showStaffApprovals
     ? `
       <div class="py-1 border-b border-slate-100">
-        <button
-          type="button"
-          role="menuitem"
-          data-nav="dashboard"
-          data-nav-reset="true"
-          title="Panel general"
-          class="w-full text-left px-4 py-2 text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer whitespace-nowrap ${
-            activeRoute === 'dashboard'
-              ? 'bg-slate-100 font-semibold text-slate-900'
-              : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
-          }"
-        >
-          <span class="inline-flex items-center gap-2">
-            <span aria-hidden="true">🏠</span>
-            <span>Mi Perfil / Panel</span>
-          </span>
-        </button>
         <button
           type="button"
           role="menuitem"
@@ -290,6 +295,8 @@ export function renderHeader(opts: HeaderOptions): string {
                   </div>
                 </div>
               </div>
+
+              ${profileItem}
 
               ${adminItems}
 

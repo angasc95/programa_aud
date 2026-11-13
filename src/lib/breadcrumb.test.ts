@@ -31,31 +31,31 @@ test('truncateBreadcrumbLabel truncates labels > 24 characters with ellipsis', (
 });
 
 test('resetBreadcrumbToDomain establishes clean roots for the 3 operational domains', () => {
-  // Block 1: Auditorías
+  // Block 1: Auditoría
   const auditTrail = resetBreadcrumbToDomain('auditorias', 'scheduling');
   assert.equal(auditTrail.length, 2);
-  assert.equal(auditTrail[0].label, 'Auditorías');
+  assert.equal(auditTrail[0].label, 'Auditoría');
   assert.equal(auditTrail[1].label, 'Programación');
 
   // Block 2: Certificación
   const certTrail = resetBreadcrumbToDomain('certificacion', 'organizations');
   assert.equal(certTrail.length, 2);
   assert.equal(certTrail[0].label, 'Certificación');
-  assert.equal(certTrail[1].label, 'Organizaciones');
+  assert.equal(certTrail[1].label, 'Organización');
 
   // Block 3: Extra
   const extraTrail = resetBreadcrumbToDomain('extra', 'standards');
   assert.equal(extraTrail.length, 2);
   assert.equal(extraTrail[0].label, 'Extra');
-  assert.equal(extraTrail[1].label, 'Normas ISO');
+  assert.equal(extraTrail[1].label, 'Norma');
 });
 
 test('Top Header Reset Rule clears nested child segments instantly', () => {
   const nestedTrail: BreadcrumbSegment[] = [
     { id: 'domain-certificacion', label: 'Certificación', route: 'certificacion' },
-    { id: 'org-1', label: 'CyberCloud S.L.', route: 'drilldown', entityId: 'org-1' },
-    { id: 'cert-1', label: 'FN-QMS-2024-001', route: 'drilldown', entityId: 'cert-1' },
-    { id: 'site-1', label: 'Sede Central (Sitio 0)', route: 'drilldown', entityId: 'site-1' },
+    { id: 'org-1', label: 'CyberCloud S.L.', route: 'certificacion', subview: 'organizations', entityId: 'org-1' },
+    { id: 'cert-1', label: 'FN-QMS-2024-001', route: 'certificacion', subview: 'certificates', entityId: 'cert-1' },
+    { id: 'site-1', label: 'Sede Central (Sitio 0)', route: 'certificacion', subview: 'certificates', entityId: 'site-1' },
   ];
   assert.equal(nestedTrail.length, 4);
 
@@ -72,7 +72,8 @@ test('pushBreadcrumb appends new hierarchy segment or backtracks if already pres
   const seg1: BreadcrumbSegment = {
     id: 'org-cybercloud',
     label: 'CyberCloud Solutions S.L.',
-    route: 'drilldown',
+    route: 'certificacion',
+    subview: 'organizations',
     entityId: 'org-123',
     tooltip: 'CyberCloud Solutions S.L. — RIF J-40819234-5',
   };
@@ -83,7 +84,8 @@ test('pushBreadcrumb appends new hierarchy segment or backtracks if already pres
   const seg2: BreadcrumbSegment = {
     id: 'cert-qms',
     label: 'FN-QMS-2024-001',
-    route: 'drilldown',
+    route: 'certificacion',
+    subview: 'certificates',
     entityId: 'cert-456',
   };
   const step2 = pushBreadcrumb(step1, seg2);
@@ -98,10 +100,10 @@ test('pushBreadcrumb appends new hierarchy segment or backtracks if already pres
 test('popToBreadcrumb correctly truncates ancestry to selected target segment', () => {
   const fullTrail: BreadcrumbSegment[] = [
     { id: 'root', label: 'Certificación', route: 'certificacion' },
-    { id: 'org', label: 'Iberometal S.A.', route: 'drilldown' },
-    { id: 'cert', label: 'FN-EMS-2024-002', route: 'drilldown' },
-    { id: 'site', label: 'Sede Principal (Sitio 0)', route: 'drilldown' },
-    { id: 'findings', label: 'Hallazgo NC-01', route: 'drilldown' },
+    { id: 'org', label: 'Iberometal S.A.', route: 'certificacion', subview: 'organizations' },
+    { id: 'cert', label: 'FN-EMS-2024-002', route: 'certificacion', subview: 'certificates' },
+    { id: 'site', label: 'Sede Principal (Sitio 0)', route: 'certificacion', subview: 'certificates' },
+    { id: 'findings', label: 'Hallazgo NC-01', route: 'auditorias', subview: 'findings' },
   ];
 
   const poppedToOrg = popToBreadcrumb(fullTrail, 'org');
@@ -198,10 +200,11 @@ test('renderHeader enforces Top-Header Reset Rule with data-nav-reset on all glo
   assert.equal(trunc25.display.endsWith('…'), true);
   assert.deepEqual(truncateBreadcrumbLabel(''), { display: '', truncated: false });
 
-  // Root domain resets across dashboard, approvals, database, drilldown, and domain-without-subview
+  // Root domain resets across dashboard, profile, approvals, database, and domain-without-subview
+  assert.equal(resetBreadcrumbToDomain('profile')[0].id, 'profile');
+  assert.equal(resetBreadcrumbToDomain('profile')[0].label, 'Perfil');
   assert.equal(resetBreadcrumbToDomain('approvals')[0].id, 'approvals');
   assert.equal(resetBreadcrumbToDomain('database')[0].id, 'database');
-  assert.equal(resetBreadcrumbToDomain('drilldown').length, 2);
   assert.equal(resetBreadcrumbToDomain('extra').length, 1);
 
   // Backtracking by matching entityId even when segment id differs

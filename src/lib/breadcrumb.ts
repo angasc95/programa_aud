@@ -35,7 +35,7 @@ export function truncateBreadcrumbLabel(
 export function getDomainLabel(domain: DomainRoute): string {
   switch (domain) {
     case 'auditorias':
-      return 'Auditorías';
+      return 'Auditoría';
     case 'certificacion':
       return 'Certificación';
     case 'extra':
@@ -50,30 +50,23 @@ export function getSubviewLabel(domain: DomainRoute, subview?: string | null): s
   if (!subview) return getDomainLabel(domain);
 
   const subviewMap: Record<string, string> = {
-    // Auditorías
+    // Auditoría
     scheduling: 'Programación',
     calendar: 'Calendario',
     findings: 'Resultado',
-    team: 'Equipo Auditor',
-    scope: 'Alcance de Auditoría',
 
     // Certificación
-    organizations: 'Organizaciones',
-    certificates: 'Certificados',
-    auditors: 'Auditores',
-    drilldown: 'Drill-Down',
-    sites: 'Sedes Multisitio',
-    processes: 'Procesos',
-    shifts: 'Turnos',
+    organizations: 'Organización',
+    certificates: 'Certificado',
+    auditors: 'Auditor',
 
     // Extra
-    standards: 'Normas ISO',
-    iaf: 'Sectores IAF',
+    standards: 'Norma',
+    iaf: 'Sector IAF',
+    accreditations: 'Acreditación',
     estatus: 'Estatus',
-    tipos: 'Tipos de Auditoría',
-    metodologias: 'Metodologías',
-    catalogs: 'Catálogos',
-    requirements: 'Requisitos LTREE',
+    tipos: 'Tipo',
+    metodologias: 'Metodología',
   };
 
   return subviewMap[subview] || subview;
@@ -98,6 +91,17 @@ export function resetBreadcrumbToDomain(
     ];
   }
 
+  if (route === 'profile') {
+    return [
+      {
+        id: 'profile',
+        label: 'Perfil',
+        route: 'profile',
+        tooltip: 'Perfil de cuenta y preferencias del usuario',
+      },
+    ];
+  }
+
   if (route === 'approvals') {
     return [
       {
@@ -116,24 +120,6 @@ export function resetBreadcrumbToDomain(
         label: 'Estado DB',
         route: 'database',
         tooltip: 'Salud y conectividad de base de datos Supabase',
-      },
-    ];
-  }
-
-  if (route === 'drilldown') {
-    return [
-      {
-        id: 'certificacion',
-        label: 'Certificación',
-        route: 'certificacion',
-        subview: 'organizations',
-        tooltip: 'Dominio Certificación',
-      },
-      {
-        id: 'drilldown-root',
-        label: 'Drill-Down',
-        route: 'drilldown',
-        tooltip: 'Navegación jerárquica en profundidad',
       },
     ];
   }

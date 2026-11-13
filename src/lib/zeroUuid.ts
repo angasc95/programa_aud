@@ -1,4 +1,12 @@
 const UUID_REGEX = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+const UUID_TEST_REGEX = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
+
+/**
+ * Checks whether a string contains any raw 36-character UUID.
+ */
+export function containsRawUuid(value: string): boolean {
+  return UUID_TEST_REGEX.test(value);
+}
 
 /**
  * Extracts visible text content from an HTML string by stripping tags and attributes.

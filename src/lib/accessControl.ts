@@ -1,8 +1,14 @@
-import type { UserProfile } from './healthCheck';
+import {
+  canAccessRoute,
+  type ActiveRoute,
+  type DomainRoute,
+  type UserProfile,
+} from './healthCheck';
 import type { ProgramacionAuditEntity, Phase5FindingEntity } from './auditExecution';
 import type { CertificateRecord } from './searchControls';
 import type { CertificadoDetailEntity } from './multisiteSampling';
-import type { OrganizacionEntity } from './activeCertificates';
+import { countActiveCertificates, type CertificadoSummary, type OrganizacionEntity } from './activeCertificates';
+import type { AcreditacionNormaIaf } from './extraDomain';
 import type { FindingRecord } from './drillDown';
 import type { AuditRecord } from '../views/auditoriasView';
 import type { OrganizationRecord } from '../views/certificacionView';
@@ -321,3 +327,150 @@ export function scopeSitesOrProcessesForCertificates<
   const allowedCertNums = new Set(scopedCerts.map((c) => c.numero_certificado));
   return items.filter((item) => allowedCertNums.has(item.numero_certificado));
 }
+
+export const VALID_DOMAIN_SUBVIEWS: Record<DomainRoute, readonly string[]> = {
+  auditorias: ['scheduling', 'calendar', 'findings'],
+  certificacion: ['organizations', 'certificates', 'auditors'],
+  extra: ['standards', 'iaf', 'accreditations', 'estatus', 'tipos', 'metodologias'],
+};
+
+/**
+ * Normalizes legacy or alias subviews into the canonical Phase 2.1 3-block subviews.
+ */
+export function normalizeDomainSubview(
+  domain: DomainRoute,
+  subview: string | null | undefined
+): string {
+  const raw = (subview || '').trim().toLowerCase();
+
+  if (domain === 'auditorias') {
+    if (raw === 'calendar' || raw === 'calendario') return 'calendar';
+    if (raw === 'findings' || raw === 'resultado' || raw === 'resultados') return 'findings';
+    return 'scheduling';
+  }
+
+  if (domain === 'certificacion') {
+    if (raw === 'organizations' || raw === 'organizacion' || raw === 'organizaciones') {
+      return 'organizations';
+    }
+    if (raw === 'auditors' || raw === 'auditor' || raw === 'auditores') {
+      return 'auditors';
+    }
+    // Retire 'sites', 'processes', 'shifts', 'drilldown' safely to 'certificates'
+    return 'certificates';
+  }
+
+  // domain === 'extra'
+  if (raw === 'iaf' || raw === 'sector_iaf') return 'iaf';
+  if (
+    raw === 'accreditations' ||
+    raw === 'acreditacion' ||
+    raw === 'acreditaciones'
+  ) {
+    return 'accreditations';
+  }
+  if (raw === 'estatus') return 'estatus';
+  if (raw === 'tipos' || raw === 'tipo') return 'tipos';
+  if (raw === 'metodologias' || raw === 'metodologia') return 'metodologias';
+  // Retire 'requirements', 'catalogs' safely to 'standards'
+  return 'standards';
+}
+
+/**
+ * Verifies route and subview access aligned with the Phase 2.1 3-block navigation contract.
+ * All authenticated users (including PENDING and REJECTED) may access 'dashboard' and 'profile'.
+ */
+export function canAccessSubview(
+  profile: UserProfile | null | undefined,
+  route: ActiveRoute,
+  subview?: string | null
+): boolean {
+  if (!profile) return false;
+  if (route === 'dashboard' || route === 'profile') return true;
+  if (!canAccessRoute(profile, route)) return false;
+
+  if (route === 'approvals' || route === 'database') {
+    return true;
+  }
+
+  const normalized = normalizeDomainSubview(route, subview);
+  return VALID_DOMAIN_SUBVIEWS[route].includes(normalized);
+}
+
+export interface DashboardSummaryMetrics {
+  organizacionesActivas: number;
+  certificadosVigentes: number;
+  auditoriasProgramadas: number;
+  acreditacionesActivas: number;
+  hallazgosAbiertos: number;
+}
+
+export interface ComputeDashboardMetricsInput {
+  profile: UserProfile | null | undefined;
+  scopedOrganizaciones: OrganizacionEntity[];
+  scopedCertificados: ReadonlyArray<
+    Pick<CertificadoSummary, 'id' | 'numero_certificado' | 'estatus' | 'id_organizacion' | 'organizacion_id'> & {
+      norma?: string;
+    }
+  >;
+  scopedAuditorias: ProgramacionAuditEntity[];
+  acreditaciones: AcreditacionNormaIaf[];
+  scopedHallazgos: Phase5FindingEntity[];
+}
+
+/**
+ * Computes minimalist RBAC-scoped summary metrics for the Phase 2.2 Home Dashboard.
+ * Non-approved users receive zeroed operational metrics.
+ */
+export function computeDashboardSummaryMetrics(
+  input: ComputeDashboardMetricsInput
+): DashboardSummaryMetrics {
+  const { profile, scopedOrganizaciones, scopedCertificados, scopedAuditorias, acreditaciones, scopedHallazgos } =
+    input;
+
+  if (!profile || profile.status !== 'APPROVED') {
+    return {
+      organizacionesActivas: 0,
+      certificadosVigentes: 0,
+      auditoriasProgramadas: 0,
+      acreditacionesActivas: 0,
+      hallazgosAbiertos: 0,
+    };
+  }
+
+  const organizacionesActivas = scopedOrganizaciones.filter(
+    (org) => (org.estatus || 'Activo').trim().toLowerCase() !== 'inactivo'
+  ).length;
+
+  const certSummaries: CertificadoSummary[] = scopedCertificados.map((c) => ({
+    id: c.id,
+    numero_certificado: c.numero_certificado,
+    estatus: c.estatus,
+    id_organizacion: c.id_organizacion,
+    organizacion_id: c.organizacion_id,
+    norma: c.norma ?? '',
+  }));
+  const certificadosVigentes = countActiveCertificates(certSummaries);
+
+  const auditoriasProgramadas = scopedAuditorias.filter((audit) => {
+    const status = audit.estatus.trim().toLowerCase();
+    return status !== 'cerrada' && status !== 'completada';
+  }).length;
+
+  const acreditacionesActivas = acreditaciones.filter(
+    (acred) => acred.estatus === 'Activa'
+  ).length;
+
+  const hallazgosAbiertos = scopedHallazgos.filter(
+    (finding) => !finding.cerrado && finding.estado_ciclo !== 'Cerrado'
+  ).length;
+
+  return {
+    organizacionesActivas,
+    certificadosVigentes,
+    auditoriasProgramadas,
+    acreditacionesActivas,
+    hallazgosAbiertos,
+  };
+}
+

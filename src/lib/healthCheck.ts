@@ -1,3 +1,5 @@
+import { containsRawUuid } from './zeroUuid';
+
 export type UserRole = 'ADMIN' | 'WORKER' | 'AUDITOR' | 'CLIENT';
 export type UserStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
@@ -73,7 +75,7 @@ export interface HealthSummary {
 export type ProfileFilter = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL';
 
 export type DomainRoute = 'auditorias' | 'certificacion' | 'extra';
-export type ActiveRoute = 'dashboard' | 'approvals' | 'database' | 'drilldown' | DomainRoute;
+export type ActiveRoute = 'dashboard' | 'profile' | 'approvals' | 'database' | DomainRoute;
 
 export interface RoleVisualMeta {
   role: UserRole;
@@ -271,7 +273,7 @@ export function getVisibleDomainMenus(
 
   const menus: DomainMenuSpec[] = [];
 
-  // BLOCK 1: Auditorías [ Programación | Calendario | Resultado ]
+  // BLOCK 1: Auditoría [ Programación | Calendario | Resultado ]
   if (isStaff || isAuditor || isClient) {
     const auditItems: DomainNavItem[] = [
       {
@@ -296,9 +298,9 @@ export function getVisibleDomainMenus(
 
     menus.push({
       id: 'auditorias',
-      label: 'Auditorías',
+      label: 'Auditoría',
       symbol: '📅',
-      tooltip: 'BLOCK 1: Auditorías — Programación, Calendario y Resultado',
+      tooltip: 'BLOCK 1: Auditoría — Programación, Calendario y Resultado',
       items: auditItems,
     });
   }
@@ -324,37 +326,7 @@ export function getVisibleDomainMenus(
         symbol: '👤',
         tooltip: 'Cuerpo de auditores técnicos calificados y liderazgo evaluador',
       },
-      {
-        id: 'drilldown',
-        label: 'Drill-Down',
-        symbol: '🔍',
-        tooltip: 'Navegación jerárquica en profundidad',
-      },
     ];
-
-    if (isStaff || isClient) {
-      certItems.push({
-        id: 'sites',
-        label: 'Sedes Multisitio',
-        symbol: '📍',
-        tooltip: 'Sedes físicas y plantas operativas por certificado',
-      });
-      certItems.push({
-        id: 'processes',
-        label: 'Mapa de Procesos',
-        symbol: '⚙️',
-        tooltip: 'Procesos operativos y cláusulas normativas vinculadas',
-      });
-    }
-
-    if (isStaff) {
-      certItems.push({
-        id: 'shifts',
-        label: 'Turnos',
-        symbol: '🕒',
-        tooltip: 'Turnos productivos y horarios operativos por sede',
-      });
-    }
 
     menus.push({
       id: 'certificacion',
@@ -365,12 +337,12 @@ export function getVisibleDomainMenus(
     });
   }
 
-  // BLOCK 3: Extra [ Norma | Sector IAF | Estatus | Tipo | Metodología ]
+  // BLOCK 3: Extra [ Norma | Sector IAF | Acreditación | Estatus | Tipo | Metodología ]
   menus.push({
     id: 'extra',
     label: 'Extra',
     symbol: '📚',
-    tooltip: 'BLOCK 3: Extra — Norma, Sector IAF, Estatus, Tipo y Metodología',
+    tooltip: 'BLOCK 3: Extra — Norma, Sector IAF, Acreditación, Estatus, Tipo y Metodología',
     items: [
       {
         id: 'standards',
@@ -383,6 +355,12 @@ export function getVisibleDomainMenus(
         label: 'Sector IAF',
         symbol: '🏭',
         tooltip: 'Sectores técnicos y sub-sectores de acreditación IAF',
+      },
+      {
+        id: 'accreditations',
+        label: 'Acreditación',
+        symbol: '🏅',
+        tooltip: 'Organismos de acreditación y alcance Norma × Sector IAF',
       },
       {
         id: 'estatus',
@@ -402,18 +380,6 @@ export function getVisibleDomainMenus(
         symbol: '🌐',
         tooltip: 'Metodologías de auditoría (Presencial, Remota, Híbrida)',
       },
-      {
-        id: 'requirements',
-        label: 'Requisitos LTREE',
-        symbol: '🌳',
-        tooltip: 'Jerarquía de cláusulas y sub-requisitos normativos',
-      },
-      {
-        id: 'catalogs',
-        label: 'Todos los Catálogos',
-        symbol: '📋',
-        tooltip: 'Visor unificado de catálogos maestros del sistema',
-      },
     ],
   });
 
@@ -425,8 +391,7 @@ export function canAccessRoute(
   route: ActiveRoute
 ): boolean {
   if (!profile) return false;
-  if (route === 'dashboard') return true;
-  if (route === 'drilldown') return profile.status === 'APPROVED';
+  if (route === 'dashboard' || route === 'profile') return true;
   if (route === 'approvals') {
     return profile.status === 'APPROVED' && (profile.role === 'ADMIN' || profile.role === 'WORKER');
   }
@@ -684,4 +649,142 @@ export function translateDatabaseError(err: unknown): string {
   }
 
   return message;
+}
+
+export interface SelfProfileUpdatePayload {
+  nombre: string;
+}
+
+export type SelfProfileUpdateValidationResult =
+  | { ok: true; payload: SelfProfileUpdatePayload }
+  | { ok: false; error: string };
+
+/**
+ * Pure validator for self-service profile name updates (Phase 2.2).
+ * Trims whitespace, enforces 2..150 character bounds, rejects raw UUIDs,
+ * and returns strictly `{ nombre }` — never allowing `role` or `status` mutations.
+ */
+export function buildSelfProfileUpdatePayload(
+  rawNombre: string
+): SelfProfileUpdateValidationResult {
+  const trimmed = typeof rawNombre === 'string' ? rawNombre.trim() : '';
+  if (!trimmed) {
+    return {
+      ok: false,
+      error: 'El nombre completo es obligatorio y no puede estar vacío.',
+    };
+  }
+  if (trimmed.length < 2) {
+    return {
+      ok: false,
+      error: 'El nombre debe tener al menos 2 caracteres.',
+    };
+  }
+  if (trimmed.length > 150) {
+    return {
+      ok: false,
+      error: 'El nombre no puede superar los 150 caracteres.',
+    };
+  }
+  if (containsRawUuid(trimmed)) {
+    return {
+      ok: false,
+      error: 'El nombre no puede contener identificadores UUID internos.',
+    };
+  }
+  return {
+    ok: true,
+    payload: { nombre: trimmed },
+  };
+}
+
+export type PasswordChangeValidationResult =
+  | { ok: true; password: string }
+  | { ok: false; error: string };
+
+/**
+ * Pure validator for optional self-service password updates.
+ */
+export function validatePasswordChangeInput(
+  password: string,
+  confirmPassword: string
+): PasswordChangeValidationResult {
+  if (!password || password.length < 8) {
+    return {
+      ok: false,
+      error: 'La nueva contraseña debe tener al menos 8 caracteres.',
+    };
+  }
+  if (password !== confirmPassword) {
+    return {
+      ok: false,
+      error: 'Las contraseñas ingresadas no coinciden.',
+    };
+  }
+  return {
+    ok: true,
+    password,
+  };
+}
+
+/**
+ * Formats an ISO date string into Spanish long date format (e.g. "13 de noviembre de 2026").
+ */
+export function formatSpanishDate(iso?: string): string {
+  if (!iso) return 'Fecha no disponible';
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return 'Fecha no disponible';
+  return parsed.toLocaleDateString('es-ES', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
+export interface ProfileGovernanceMeta {
+  roleLabel: string;
+  statusLabel: string;
+  governanceNote: string;
+}
+
+/**
+ * Returns read-only governance metadata labels in Spanish for the self-service Perfil view.
+ */
+export function getProfileGovernanceMeta(profile: UserProfile): ProfileGovernanceMeta {
+  let roleLabel = 'CLIENT (Organización Cliente)';
+  switch (profile.role) {
+    case 'ADMIN':
+      roleLabel = 'ADMIN (Administrador)';
+      break;
+    case 'WORKER':
+      roleLabel = 'WORKER (Personal Operativo)';
+      break;
+    case 'AUDITOR':
+      roleLabel = 'AUDITOR (Auditor Técnico)';
+      break;
+    case 'CLIENT':
+    default:
+      roleLabel = 'CLIENT (Organización Cliente)';
+      break;
+  }
+
+  let statusLabel = 'PENDING (Pendiente)';
+  switch (profile.status) {
+    case 'APPROVED':
+      statusLabel = 'APPROVED (Aprobado)';
+      break;
+    case 'REJECTED':
+      statusLabel = 'REJECTED (Rechazado)';
+      break;
+    case 'PENDING':
+    default:
+      statusLabel = 'PENDING (Pendiente)';
+      break;
+  }
+
+  return {
+    roleLabel,
+    statusLabel,
+    governanceNote: 'Gestionado exclusivamente por un Administrador en Panel Aprobaciones.',
+  };
 }
