@@ -223,6 +223,7 @@ export function renderDetailPageTemplate(props: DetailPageTemplateProps): string
         <button
           type="button"
           data-nav="${escapeHtml(backButton.nav)}"
+          data-nav-back="true"
           ${backButton.subview ? `data-subview="${escapeHtml(backButton.subview)}"` : ''}
           class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
         >

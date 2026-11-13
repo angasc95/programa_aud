@@ -5,6 +5,8 @@ import {
   resetBreadcrumbToDomain,
   pushBreadcrumb,
   popToBreadcrumb,
+  popToParentBreadcrumb,
+  collapseBreadcrumbForDisplay,
   containsRawUuid,
   MAX_BREADCRUMB_CHAR_LENGTH,
   type BreadcrumbSegment,
@@ -161,6 +163,12 @@ test('renderBreadcrumbBar truncates labels > 24 chars with ellipsis and preserve
   assert.ok(html.includes('title="Certificado &gt; FN-QMS-2024-001-MULTISITIO-EXTENDIDO"'));
   assert.ok(html.includes('aria-current="page"'));
   assert.ok(html.includes('truncate'));
+  // Borderless, compact, single-row layout without card wrapper
+  assert.equal(html.includes('bg-white border'), false);
+  assert.equal(html.includes('flex-wrap'), false);
+  assert.ok(html.includes('flex-nowrap'));
+  assert.ok(html.includes('whitespace-nowrap'));
+  assert.ok(html.includes('overflow-hidden'));
 
   // Single root segment collapses the breadcrumb bar
   assert.equal(renderBreadcrumbBar({ trail: resetBreadcrumbToDomain('dashboard') }), '');
@@ -233,4 +241,151 @@ test('renderHeader enforces Top-Header Reset Rule with data-nav-reset on all glo
   // Verify ALL domain dropdown menuitems carry data-nav-reset="true"
   const navResetCount = (html.match(/data-nav-reset="true"/g) || []).length;
   assert.ok(navResetCount >= 10, 'Every top-nav link and dropdown item must trigger breadcrumb reset');
+});
+
+test('Phase 3: collapseBreadcrumbForDisplay collapses trails > 4 levels into root + ellipsis + last two', () => {
+  const deepTrail: BreadcrumbSegment[] = [
+    { id: 'domain-certificacion', label: 'Certificación', route: 'certificacion' },
+    { id: 'subview-certificacion-certificates', label: 'Certificado', route: 'certificacion', subview: 'certificates' },
+    { id: 'cert-1', label: 'FN-QMS-2024-001', route: 'certificacion', subview: 'certificates', entityType: 'cert', entityId: '40000000-0000-0000-0000-000000000001' },
+    { id: 'org-1', label: 'Iberometal S.A.', route: 'certificacion', subview: 'organizations', entityType: 'org', entityId: '30000000-0000-0000-0000-000000000001' },
+    { id: 'sector-17', label: 'Sector 17', route: 'extra', subview: 'iaf', entityType: 'sector_iaf', entityId: 'd0000000-0000-0000-0000-000000000017' },
+  ];
+
+  // <= 4 stays expanded
+  const fourItems = collapseBreadcrumbForDisplay(deepTrail.slice(0, 4));
+  assert.equal(fourItems.length, 4);
+  assert.equal(fourItems.every((i) => i.kind === 'segment'), true);
+
+  // > 4 collapses middle segments [1..n-3] into ellipsis pointing to deepest hidden segment (n-3)
+  const collapsed = collapseBreadcrumbForDisplay(deepTrail);
+  assert.equal(collapsed.length, 4);
+  assert.equal(collapsed[0].kind, 'segment');
+  assert.equal(collapsed[1].kind, 'ellipsis');
+  assert.equal(collapsed[2].kind, 'segment');
+  assert.equal(collapsed[3].kind, 'segment');
+
+  if (collapsed[1].kind === 'ellipsis') {
+    assert.equal(collapsed[1].hiddenSegments.length, 2);
+    assert.equal(collapsed[1].backtrackSegmentId, 'cert-1');
+    assert.ok(collapsed[1].tooltip.includes('Certificado'));
+    assert.ok(collapsed[1].tooltip.includes('FN-QMS-2024-001'));
+    assert.equal(containsRawUuid(collapsed[1].tooltip), false);
+  }
+
+  const html = renderBreadcrumbBar({ trail: deepTrail });
+  assert.ok(html.includes('data-breadcrumb-ellipsis="true"'));
+  assert.ok(html.includes('data-breadcrumb-id="cert-1"'));
+  assert.ok(html.includes('Iberometal S.A.'));
+  assert.ok(html.includes('Sector 17'));
+  assert.equal(containsRawUuid(html), false);
+});
+
+test('Phase 3: composite loop prevention avoids cross-entity collisions and truncates true cycles', () => {
+  let trail = resetBreadcrumbToDomain('certificacion', 'certificates');
+
+  // Visit Certificate FN-QMS-2024-001 -> Sector 17 -> re-visit FN-QMS-2024-001
+  trail = pushBreadcrumb(trail, {
+    id: 'cert-fn-1',
+    label: 'FN-QMS-2024-001',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'cert',
+    entityId: 'shared-id-1',
+    tab: 'procesos',
+  });
+  trail = pushBreadcrumb(trail, {
+    id: 'sector-17',
+    label: 'Sector 17',
+    route: 'extra',
+    subview: 'iaf',
+    entityType: 'sector_iaf',
+    entityId: 'sec-17',
+  });
+  assert.equal(trail.length, 4);
+  assert.equal(trail[0].label, 'Certificación');
+  assert.equal(trail[3].label, 'Sector 17');
+
+  // Same entityId ('shared-id-1') but different entityType ('sitio' vs 'cert') must NOT collide
+  const withSite = pushBreadcrumb(trail, {
+    id: 'sitio-1',
+    label: 'Planta Valencia',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'sitio',
+    entityId: 'shared-id-1',
+  });
+  assert.equal(withSite.length, 5);
+
+  // Re-visiting the certificate truncates back cleanly to index 2 without duplicates
+  const backtracked = pushBreadcrumb(withSite, {
+    id: 'cert-fn-1-revisit',
+    label: 'FN-QMS-2024-001',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'cert',
+    entityId: 'shared-id-1',
+    tab: 'sitios',
+  });
+  assert.equal(backtracked.length, 3);
+  assert.equal(backtracked[2].entityType, 'cert');
+  assert.equal(backtracked[2].tab, 'sitios');
+
+  // Audit scheduling vs findings share audit entityId without colliding
+  let auditTrail = resetBreadcrumbToDomain('auditorias', 'scheduling');
+  auditTrail = pushBreadcrumb(auditTrail, {
+    id: 'prog-audit-1',
+    label: 'AUD-2024-001',
+    route: 'auditorias',
+    subview: 'scheduling',
+    entityType: 'audit',
+    entityId: 'audit-1',
+    tab: 'equipo',
+  });
+  auditTrail = pushBreadcrumb(auditTrail, {
+    id: 'resultados-1',
+    label: 'Resultados · AUD-2024-001',
+    route: 'auditorias',
+    subview: 'findings',
+    entityType: 'audit',
+    entityId: 'audit-1',
+  });
+  assert.equal(auditTrail.length, 4);
+});
+
+test('Phase 3: popToParentBreadcrumb steps back one level and returns parent segment metadata', () => {
+  let trail = resetBreadcrumbToDomain('certificacion', 'certificates');
+  trail = pushBreadcrumb(trail, {
+    id: 'cert-1',
+    label: 'FN-QMS-2024-001',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'cert',
+    entityId: '40000000-0000-0000-0000-000000000001',
+    tab: 'auditorias',
+  });
+  trail = pushBreadcrumb(trail, {
+    id: 'norma-9001',
+    label: 'ISO 9001:2015',
+    route: 'extra',
+    subview: 'standards',
+    entityType: 'norma',
+    entityId: 'e0000000-0000-0000-0000-000000009001',
+  });
+
+  const step1 = popToParentBreadcrumb(trail);
+  assert.equal(step1.trail.length, 3);
+  assert.equal(step1.target?.id, 'cert-1');
+  assert.equal(step1.target?.route, 'certificacion');
+  assert.equal(step1.target?.entityType, 'cert');
+  assert.equal(step1.target?.tab, 'auditorias');
+
+  const step2 = popToParentBreadcrumb(step1.trail);
+  assert.equal(step2.trail.length, 2);
+  assert.equal(step2.target?.id, 'subview-certificacion-certificates');
+
+  const rootOnly = resetBreadcrumbToDomain('dashboard');
+  const noop = popToParentBreadcrumb(rootOnly);
+  assert.equal(noop.trail.length, 1);
+  assert.equal(noop.target?.id, 'dashboard');
 });

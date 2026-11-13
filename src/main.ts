@@ -71,6 +71,10 @@ import {
   resetBreadcrumbToDomain,
   pushBreadcrumb,
   popToBreadcrumb,
+  popToParentBreadcrumb,
+  getDomainLabel,
+  getSubviewLabel,
+  type BreadcrumbEntityType,
   type BreadcrumbSegment,
 } from './lib/breadcrumb';
 import { renderBreadcrumbBar } from './views/breadcrumbView';
@@ -1043,7 +1047,7 @@ function render(): void {
     })}
     ${
       state.breadcrumbs && state.breadcrumbs.length > 1
-        ? `<div class="max-w-6xl w-full mx-auto px-4 sm:px-6 pt-4 pb-0">${breadcrumbBarHtml}</div>`
+        ? `<div class="max-w-6xl w-full mx-auto px-4 sm:px-6 pt-3 pb-0">${breadcrumbBarHtml}</div>`
         : ''
     }
     ${bodyHtml}
@@ -1149,6 +1153,148 @@ function bindAuthEvents(): void {
   });
 }
 
+function inferEntityTypeFromSegment(seg: BreadcrumbSegment): BreadcrumbEntityType | null {
+  if (seg.entityType) return seg.entityType;
+  if (seg.id.startsWith('org-')) return 'org';
+  if (seg.id.startsWith('cert-')) return 'cert';
+  if (seg.id.startsWith('aud-')) return 'auditor';
+  if (seg.id.startsWith('prog-audit-') || seg.id.startsWith('resultados-')) return 'audit';
+  if (seg.id.startsWith('norma-')) return 'norma';
+  if (seg.id.startsWith('sector-')) return 'sector_iaf';
+  if (seg.id.startsWith('estatus-')) return 'estatus';
+  if (seg.id.startsWith('tipo-')) return 'tipo';
+  if (seg.id.startsWith('metodologia-')) return 'metodologia';
+  return null;
+}
+
+function clearAllEntitySelections(): void {
+  state.drilldown.selectedOrgId = null;
+  state.drilldown.selectedCertId = null;
+
+  state.organizacionDomain.selectedOrganizacionId = null;
+  state.organizacionDomain.isEditingAttributes = false;
+  state.organizacionDomain.editErrorMessage = null;
+  state.organizacionDomain.saveSuccessMessage = null;
+
+  state.certificadoDomain.selectedCertId = null;
+  state.certificadoDomain.isEditingAttributes = false;
+  state.certificadoDomain.editErrorMessage = null;
+  state.certificadoDomain.saveSuccessMessage = null;
+
+  state.auditorDomain.selectedAuditorId = null;
+  state.auditorDomain.isEditingAttributes = false;
+  state.auditorDomain.editErrorMessage = null;
+  state.auditorDomain.saveSuccessMessage = null;
+
+  state.programacionDomain.selectedAuditId = null;
+  state.programacionDomain.isEditingAttributes = false;
+  state.programacionDomain.isAddingTeamMember = false;
+  state.programacionDomain.editErrorMessage = null;
+  state.programacionDomain.saveSuccessMessage = null;
+
+  state.calendarioDomain.drawerAuditId = null;
+  state.resultadoDomain.inspectingFindingId = null;
+
+  state.extraDomain.selectedNormaId = null;
+  state.extraDomain.selectedSectorId = null;
+  state.extraDomain.selectedEstatusId = null;
+  state.extraDomain.selectedTipoId = null;
+  state.extraDomain.selectedMetodologiaId = null;
+  state.extraDomain.inspectingClauseId = null;
+}
+
+function applyBreadcrumbSegmentState(targetSeg: BreadcrumbSegment): void {
+  state.activeRoute = targetSeg.route;
+  state.activeSubSection = targetSeg.subview || null;
+  state.openMenu = null;
+
+  clearAllEntitySelections();
+
+  const entityType = inferEntityTypeFromSegment(targetSeg);
+  const entityId = targetSeg.entityId || null;
+  const tab = targetSeg.tab || null;
+
+  if (entityType === 'org' && entityId) {
+    state.organizacionDomain.selectedOrganizacionId = entityId;
+    state.organizacionDomain.activeChildTab = 'certificados';
+  } else if (
+    (entityType === 'cert' || entityType === 'sitio' || entityType === 'proceso' || entityType === 'turno') &&
+    entityId
+  ) {
+    state.certificadoDomain.selectedCertId = entityId;
+    if (
+      tab === 'sitios' ||
+      tab === 'procesos' ||
+      tab === 'turnos' ||
+      tab === 'no_aplicables' ||
+      tab === 'auditorias'
+    ) {
+      state.certificadoDomain.activeChildTab = tab;
+    } else if (entityType === 'sitio') {
+      state.certificadoDomain.activeChildTab = 'sitios';
+    } else if (entityType === 'proceso') {
+      state.certificadoDomain.activeChildTab = 'procesos';
+    } else if (entityType === 'turno') {
+      state.certificadoDomain.activeChildTab = 'turnos';
+    } else {
+      state.certificadoDomain.activeChildTab = 'sitios';
+    }
+  } else if (entityType === 'auditor' && entityId) {
+    state.auditorDomain.selectedAuditorId = entityId;
+    state.auditorDomain.activeChildTab = tab === 'historial' ? 'historial' : 'competencias';
+  } else if (entityType === 'audit' && entityId) {
+    if (targetSeg.subview === 'findings') {
+      state.resultadoDomain.activeAuditIdForDecision = entityId;
+      state.resultadoDomain.selectedAuditId = entityId;
+    } else {
+      state.programacionDomain.selectedAuditId = entityId;
+      state.programacionDomain.activeChildTab =
+        tab === 'muestreo' || tab === 'matriz' ? tab : 'equipo';
+    }
+  } else if (entityType === 'norma' && entityId) {
+    state.extraDomain.selectedNormaId = entityId;
+    state.extraDomain.activeNormaTab = tab === 'requisitos' ? 'requisitos' : 'acreditacion';
+  } else if (entityType === 'sector_iaf' && entityId) {
+    state.extraDomain.selectedSectorId = entityId;
+    state.extraDomain.activeSectorTab = tab === 'auditores' ? 'auditores' : 'subsectores';
+  } else if (entityType === 'estatus' && entityId) {
+    state.extraDomain.selectedEstatusId = entityId;
+  } else if (entityType === 'tipo' && entityId) {
+    state.extraDomain.selectedTipoId = entityId;
+  } else if (entityType === 'metodologia' && entityId) {
+    state.extraDomain.selectedMetodologiaId = entityId;
+  }
+
+  if (targetSeg.route === 'profile') {
+    state.profileForm = {
+      ...state.profileForm,
+      nombreInput: state.profile?.nombre || '',
+      profileFeedback: null,
+      profileError: null,
+      passwordFeedback: null,
+      passwordError: null,
+    };
+  }
+
+  syncUrlHash(state.activeRoute, state.activeSubSection);
+}
+
+function backtrackToParentBreadcrumb(): void {
+  const { trail, target } = popToParentBreadcrumb(state.breadcrumbs);
+  state.breadcrumbs = trail;
+  if (target) {
+    applyBreadcrumbSegmentState(target);
+  }
+}
+
+function syncCurrentBreadcrumbTab(tab: string): void {
+  if (state.breadcrumbs.length === 0) return;
+  const lastIdx = state.breadcrumbs.length - 1;
+  state.breadcrumbs = state.breadcrumbs.map((seg, idx) =>
+    idx === lastIdx ? { ...seg, tab } : seg
+  );
+}
+
 function bindAuthenticatedEvents(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-menu-toggle]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -1182,56 +1328,7 @@ function bindAuthenticatedEvents(): void {
       state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, segId);
 
       if (targetSeg) {
-        state.activeRoute = targetSeg.route;
-        state.activeSubSection = targetSeg.subview || null;
-        if (targetSeg.route === 'extra') {
-          if (targetSeg.id.startsWith('domain-') || targetSeg.id.startsWith('subview-')) {
-            state.extraDomain.selectedNormaId = null;
-            state.extraDomain.selectedSectorId = null;
-            state.extraDomain.selectedEstatusId = null;
-            state.extraDomain.selectedTipoId = null;
-            state.extraDomain.selectedMetodologiaId = null;
-          }
-        } else if (targetSeg.route === 'certificacion') {
-          if (
-            targetSeg.id.startsWith('domain-') ||
-            targetSeg.id === 'subview-certificacion-organizations'
-          ) {
-            state.organizacionDomain.selectedOrganizacionId = null;
-            state.organizacionDomain.isEditingAttributes = false;
-          } else if (targetSeg.id.startsWith('org-')) {
-            state.organizacionDomain.selectedOrganizacionId = targetSeg.entityId || null;
-            state.organizacionDomain.isEditingAttributes = false;
-            state.certificadoDomain.selectedCertId = null;
-            state.certificadoDomain.isEditingAttributes = false;
-          }
-          if (
-            targetSeg.id.startsWith('domain-') ||
-            targetSeg.id === 'subview-certificacion-certificates'
-          ) {
-            state.certificadoDomain.selectedCertId = null;
-            state.certificadoDomain.isEditingAttributes = false;
-          }
-          if (
-            targetSeg.id.startsWith('domain-') ||
-            targetSeg.id === 'subview-certificacion-auditors'
-          ) {
-            state.auditorDomain.selectedAuditorId = null;
-            state.auditorDomain.isEditingAttributes = false;
-          }
-        } else if (targetSeg.route === 'auditorias') {
-          if (
-            targetSeg.id.startsWith('domain-') ||
-            targetSeg.id.startsWith('subview-auditorias-')
-          ) {
-            state.programacionDomain.selectedAuditId = null;
-            state.programacionDomain.isEditingAttributes = false;
-            state.programacionDomain.isAddingTeamMember = false;
-            state.calendarioDomain.drawerAuditId = null;
-            state.resultadoDomain.inspectingFindingId = null;
-          }
-        }
-        syncUrlHash(state.activeRoute, state.activeSubSection);
+        applyBreadcrumbSegmentState(targetSeg);
       }
       render();
     });
@@ -1239,6 +1336,12 @@ function bindAuthenticatedEvents(): void {
 
   document.querySelectorAll<HTMLElement>('[data-nav]').forEach((el) => {
     el.addEventListener('click', () => {
+      if (el.dataset.navBack === 'true') {
+        backtrackToParentBreadcrumb();
+        render();
+        return;
+      }
+
       const target = el.dataset.nav as ActiveRoute | undefined;
       if (!target || !canAccessRoute(state.profile, target)) return;
       const rawSubview = el.dataset.subview || null;
@@ -1246,45 +1349,31 @@ function bindAuthenticatedEvents(): void {
         target === 'auditorias' || target === 'certificacion' || target === 'extra'
           ? normalizeDomainSubview(target, rawSubview)
           : null;
+      const isHeaderReset = el.dataset.navReset === 'true';
+
       state.activeRoute = target;
       state.activeSubSection = subview;
       state.openMenu = null;
 
-      // Top Header Reset Rule: instantly reset breadcrumb trail to target domain root
-      state.breadcrumbs = resetBreadcrumbToDomain(target, subview);
-      state.drilldown.selectedOrgId = null;
-      state.drilldown.selectedCertId = null;
+      clearAllEntitySelections();
+
+      if (isHeaderReset) {
+        // Top Header Reset Rule: ONLY reset breadcrumb trail on top-header triggers
+        state.breadcrumbs = resetBreadcrumbToDomain(target, subview);
+      } else if (target === 'auditorias' || target === 'certificacion' || target === 'extra') {
+        const subLabel = subview ? getSubviewLabel(target, subview) : getDomainLabel(target);
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: subview ? `subview-${target}-${subview}` : `domain-${target}`,
+          label: subLabel,
+          route: target,
+          subview,
+          tooltip: `${getDomainLabel(target)}${subview ? ` > ${subLabel}` : ''}`,
+        });
+      }
+
       if (target === 'auditorias') {
-        state.programacionDomain.selectedAuditId = null;
-        state.programacionDomain.isEditingAttributes = false;
-        state.programacionDomain.isAddingTeamMember = false;
-        state.programacionDomain.editErrorMessage = null;
-        state.programacionDomain.saveSuccessMessage = null;
-        state.calendarioDomain.drawerAuditId = null;
-        state.resultadoDomain.inspectingFindingId = null;
         state.resultadoDomain.recommendationError = null;
         state.resultadoDomain.recommendationSuccess = null;
-      }
-      if (target === 'certificacion') {
-        if (!subview || subview === 'organizations') {
-          state.organizacionDomain.selectedOrganizacionId = null;
-          state.organizacionDomain.isEditingAttributes = false;
-        }
-        if (!subview || subview === 'certificates') {
-          state.certificadoDomain.selectedCertId = null;
-          state.certificadoDomain.isEditingAttributes = false;
-        }
-        if (!subview || subview === 'auditors') {
-          state.auditorDomain.selectedAuditorId = null;
-          state.auditorDomain.isEditingAttributes = false;
-        }
-      }
-      if (target === 'extra') {
-        state.extraDomain.selectedNormaId = null;
-        state.extraDomain.selectedSectorId = null;
-        state.extraDomain.selectedEstatusId = null;
-        state.extraDomain.selectedTipoId = null;
-        state.extraDomain.selectedMetodologiaId = null;
       }
 
       if (target === 'profile') {
@@ -1413,17 +1502,16 @@ function bindAuthenticatedEvents(): void {
       state.activeSubSection = 'organizations';
       state.organizacionDomain.selectedOrganizacionId = orgId;
       state.organizacionDomain.isEditingAttributes = false;
-      state.breadcrumbs = resetBreadcrumbToDomain('certificacion', 'organizations');
-      if (org) {
-        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-          id: `org-${org.id}`,
-          label: org.nombre,
-          route: 'certificacion',
-          subview: 'organizations',
-          entityId: org.id,
-          tooltip: `Organización > ${org.nombre}`,
-        });
-      }
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `org-${orgId}`,
+        label: org?.nombre || 'Organización',
+        route: 'certificacion',
+        subview: 'organizations',
+        entityType: 'org',
+        entityId: orgId,
+        tab: state.organizacionDomain.activeChildTab,
+        tooltip: `Organización > ${org?.nombre || orgId}`,
+      });
       syncUrlHash('certificacion', 'organizations');
       render();
     });
@@ -1454,7 +1542,9 @@ function bindAuthenticatedEvents(): void {
           label: cert.numero_certificado,
           route: 'certificacion',
           subview: 'certificates',
+          entityType: 'cert',
           entityId: cert.id,
+          tab: 'sitios',
           tooltip: `Certificado > ${cert.numero_certificado}`,
         });
       }
@@ -1701,7 +1791,9 @@ function bindAuthenticatedEvents(): void {
         label: norma?.codigo || 'Norma',
         route: 'extra',
         subview: 'standards',
+        entityType: 'norma',
         entityId: normaId,
+        tab: state.extraDomain.activeNormaTab,
         tooltip: `Norma ISO > ${norma?.codigo || normaId}`,
       });
       render();
@@ -1710,8 +1802,7 @@ function bindAuthenticatedEvents(): void {
 
   document.querySelectorAll<HTMLElement>('[data-action="back-to-normas-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.extraDomain.selectedNormaId = null;
-      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-extra-standards');
+      backtrackToParentBreadcrumb();
       render();
     });
   });
@@ -1721,6 +1812,7 @@ function bindAuthenticatedEvents(): void {
       const tab = btn.dataset.normaTab;
       if (tab === 'acreditacion' || tab === 'requisitos') {
         state.extraDomain.activeNormaTab = tab;
+        syncCurrentBreadcrumbTab(tab);
         render();
       }
     });
@@ -1858,7 +1950,9 @@ function bindAuthenticatedEvents(): void {
         label: sec ? `Sector ${sec.sector}` : 'Sector IAF',
         route: 'extra',
         subview: 'iaf',
+        entityType: 'sector_iaf',
         entityId: secId,
+        tab: state.extraDomain.activeSectorTab,
         tooltip: `Sector IAF > ${sec?.sector || secId}`,
       });
       render();
@@ -1867,8 +1961,7 @@ function bindAuthenticatedEvents(): void {
 
   document.querySelectorAll<HTMLElement>('[data-action="back-to-iaf-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.extraDomain.selectedSectorId = null;
-      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-extra-iaf');
+      backtrackToParentBreadcrumb();
       render();
     });
   });
@@ -1878,6 +1971,7 @@ function bindAuthenticatedEvents(): void {
       const tab = btn.dataset.iafTab;
       if (tab === 'subsectores' || tab === 'auditores') {
         state.extraDomain.activeSectorTab = tab;
+        syncCurrentBreadcrumbTab(tab);
         render();
       }
     });
@@ -1989,6 +2083,7 @@ function bindAuthenticatedEvents(): void {
         label: est?.estatus || 'Estatus',
         route: 'extra',
         subview: 'estatus',
+        entityType: 'estatus',
         entityId: estId,
         tooltip: `Estatus > ${est?.estatus || estId}`,
       });
@@ -1997,8 +2092,7 @@ function bindAuthenticatedEvents(): void {
   });
   document.querySelectorAll<HTMLElement>('[data-action="back-to-estatus-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.extraDomain.selectedEstatusId = null;
-      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-extra-estatus');
+      backtrackToParentBreadcrumb();
       render();
     });
   });
@@ -2047,6 +2141,7 @@ function bindAuthenticatedEvents(): void {
         label: t?.tipo || 'Tipo Auditoría',
         route: 'extra',
         subview: 'tipos',
+        entityType: 'tipo',
         entityId: tipoId,
         tooltip: `Tipo Auditoría > ${t?.tipo || tipoId}`,
       });
@@ -2055,8 +2150,7 @@ function bindAuthenticatedEvents(): void {
   });
   document.querySelectorAll<HTMLElement>('[data-action="back-to-tipo-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.extraDomain.selectedTipoId = null;
-      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-extra-tipos');
+      backtrackToParentBreadcrumb();
       render();
     });
   });
@@ -2105,6 +2199,7 @@ function bindAuthenticatedEvents(): void {
         label: m?.metodologia || 'Metodología',
         route: 'extra',
         subview: 'metodologias',
+        entityType: 'metodologia',
         entityId: metId,
         tooltip: `Metodología > ${m?.metodologia || metId}`,
       });
@@ -2113,8 +2208,7 @@ function bindAuthenticatedEvents(): void {
   });
   document.querySelectorAll<HTMLElement>('[data-action="back-to-metodologia-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.extraDomain.selectedMetodologiaId = null;
-      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-extra-metodologias');
+      backtrackToParentBreadcrumb();
       render();
     });
   });
@@ -2174,21 +2268,19 @@ function bindAuthenticatedEvents(): void {
         label: org?.nombre || 'Organización',
         route: 'certificacion',
         subview: 'organizations',
+        entityType: 'org',
         entityId: orgId,
+        tab: state.organizacionDomain.activeChildTab,
         tooltip: `Organización > ${org?.nombre || orgId}`,
       });
       render();
     });
   });
 
-  // 2. Back to organizations list
+  // 2. Back to parent breadcrumb (organizations list or originating parent)
   document.querySelectorAll<HTMLElement>('[data-action="back-to-org-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.organizacionDomain.selectedOrganizacionId = null;
-      state.organizacionDomain.isEditingAttributes = false;
-      state.organizacionDomain.editErrorMessage = null;
-      state.organizacionDomain.saveSuccessMessage = null;
-      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-certificacion-organizations');
+      backtrackToParentBreadcrumb();
       render();
     });
   });
@@ -2363,15 +2455,38 @@ function bindAuthenticatedEvents(): void {
     render();
   });
 
-  // 10. Click IAF sector in Zone 1 -> navigates to Domain Extra Sector IAF
+  // 10. Click IAF sector in Zone 1 -> cross-entity push to Extra Sector IAF
   document.querySelectorAll<HTMLElement>('[data-action="view-sector-iaf"]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const secNum = btn.dataset.sectorNumber || '17';
+      const matchedSector =
+        INITIAL_SECTORES_IAF.find((s) => String(s.sector) === secNum) ||
+        state.domainData.iafSectors.find((s) => String(s.sector) === secNum);
       state.activeRoute = 'extra';
       state.activeSubSection = 'iaf';
-      state.extraDomain.selectedSectorId = null;
-      state.extraDomain.iafSearchQuery = secNum;
-      state.breadcrumbs = resetBreadcrumbToDomain('extra', 'iaf');
+      state.extraDomain.selectedSectorId = matchedSector?.id || null;
+      state.extraDomain.activeSectorTab = 'subsectores';
+      state.extraDomain.iafSearchQuery = matchedSector ? '' : secNum;
+      if (matchedSector) {
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `sector-${matchedSector.id}`,
+          label: `Sector ${matchedSector.sector}`,
+          route: 'extra',
+          subview: 'iaf',
+          entityType: 'sector_iaf',
+          entityId: matchedSector.id,
+          tab: 'subsectores',
+          tooltip: `Sector IAF > ${matchedSector.descripcion}`,
+        });
+      } else {
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: 'subview-extra-iaf',
+          label: `Sector ${secNum}`,
+          route: 'extra',
+          subview: 'iaf',
+          tooltip: `Extra > Sector IAF ${secNum}`,
+        });
+      }
       syncUrlHash('extra', 'iaf');
       render();
     });
@@ -2394,7 +2509,9 @@ function bindAuthenticatedEvents(): void {
           label: certCode,
           route: 'certificacion',
           subview: 'certificates',
+          entityType: 'cert',
           entityId: certId,
+          tab: 'sitios',
           tooltip: `Certificado > ${certCode}`,
         });
         syncUrlHash('certificacion', 'certificates');
@@ -2429,7 +2546,9 @@ function bindAuthenticatedEvents(): void {
         label: cert?.numero_certificado || 'Certificado',
         route: 'certificacion',
         subview: 'certificates',
+        entityType: 'cert',
         entityId: certId,
+        tab: 'sitios',
         tooltip: `Certificado > ${cert?.numero_certificado || certId}`,
       });
       syncUrlHash('certificacion', 'certificates');
@@ -2437,14 +2556,10 @@ function bindAuthenticatedEvents(): void {
     });
   });
 
-  // 2. Back to certificates list
+  // 2. Back to parent breadcrumb (certificates list or originating parent)
   document.querySelectorAll<HTMLElement>('[data-action="back-to-cert-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.certificadoDomain.selectedCertId = null;
-      state.certificadoDomain.isEditingAttributes = false;
-      state.certificadoDomain.editErrorMessage = null;
-      state.certificadoDomain.saveSuccessMessage = null;
-      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-certificacion-certificates');
+      backtrackToParentBreadcrumb();
       render();
     });
   });
@@ -2541,6 +2656,7 @@ function bindAuthenticatedEvents(): void {
       const tab = btn.dataset.certTab as CertificadoChildTab | undefined;
       if (tab) {
         state.certificadoDomain.activeChildTab = tab;
+        syncCurrentBreadcrumbTab(tab);
         render();
       }
     });
@@ -2656,7 +2772,7 @@ function bindAuthenticatedEvents(): void {
     render();
   });
 
-  // 13. Nav link: view organization from certificate Zone 1
+  // 13. Nav link: view organization from certificate Zone 1 (cross-entity lineage push)
   document.querySelectorAll<HTMLElement>('[data-action="view-org-from-cert"]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const orgId = btn.dataset.orgId;
@@ -2668,30 +2784,28 @@ function bindAuthenticatedEvents(): void {
       const org =
         state.domainData.allOrganizaciones.find((o) => o.id === orgId) ||
         INITIAL_ORGANIZACIONES.find((o) => o.id === orgId);
-      state.breadcrumbs = resetBreadcrumbToDomain('certificacion', 'organizations');
-      if (org) {
-        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-          id: `org-${org.id}`,
-          label: org.nombre,
-          route: 'certificacion',
-          subview: 'organizations',
-          entityId: org.id,
-          tooltip: `Organización > ${org.nombre}`,
-        });
-      }
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `org-${orgId}`,
+        label: org?.nombre || 'Organización',
+        route: 'certificacion',
+        subview: 'organizations',
+        entityType: 'org',
+        entityId: orgId,
+        tab: state.organizacionDomain.activeChildTab,
+        tooltip: `Organización > ${org?.nombre || orgId}`,
+      });
       syncUrlHash('certificacion', 'organizations');
       render();
     });
   });
 
-  // 14. Nav link: view standard (norma) from certificate Zone 1
+  // 14. Nav link: view standard (norma) from certificate Zone 1 (cross-entity lineage push)
   document.querySelectorAll<HTMLElement>('[data-action="view-norma-from-cert"]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const normaId = btn.dataset.normaId || null;
       state.activeRoute = 'extra';
       state.activeSubSection = 'standards';
       state.extraDomain.selectedNormaId = normaId;
-      state.breadcrumbs = resetBreadcrumbToDomain('extra', 'standards');
       if (normaId) {
         const matchedNorma =
           INITIAL_NORMAS.find((n) => n.id === normaId) ||
@@ -2702,8 +2816,18 @@ function bindAuthenticatedEvents(): void {
           label: normaLabel,
           route: 'extra',
           subview: 'standards',
+          entityType: 'norma',
           entityId: normaId,
+          tab: state.extraDomain.activeNormaTab,
           tooltip: `Norma ISO > ${normaLabel}`,
+        });
+      } else {
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: 'subview-extra-standards',
+          label: 'Norma',
+          route: 'extra',
+          subview: 'standards',
+          tooltip: 'Extra > Norma',
         });
       }
       syncUrlHash('extra', 'standards');
@@ -2711,26 +2835,37 @@ function bindAuthenticatedEvents(): void {
     });
   });
 
-  // 15. Nav link: view IAF sector from certificate Zone 1
+  // 15. Nav link: view IAF sector from certificate Zone 1 (cross-entity lineage push)
   document.querySelectorAll<HTMLElement>('[data-action="view-iaf-from-cert"]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const sectorId = btn.dataset.sectorId || null;
+      const matchedSector = sectorId
+        ? INITIAL_SECTORES_IAF.find((s) => s.id === sectorId || String(s.sector) === sectorId) ||
+          state.domainData.iafSectors.find((s) => s.id === sectorId || String(s.sector) === sectorId)
+        : undefined;
+      const resolvedSectorId = matchedSector?.id || sectorId;
       state.activeRoute = 'extra';
       state.activeSubSection = 'iaf';
-      state.extraDomain.selectedSectorId = sectorId;
-      state.breadcrumbs = resetBreadcrumbToDomain('extra', 'iaf');
-      if (sectorId) {
-        const matchedSector =
-          INITIAL_SECTORES_IAF.find((s) => s.id === sectorId || String(s.sector) === sectorId) ||
-          state.domainData.iafSectors.find((s) => s.id === sectorId || String(s.sector) === sectorId);
+      state.extraDomain.selectedSectorId = resolvedSectorId;
+      if (resolvedSectorId) {
         const secLabel = matchedSector ? `Sector ${matchedSector.sector}` : 'Sector IAF';
         state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-          id: `sector-${sectorId}`,
+          id: `sector-${resolvedSectorId}`,
           label: secLabel,
           route: 'extra',
           subview: 'iaf',
-          entityId: sectorId,
+          entityType: 'sector_iaf',
+          entityId: resolvedSectorId,
+          tab: state.extraDomain.activeSectorTab,
           tooltip: `Sector IAF > ${matchedSector?.descripcion || secLabel}`,
+        });
+      } else {
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: 'subview-extra-iaf',
+          label: 'Sector IAF',
+          route: 'extra',
+          subview: 'iaf',
+          tooltip: 'Extra > Sector IAF',
         });
       }
       syncUrlHash('extra', 'iaf');
@@ -2764,7 +2899,9 @@ function bindAuthenticatedEvents(): void {
         label: aud?.nombre || 'Auditor',
         route: 'certificacion',
         subview: 'auditors',
+        entityType: 'auditor',
         entityId: auditorId,
+        tab: 'competencias',
         tooltip: `Auditor > ${aud?.nombre || auditorId}`,
       });
       syncUrlHash('certificacion', 'auditors');
@@ -2772,14 +2909,10 @@ function bindAuthenticatedEvents(): void {
     });
   });
 
-  // 2. Back to auditor list
+  // 2. Back to parent breadcrumb (auditor list or originating parent)
   document.querySelectorAll<HTMLElement>('[data-action="back-to-auditor-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.auditorDomain.selectedAuditorId = null;
-      state.auditorDomain.isEditingAttributes = false;
-      state.auditorDomain.editErrorMessage = null;
-      state.auditorDomain.saveSuccessMessage = null;
-      state.breadcrumbs = popToBreadcrumb(state.breadcrumbs, 'subview-certificacion-auditors');
+      backtrackToParentBreadcrumb();
       render();
     });
   });
@@ -2875,6 +3008,7 @@ function bindAuthenticatedEvents(): void {
       const tab = btn.dataset.auditorTab as AuditorChildTab | undefined;
       if (tab) {
         state.auditorDomain.activeChildTab = tab;
+        syncCurrentBreadcrumbTab(tab);
         render();
       }
     });
@@ -3083,29 +3217,23 @@ function bindPhase5AuditoriasEvents(): void {
       state.programacionDomain.isAddingTeamMember = false;
       state.programacionDomain.editErrorMessage = null;
       state.programacionDomain.saveSuccessMessage = null;
-      state.breadcrumbs = resetBreadcrumbToDomain('auditorias', 'scheduling');
-      if (audit) {
-        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-          id: `prog-audit-${audit.id}`,
-          label: audit.codigo_auditoria,
-          route: 'auditorias',
-          subview: 'scheduling',
-          entityId: audit.id,
-          tooltip: `${audit.codigo_auditoria} — ${audit.organizacion_nombre}`,
-        });
-      }
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `prog-audit-${auditId}`,
+        label: audit?.codigo_auditoria || 'Auditoría',
+        route: 'auditorias',
+        subview: 'scheduling',
+        entityType: 'audit',
+        entityId: auditId,
+        tab: 'equipo',
+        tooltip: audit ? `${audit.codigo_auditoria} — ${audit.organizacion_nombre}` : 'Programación de Auditoría',
+      });
       syncUrlHash('auditorias', 'scheduling');
       render();
     });
   });
 
   document.getElementById('backToProgramacionListBtn')?.addEventListener('click', () => {
-    state.programacionDomain.selectedAuditId = null;
-    state.programacionDomain.isEditingAttributes = false;
-    state.programacionDomain.isAddingTeamMember = false;
-    state.programacionDomain.editErrorMessage = null;
-    state.programacionDomain.saveSuccessMessage = null;
-    state.breadcrumbs = resetBreadcrumbToDomain('auditorias', 'scheduling');
+    backtrackToParentBreadcrumb();
     render();
   });
 
@@ -3113,13 +3241,22 @@ function bindPhase5AuditoriasEvents(): void {
     btn.addEventListener('click', () => {
       const auditId = btn.dataset.auditId;
       if (!auditId) return;
+      const audit = state.domainData.programacionAudits.find((a) => a.id === auditId);
       state.activeRoute = 'auditorias';
       state.activeSubSection = 'findings';
       state.resultadoDomain.activeAuditIdForDecision = auditId;
       state.resultadoDomain.selectedAuditId = auditId;
       state.resultadoDomain.recommendationError = null;
       state.resultadoDomain.recommendationSuccess = null;
-      state.breadcrumbs = resetBreadcrumbToDomain('auditorias', 'findings');
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `resultados-${auditId}`,
+        label: audit ? `Resultados · ${audit.codigo_auditoria}` : 'Resultado',
+        route: 'auditorias',
+        subview: 'findings',
+        entityType: 'audit',
+        entityId: auditId,
+        tooltip: audit ? `Resultados > ${audit.codigo_auditoria}` : 'Auditoría > Resultado',
+      });
       syncUrlHash('auditorias', 'findings');
       render();
     });
@@ -3129,47 +3266,29 @@ function bindPhase5AuditoriasEvents(): void {
     btn.addEventListener('click', () => {
       const orgId = btn.dataset.orgId;
       if (!orgId) return;
+      const canCrossOrg =
+        canAccessRoute(state.profile, 'certificacion') ||
+        (state.profile?.role === 'AUDITOR' && state.profile?.status === 'APPROVED');
+      if (!canCrossOrg) return;
+
       const org =
         state.domainData.allOrganizaciones.find((o) => o.id === orgId) ||
         INITIAL_ORGANIZACIONES.find((o) => o.id === orgId);
-
-      if (!canAccessRoute(state.profile, 'certificacion')) {
-        if (!(state.profile?.role === 'AUDITOR' && state.profile?.status === 'APPROVED')) return;
-        state.activeRoute = 'certificacion';
-        state.activeSubSection = 'organizations';
-        state.organizacionDomain.selectedOrganizacionId = orgId;
-        state.organizacionDomain.isEditingAttributes = false;
-        state.breadcrumbs = resetBreadcrumbToDomain('auditorias', 'scheduling');
-        if (org) {
-          state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-            id: `org-${org.id}`,
-            label: org.nombre,
-            route: 'certificacion',
-            subview: 'organizations',
-            entityId: org.id,
-            tooltip: `Organización > ${org.nombre}`,
-          });
-        }
-        syncUrlHash('certificacion', 'organizations');
-        render();
-        return;
-      }
 
       state.activeRoute = 'certificacion';
       state.activeSubSection = 'organizations';
       state.organizacionDomain.selectedOrganizacionId = orgId;
       state.organizacionDomain.isEditingAttributes = false;
-      state.breadcrumbs = resetBreadcrumbToDomain('certificacion', 'organizations');
-      if (org) {
-        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-          id: `org-${org.id}`,
-          label: org.nombre,
-          route: 'certificacion',
-          subview: 'organizations',
-          entityId: org.id,
-          tooltip: `Organización > ${org.nombre}`,
-        });
-      }
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `org-${orgId}`,
+        label: org?.nombre || 'Organización',
+        route: 'certificacion',
+        subview: 'organizations',
+        entityType: 'org',
+        entityId: orgId,
+        tab: state.organizacionDomain.activeChildTab,
+        tooltip: `Organización > ${org?.nombre || orgId}`,
+      });
       syncUrlHash('certificacion', 'organizations');
       render();
     });
@@ -3179,49 +3298,30 @@ function bindPhase5AuditoriasEvents(): void {
     btn.addEventListener('click', () => {
       const certId = btn.dataset.certId;
       if (!certId) return;
+      const canCrossCert =
+        canAccessRoute(state.profile, 'certificacion') ||
+        (state.profile?.role === 'AUDITOR' && state.profile?.status === 'APPROVED');
+      if (!canCrossCert) return;
+
       const cert =
         state.domainData.allCertificadosDetailed.find((c) => c.id === certId) ||
         INITIAL_CERTIFICADOS_DETAILED.find((c) => c.id === certId);
-
-      if (!canAccessRoute(state.profile, 'certificacion')) {
-        if (!(state.profile?.role === 'AUDITOR' && state.profile?.status === 'APPROVED')) return;
-        state.activeRoute = 'certificacion';
-        state.activeSubSection = 'certificates';
-        state.certificadoDomain.selectedCertId = certId;
-        state.certificadoDomain.activeChildTab = 'sitios';
-        state.certificadoDomain.isEditingAttributes = false;
-        state.breadcrumbs = resetBreadcrumbToDomain('auditorias', 'scheduling');
-        if (cert) {
-          state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-            id: `cert-${cert.id}`,
-            label: cert.numero_certificado,
-            route: 'certificacion',
-            subview: 'certificates',
-            entityId: cert.id,
-            tooltip: `Certificado > ${cert.numero_certificado}`,
-          });
-        }
-        syncUrlHash('certificacion', 'certificates');
-        render();
-        return;
-      }
 
       state.activeRoute = 'certificacion';
       state.activeSubSection = 'certificates';
       state.certificadoDomain.selectedCertId = certId;
       state.certificadoDomain.activeChildTab = 'sitios';
       state.certificadoDomain.isEditingAttributes = false;
-      state.breadcrumbs = resetBreadcrumbToDomain('certificacion', 'certificates');
-      if (cert) {
-        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-          id: `cert-${cert.id}`,
-          label: cert.numero_certificado,
-          route: 'certificacion',
-          subview: 'certificates',
-          entityId: cert.id,
-          tooltip: `Certificado > ${cert.numero_certificado}`,
-        });
-      }
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `cert-${certId}`,
+        label: cert?.numero_certificado || 'Certificado',
+        route: 'certificacion',
+        subview: 'certificates',
+        entityType: 'cert',
+        entityId: certId,
+        tab: 'sitios',
+        tooltip: `Certificado > ${cert?.numero_certificado || certId}`,
+      });
       syncUrlHash('certificacion', 'certificates');
       render();
     });
@@ -3367,6 +3467,7 @@ function bindPhase5AuditoriasEvents(): void {
       if (tab) {
         state.programacionDomain.activeChildTab = tab;
         state.programacionDomain.isAddingTeamMember = false;
+        syncCurrentBreadcrumbTab(tab);
         render();
       }
     });
@@ -3738,17 +3839,16 @@ function bindPhase5AuditoriasEvents(): void {
       state.activeSubSection = 'scheduling';
       state.programacionDomain.selectedAuditId = auditId;
       state.programacionDomain.activeChildTab = 'equipo';
-      state.breadcrumbs = resetBreadcrumbToDomain('auditorias', 'scheduling');
-      if (audit) {
-        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
-          id: `prog-audit-${audit.id}`,
-          label: audit.codigo_auditoria,
-          route: 'auditorias',
-          subview: 'scheduling',
-          entityId: audit.id,
-          tooltip: `${audit.codigo_auditoria} — ${audit.organizacion_nombre}`,
-        });
-      }
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `prog-audit-${auditId}`,
+        label: audit?.codigo_auditoria || 'Auditoría',
+        route: 'auditorias',
+        subview: 'scheduling',
+        entityType: 'audit',
+        entityId: auditId,
+        tab: 'equipo',
+        tooltip: audit ? `${audit.codigo_auditoria} — ${audit.organizacion_nombre}` : 'Programación de Auditoría',
+      });
       syncUrlHash('auditorias', 'scheduling');
       render();
     });
@@ -3758,6 +3858,7 @@ function bindPhase5AuditoriasEvents(): void {
     btn.addEventListener('click', () => {
       const auditId = btn.dataset.auditId;
       if (!auditId) return;
+      const audit = state.domainData.programacionAudits.find((a) => a.id === auditId);
       state.calendarioDomain.drawerAuditId = null;
       state.activeRoute = 'auditorias';
       state.activeSubSection = 'findings';
@@ -3765,7 +3866,15 @@ function bindPhase5AuditoriasEvents(): void {
       state.resultadoDomain.selectedAuditId = auditId;
       state.resultadoDomain.recommendationError = null;
       state.resultadoDomain.recommendationSuccess = null;
-      state.breadcrumbs = resetBreadcrumbToDomain('auditorias', 'findings');
+      state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+        id: `resultados-${auditId}`,
+        label: audit ? `Resultados · ${audit.codigo_auditoria}` : 'Resultado',
+        route: 'auditorias',
+        subview: 'findings',
+        entityType: 'audit',
+        entityId: auditId,
+        tooltip: audit ? `Resultados > ${audit.codigo_auditoria}` : 'Auditoría > Resultado',
+      });
       syncUrlHash('auditorias', 'findings');
       render();
     });

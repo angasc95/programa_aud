@@ -307,7 +307,7 @@ export function renderExtraView(
   }
 
   return `
-    <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+    <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-3 pb-8 space-y-5">
       <div id="extraActiveViewContainer">
         ${activeContentHtml}
       </div>
