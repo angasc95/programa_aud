@@ -1,13 +1,18 @@
 # Phase 3: Breadcrumb Navigation Engine, Loop Prevention & Contextual Cross-Entity Lineage
 
+> **Depends On:** [`phase_2.1.md`](./phase_2.1.md) (Three-Block Header & Updated Route Labels)  
+> **Unlocks:** [`phase_4.1.1.md`](./phase_4.1.1.md)–[`phase_4.2.3.md`](./phase_4.2.3.md) (Multi Views & Deep 3-Zone Drill-Downs)
+
+---
+
 ## 1. Objectives & Architectural Rationale
 
-The current breadcrumb bar (`src/views/breadcrumbView.ts`) and navigation handlers (`src/main.ts`) suffer from three structural UX flaws:
+The current breadcrumb bar (`src/views/breadcrumbView.ts`, 67 lines) and navigation handlers (`src/main.ts`) suffer from three structural UX flaws:
 1. **Visual bloat & wrapping clutter:** `breadcrumbView.ts` wraps the trail inside a bordered white card (`bg-white border border-slate-200/80 rounded-xl px-4 py-2.5 shadow-2xs`) with `flex-wrap` inside `<ol>`, causing tall vertical gaps and multi-row wrapping on deep paths or narrow viewports.
 2. **Abrupt context resets on cross-entity links:** Handlers in `src/main.ts` (`view-org-from-cert` line 2674, `view-norma-from-cert` line 2697, `view-iaf-from-cert` line 2724, `open-org-from-audit` line 3188, `open-cert-from-audit` line 3259) erroneously call `resetBreadcrumbToDomain(...)` when opening a related parent, standard, or IAF sector from inside a Detail View—erasing the user's lineage and teleporting their breadcrumb root into a foreign domain.
 3. **Incomplete loop & state restoration handling:** `pushBreadcrumb()` in `src/lib/breadcrumb.ts` matches solely on `s.id` or `s.entityId`, and `popToBreadcrumb()` does not always restore entity-specific sub-state (such as `selectedSitioId`, `selectedProcesoId`, `selectedTurnoId`, `selectedAcreditacionId`, or `activeChildTab`) when navigating across domains in a single trail.
 
-Phase 3 delivers a crisp, borderless, single-row contextual breadcrumb system where **only top-header clicks reset the trail** and **cross-entity drill-downs preserve full ancestry without loops**.
+**Phase 3** delivers a crisp, borderless, single-row contextual breadcrumb system where **only top-header clicks reset the trail** and **cross-entity drill-downs preserve full ancestry without loops**.
 
 ---
 
@@ -17,7 +22,7 @@ Phase 3 delivers a crisp, borderless, single-row contextual breadcrumb system wh
 | :--- | :--- | :--- |
 | `src/views/breadcrumbView.ts` | Bordered `bg-white border rounded-xl px-4 py-2.5 shadow-2xs` card; `<ol class="flex flex-wrap ...">` wraps onto multiple rows; no intermediate ellipsis collapse for deep trails. | Borderless compact strip (`nav` directly above content header with tight `mb-2` spacing); single-row `flex-nowrap overflow-hidden whitespace-nowrap` with CSS truncation + middle-segment collapse (`…`) for trails > 4 levels. |
 | `src/lib/breadcrumb.ts` | `pushBreadcrumb()` checks `s.id === segment.id \|\| (segment.entityId && s.entityId === segment.entityId)` without `entityType` scoping; domain labels use `'Auditorías'`; includes `'drilldown'`, `'sites'`, `'processes'`, `'shifts'`, `'requirements'`, `'catalogs'`. | Introduce `entityType` on `BreadcrumbSegment` (`'org' \| 'cert' \| 'sitio' \| 'proceso' \| 'turno' \| 'auditor' \| 'audit' \| 'norma' \| 'sector_iaf' \| 'accreditation' \| ...`), composite loop detection `(route + subview + entityType + entityId)`, and `collapseBreadcrumbForDisplay()` helper. |
-| `src/main.ts` | Cross-entity links (`view-org-from-cert`, `view-norma-from-cert`, `view-iaf-from-cert`, `open-org-from-audit`, `open-cert-from-audit`) call `resetBreadcrumbToDomain(...)`, breaking context. Also `main.ts` `<main>` uses `py-8 space-y-6` adding extra whitespace beneath the breadcrumb bar. | Replace all cross-entity `resetBreadcrumbToDomain(...)` calls with `pushBreadcrumb(state.breadcrumbs, ...)`; preserve `data-nav-reset="true"` **exclusively** on top global header links and brand button; tighten `<main>` top padding (`pt-3 pb-8`). |
+| `src/main.ts` | Cross-entity links (`view-org-from-cert`, `view-norma-from-cert`, `view-iaf-from-cert`, `open-org-from-audit`, `open-cert-from-audit`) call `resetBreadcrumbToDomain(...)`, breaking context. Also `<main>` uses `py-8 space-y-6` adding extra whitespace beneath the breadcrumb bar. | Convert all cross-entity `resetBreadcrumbToDomain(...)` calls to `pushBreadcrumb(state.breadcrumbs, ...)`; preserve `resetBreadcrumbToDomain(...)` **exclusively** on top global header links (`data-nav-reset="true"`), hash-level root jumps, and session init/logout; tighten `<main>` top padding (`pt-3 pb-8`). |
 
 ---
 
@@ -33,19 +38,20 @@ Phase 3 delivers a crisp, borderless, single-row contextual breadcrumb system wh
     </ol>
   </nav>
   ```
-- **Single-Row Overflow & Middle Ellipsis:**
+- **Single-Row Overflow & Middle Ellipsis (`collapseBreadcrumbForDisplay`):**
   - Never wrap onto a second line (`flex-nowrap`).
   - Each ancestor segment uses `truncate max-w-[140px] sm:max-w-[200px]` with full label in `title="..."`.
-  - When `trail.length > 4`, collapse intermediate crumbs between index `0` (Domain/Section root) and the last two segments into a single compact `…` indicator (with tooltip listing hidden ancestors and optional click-to-backtrack to the immediate parent of the collapsed range) so the root, immediate parent, and active page remain cleanly visible on a single line across `375px` mobile and `1440px` desktop viewports.
+  - When `trail.length > 4`, collapse intermediate crumbs between index `0` (Domain/Section root) and the last two segments into a single compact `…` indicator (with tooltip listing hidden ancestors and click-to-backtrack to the immediate parent of the collapsed range) so the root, immediate parent, and active page remain cleanly visible on a single line across `375px` mobile and `1440px` desktop viewports.
 - **Tighter Canvas Coupling:** Reduce excessive vertical spacing between `<nav aria-label="Navegación jerárquica">` and the first content card (`mb-2` / `space-y-3` instead of stacking `py-8` + card gap).
 
 ### 3.2 Top-Header-Only Reset Rule
 
-1. **Reset Allowed ONLY On:**
+1. **Reset (`resetBreadcrumbToDomain`) Allowed ONLY On:**
    - Top global header domain buttons (`data-nav="..." data-nav-reset="true"`).
    - Top global header dropdown items (`data-nav="..." data-subview="..." data-nav-reset="true"`).
    - Brand logo (`PA Programa de Auditoría`, `data-nav="dashboard" data-nav-reset="true"`).
    - Account dropdown route triggers (`Mi Perfil`, `Panel Aprobaciones`, `Estado DB`, `data-nav-reset="true"`).
+   - Initial boot / hash root navigation / sign-out reset.
 2. **Reset Strictly Forbidden On:**
    - Clicking a parent/reference link inside a Detail View's **Parent Zone** (e.g., `Certificado` → `Organización`, `Certificado` → `Norma`, `Certificado` → `Sector IAF`, `Programación` → `Organización`, `Programación` → `Certificado`, `Sitio` → `Certificado`).
    - Clicking a child link inside a Detail View's **Children Zone** (`Certificado` → `Sitio` → `Turno`; `Organización` → `Certificado`; `Norma` → `Acreditación`).
@@ -101,10 +107,10 @@ Phase 3 delivers a crisp, borderless, single-row contextual breadcrumb system wh
 ## 4. Implementation Checklist
 
 - [ ] Redesign `src/views/breadcrumbView.ts` as a compact, borderless, single-row (`flex-nowrap`, ellipsis truncation, middle-collapse for deep trails) strip directly above page content.
-- [ ] Update `src/lib/breadcrumb.ts` with `BreadcrumbEntityType`, composite loop-prevention matching, middle-collapse utility, and updated singular domain labels (`Auditoría`, `Certificación`, `Extra`, `Perfil`).
-- [ ] Refactor all cross-entity navigation handlers in `src/main.ts` (`view-org-from-cert`, `view-norma-from-cert`, `view-iaf-from-cert`, `open-org-from-audit`, `open-cert-from-audit`, plus Phase 4.2 parent/child links) to invoke `pushBreadcrumb(state.breadcrumbs, ...)` instead of `resetBreadcrumbToDomain(...)`.
+- [ ] Update `src/lib/breadcrumb.ts` with `BreadcrumbEntityType`, composite loop-prevention matching, `collapseBreadcrumbForDisplay()`, and updated singular domain labels (`Auditoría`, `Certificación`, `Extra`, `Perfil`).
+- [ ] Refactor cross-entity navigation handlers in `src/main.ts` (`view-org-from-cert`, `view-norma-from-cert`, `view-iaf-from-cert`, `open-org-from-audit`, `open-cert-from-audit`, plus `auditorias` sub-links) to invoke `pushBreadcrumb(state.breadcrumbs, ...)` instead of `resetBreadcrumbToDomain(...)`.
 - [ ] Enhance the breadcrumb click handler in `src/main.ts` to restore complete target entity state (`entityType`, `entityId`, `tab`) across cross-domain lineages.
-- [ ] Audit all in-page `"Volver"` buttons (if any remain inside Detail Views) to pop to parent breadcrumb instead of resetting to domain root.
+- [ ] Audit all in-page `"← Volver"` buttons inside Detail Views so they pop to parent breadcrumb instead of resetting to domain root.
 
 ---
 
