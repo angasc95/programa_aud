@@ -12,13 +12,7 @@ Current pain points identified across the codebase include:
 - **Abrupt breadcrumb resets & wrap clutter:** Cross-entity links (e.g., `Certificado` → `Norma` or `Sector IAF`) abruptly wipe domain context instead of extending contextual lineage; `flex-wrap` + bordered card containers waste vertical space; and revisits lack composite entity-aware loop truncation.
 - **Hard-delete exposure & missing self-service Profile (`Perfil`):** Relational/catalog tables use `FOR ALL` RLS policies with cascading/restrictive hard deletes that threaten historical audit traceability, and users lack a dedicated **`Perfil`** management view.
 
-To eliminate execution bottlenecks and keep every deliverable focused and independently verifiable, this master roadmap sequences the upgrade into **13 granular, non-breaking execution units** across Phases `1` through `5`:
-- **Phase 1** → `1.1` (Schema, Triggers, Dependency Guard & Partial Indexes) + `1.2` (Granular RLS & Profile Self-Update)
-- **Phase 2** → `2.1` (3-Block Header & Zero-Card Domain Dispatchers) + `2.2` (Minimalist Dashboard & `Perfil` View)
-- **Phase 3** → `3` (Compact Borderless Breadcrumbs, Loop Prevention & Contextual Lineage)
-- **Phase 4.1** → `4.1.1` (Multi View Engine & Double-`"X"` Fix) + `4.1.2` (9-Directory Rollout) + `4.1.3` (`Acreditación` Multi View)
-- **Phase 4.2** → `4.2.1` (3-Zone Detail Template & 9-View Refactor) + `4.2.2` (`Acreditación` & `Sitio` Details) + `4.2.3` (`Proceso` & `Turno` Details + `drillDownView` Retirement)
-- **Phase 5** → `5.1` (Safe Archive Modal & Admin Restore UX) + `5.2` (`node:test` Regression Suite & Playwright E2E Release Gate)
+This master roadmap sequences these upgrades into **6 clean, incremental, non-breaking phases** (`Phase 1` through `Phase 5`, with `Phase 4` split into `4.1` and `4.2`).
 
 ---
 
@@ -32,7 +26,7 @@ Every operational entity in `programa_aud` adheres strictly to one of two standa
 | :--- | :--- | :--- |
 | **Purpose** | Discover, filter, search, totalize, and compare collections of records | Inspect lineage, edit record attributes, audit changes, and drill into child lists |
 | **Naming** | Plural domain/collection semantics in content headers (`Organizaciones`, `Certificados`, `Acreditaciones`, etc.); singular section labels in top-header dropdowns | Record business identifier (`FN-QMS-2024-001`, `Sitio 0 — Planta Principal`, `AUD-2024-001`) |
-| **Layout** | Unified Header Card + **Collapsible Sidebar Filter Column** (hamburger toggle, category checkboxes, reactive counts) + **Search & Records Canvas** (single `type="text"` search bar, totalization counter, `[⊞ Tarjetas \| ☰ Tabla]` switcher) | **Three-Zone Vertical Architecture**: (1) Parent Zone → (hairline divider) → (2) Record Zone → (3) Children Zone (tabbed list-only relationships) |
+| **Layout** | Unified Header Card + **Collapsible Sidebar Filter Column** (hamburger toggle, category checkboxes, reactive counts) + **Search & Records Canvas** (single search bar, totalization counter, `[⊞ Tarjetas \| ☰ Tabla]` switcher) | **Three-Zone Vertical Architecture**: (1) Parent Zone → (divider line) → (2) Record Zone → (3) Children Zone (tabbed list-only relationships) |
 | **Primary Navigation** | Accessed from Top Header Domain Menus or breadcrumb backtracking | Accessed by clicking any record row/card in a Multi View, Parent Zone, or Children Zone tab |
 
 ---
@@ -62,7 +56,7 @@ All workspace navigation lives exclusively in the sticky top header (`src/views/
 
 - Remove redundant role (`ADMIN` / `WORKER` / `AUDITOR` / `CLIENT`) and approval (`APPROVED`) pill badges from the welcome header (identity/role iconography already resides in the top-right user menu).
 - Remove the `"Explorador Operativo de Certificados"` embedded directory from the dashboard (`Certificate` exploration belongs in `Certificación > Certificado`).
-- Render a calm, minimalist workspace landing view displaying RBAC-scoped high-level operational metrics (active client organizations, valid certificates, scheduled audits, active accreditations, open findings).
+- Render a calm, minimalist workspace landing view displaying RBAC-scoped high-level operational metrics (e.g., active client organizations, valid certificates, scheduled/in-progress audits, active accreditations, open findings).
 
 ---
 
@@ -79,7 +73,7 @@ All Detail Views (`Organización`, `Certificado`, `Auditor`, `Programación`, `N
 
 ### 2.5 Contextual Breadcrumb Engine & Loop Prevention
 
-- **Visual Profile:** Compact, borderless single-row trail nestled immediately above the view header (no white bordered box wrapper, no multi-line `flex-wrap` wrapping). Long trails truncate cleanly via CSS ellipsis and middle-crumb collapsing (`collapseBreadcrumbForDisplay()`).
+- **Visual Profile:** Compact, borderless single-row trail nestled immediately above the view header (no white bordered box wrapper, no multi-line `flex-wrap` wrapping). Long trails truncate cleanly via CSS ellipsis and middle-crumb collapsing.
 - **Top-Header-Only Reset Rule:** Breadcrumb trails **only** reset to domain root when the user clicks a top-level header menu item (`[data-nav-reset="true"]`) or the brand logo.
 - **Contextual Cross-Domain Lineage:** Navigating from any Detail View into a related parent, classification, or child entity appends to the current trail rather than switching domain roots (e.g., `Certificación > Certificado > FN-QMS-2024-001 > Sector 17`).
 - **Loop Prevention:** Revisiting an entity already present in the trail (matched by composite `route + subview + entityType + entityId`) cleanly truncates the loop back to that ancestor node.
@@ -88,71 +82,41 @@ All Detail Views (`Organización`, `Certificado`, `Auditor`, `Programación`, `N
 
 ### 2.6 Soft-Delete Data Retention & Profile Governance
 
-- **No Hard Deletes:** All 23 soft-deleted primary, operational, and catalog tables (`organizacion`, `certificado`, `sitio`, `proceso`, `turno`, `auditoria`, `hallazgo`, `auditor`, `norma`, `requisito`, `sector_iaf`, `subsector_iaf`, `organismo_acreditacion`, `acreditacion_norma_iaf`, `estatus`, `tipo_auditoria`, `metodologia_auditoria`, plus operational child tables) never execute physical `DELETE` statements. Archiving sets `deleted_at = NOW()` and `deleted_by = auth.uid()`, preserving foreign-key integrity and `public.audit_log` forensic history.
-- **Profile (`Perfil`) RBAC:** Authenticated users can view and cautiously update their own display profile metadata (`nombre`) via the **`Perfil`** view, while PostgreSQL triggers (`fn_protect_profile_rbac_fields()`) and RLS (`profiles_update_self`) strictly block self-escalation of `role` or `status`.
+- **No Hard Deletes:** Core, relational, and catalog tables (`organizacion`, `certificado`, `sitio`, `proceso`, `turno`, `auditoria`, `hallazgo`, `auditor`, `norma`, `requisito`, `sector_iaf`, `subsector_iaf`, `organismo_acreditacion`, `acreditacion_norma_iaf`, `estatus`, `tipo_auditoria`, `metodologia_auditoria`) never execute physical `DELETE` statements. Archiving sets `deleted_at = NOW()` and `deleted_by = auth.uid()`, preserving foreign-key integrity and `public.audit_log` forensic history.
+- **Profile (`Perfil`) RBAC:** Authenticated users can view and cautiously update their own display profile metadata (`nombre`) via the **`Perfil`** view, while PostgreSQL triggers and RLS strictly block self-escalation of `role` or `status`.
 
 ---
 
 ## 3. Phased Execution Index & Dependency Graph
 
 ```text
-  [ Phase 1.1: Soft-Delete Schema, Triggers, Dependency RPC & Partial Indexes ]
-                                       │
-                                       ▼
-  [ Phase 1.2: Granular RLS Write Hardening, Archive Visibility & Profile RBAC ]
-                                       │
-                                       ▼
-  [ Phase 2.1: Three-Block Header, Route Cleanup & Zero-Card Domain Dispatchers ]
-                                       │
-                                       ▼
-  [ Phase 2.2: Minimalist Home Dashboard & Self-Service User Profile (Perfil)  ]
-                                       │
-                                       ▼
-  [ Phase 3: Compact Borderless Breadcrumbs, Loop Prevention & Cross Lineage   ]
-                                       │
-                 ┌─────────────────────┴─────────────────────┐
-                 ▼                                           ▼
-  [ Phase 4.1.1: Universal Multi View        ]  (After 4.1.1 -> 4.1.2 unlocks 4.2.1)
-  [ Engine, Reactive Facets & No Double-"X"  ]
-                 │
-        ┌────────┴────────┐
-        ▼                 ▼
-  [ Phase 4.1.2:  ] [ Phase 4.1.3:        ]
-  [ 9-Dir Rollout ] [ Acreditación Multi  ]
-        │                 │
-        ▼                 │
-  [ Phase 4.2.1:  ]       │
-  [ 3-Zone Detail ]       │
-  [ & 9-View Fix  ]       │
-        └────────┬────────┘
-                 ▼
-  [ Phase 4.2.2: Acreditación & Sitio Detail Views + Child Drill-Down Wiring   ]
-                 │
-                 ▼
-  [ Phase 4.2.3: Proceso & Turno Detail Views + drillDownView Decommissioning  ]
-                 │
-                 ▼
-  [ Phase 5.1: Safe Archive Confirmation Modal, Admin Restore & Client Audit   ]
-                 │
-                 ▼
-  [ Phase 5.2: node:test Regression Overhaul, New Suites & Playwright E2E Gate ]
+  [ Phase 1: DB Soft-Delete Retention, Audit Integrity & Profile RBAC ]
+                                 │
+                                 ▼
+  [ Phase 2: Three-Block Header, Minimalist Dashboard, Zero Cards & Perfil ]
+                                 │
+                                 ▼
+  [ Phase 3: Compact Breadcrumbs, Loop Prevention & Contextual Lineage ]
+                                 │
+               ┌─────────────────┴─────────────────┐
+               ▼                                   ▼
+  [ Phase 4.1: Universal Multi View   ]   [ Phase 4.2: Standardized 3-Zone Detail View ]
+  [ Collapsible Sidebar, Reactive     ]   [ & New Detail Views (Acreditación, Sitio,   ]
+  [ Counts, Fix Double-X, Acreditación]   [ Proceso, Turno)                            ]
+               └─────────────────┬─────────────────┘
+                                 │
+                                 ▼
+  [ Phase 5: Safe Archive UX, node:test Regression Suite & E2E Verification ]
 ```
 
-| Sub-Phase | Document | Primary Focus | Key Affected Modules |
+| Phase | Document | Primary Focus | Key Affected Modules |
 | :--- | :--- | :--- | :--- |
-| **Phase 1.1** | [`phase_1.1.md`](./phase_1.1.md) | Soft-delete columns (`23` tables), `fn_prevent_hard_delete`, `fn_sync_soft_delete_metadata`, `fn_protect_profile_rbac_fields`, `get_archive_dependency_summary`, LTREE `deleted_at IS NULL`, partial unique indexes | `public/supabase/queries/01_creacion.sql`, `02_cobertura_normativa.sql`, `03_indices_optimizacion.sql` |
-| **Phase 1.2** | [`phase_1.2.md`](./phase_1.2.md) | Replace `FOR ALL` RLS with explicit `FOR INSERT`/`FOR UPDATE`, `deleted_at IS NULL` read isolation, Admin archive visibility, `profiles_update_self`, reset pipeline test | `public/supabase/queries/04_rls.sql`, `06_datos_prueba.sql` |
-| **Phase 2.1** | [`phase_2.1.md`](./phase_2.1.md) | 3-block singular header (`Auditoría`, `Certificación`, `Extra` + `Acreditación`), retire legacy sub-routes, strip inline banner cards/tabs/`Volver al Dashboard` | `src/lib/healthCheck.ts`, `src/lib/accessControl.ts`, `src/views/header.ts`, `src/views/auditoriasView.ts`, `src/views/certificacionView.ts`, `src/views/extraView.ts`, `src/main.ts` |
-| **Phase 2.2** | [`phase_2.2.md`](./phase_2.2.md) | Strip dashboard badges & embedded certificate explorer, render minimalist RBAC KPIs, create self-service `Perfil` view & validation | `src/views/dashboardView.ts`, `src/views/profileView.ts` *(new)*, `src/lib/healthCheck.ts`, `src/main.ts` |
-| **Phase 3** | [`phase_3.md`](./phase_3.md) | Borderless single-row breadcrumbs, `collapseBreadcrumbForDisplay()`, composite `entityType + entityId` loop prevention, top-header-only resets | `src/lib/breadcrumb.ts`, `src/views/breadcrumbView.ts`, `src/main.ts` |
-| **Phase 4.1.1** | [`phase_4.1.1.md`](./phase_4.1.1.md) | `computeReactiveFacetCounts()`, collapsible hamburger sidebar (`isSidebarOpen`), category checkboxes, global `type="search"` → `type="text"` double-`"X"` fix | `src/lib/universalTemplate.ts`, `src/views/universalTemplate.ts`, `src/views/searchControlsView.ts`, 8 view files |
-| **Phase 4.1.2** | [`phase_4.1.2.md`](./phase_4.1.2.md) | Roll out unified Multi View shell & reactive checkbox facets across 9 existing directories (Batch A: Certificación/Auditoría; Batch B: Extra catalogs) + `main.ts` state | `organizacionView.ts`, `certificadoView.ts`, `auditorView.ts`, `programacionView.ts`, `normaView.ts`, `sectorIafView.ts`, `estatusView.ts`, `tipoAuditoriaView.ts`, `metodologiaAuditoriaView.ts`, `src/main.ts` |
-| **Phase 4.1.3** | [`phase_4.1.3.md`](./phase_4.1.3.md) | New `Acreditación` domain (`acreditacion_norma_iaf` + `organismo_acreditacion`), Multi View directory, Supabase hydration & creation modal | `src/lib/acreditacionDomain.ts` *(new)*, `src/views/acreditacionView.ts` *(new)*, `src/views/extraView.ts`, `src/main.ts` |
-| **Phase 4.2.1** | [`phase_4.2.1.md`](./phase_4.2.1.md) | Standardize 3-Zone Detail template (Parent → Divider → Record → List-Only Children), strip all `"ZONA *"` labels across 9 existing Detail Views | `src/views/detailTemplate.ts`, `organizacionView.ts`, `certificadoView.ts`, `auditorView.ts`, `programacionView.ts`, `normaView.ts`, `sectorIafView.ts`, `estatusView.ts`, `tipoAuditoriaView.ts`, `metodologiaAuditoriaView.ts` |
-| **Phase 4.2.2** | [`phase_4.2.2.md`](./phase_4.2.2.md) | `Acreditación` Detail View, new `Sitio` domain & Detail View (`Sitio 0` principal guard), wire `Certificado > Sitios`, `Norma`, `Sector IAF` child clicks | `src/views/acreditacionView.ts`, `src/lib/sitioDomain.ts` *(new)*, `src/views/sitioView.ts` *(new)*, `src/main.ts` |
-| **Phase 4.2.3** | [`phase_4.2.3.md`](./phase_4.2.3.md) | New `Proceso` (LTREE clause mapping) & `Turno` (overnight duration, reciprocal `Sitio` links) Detail Views, move shared `FindingRecord` types to `auditDomain.ts`, retire `drillDownView.ts` | `src/lib/procesoDomain.ts` *(new)*, `src/views/procesoView.ts` *(new)*, `src/lib/turnoDomain.ts` *(new)*, `src/views/turnoView.ts` *(new)*, `src/lib/auditDomain.ts`, retire `src/views/drillDownView.ts` |
-| **Phase 5.1** | [`phase_5.1.md`](./phase_5.1.md) | Dependency-aware `Archivar Registro` modal (`get_archive_dependency_summary`), Admin `"Mostrar Archivados"` / `"Restaurar"`, zero `.delete()` client audit | `src/lib/archiveGovernance.ts` *(new)*, `src/views/archiveModalView.ts` *(new)*, `src/views/universalTemplate.ts`, `src/main.ts` |
-| **Phase 5.2** | [`phase_5.2.md`](./phase_5.2.md) | Refactor existing `node:test` suites, add 4 new test modules (`multiViewFacets`, `detailViewsPhase42`, `profileGovernance`, `archiveGovernance`), `tsc`/`lint`/`build` + Playwright E2E gate (`1440px` & `375px`) | `src/lib/*.test.ts`, Playwright verification suite |
+| **Phase 1** | [`phase_1.md`](./phase_1.md) | Soft-delete schema columns, hard-delete prevention triggers, partial unique indexes, RLS write hardening, `profiles` self-update guard | `public/supabase/queries/01_creacion.sql`, `02_cobertura_normativa.sql`, `03_indices_optimizacion.sql`, `04_rls.sql` |
+| **Phase 2** | [`phase_2.md`](./phase_2.md) | Three-block header (`Auditoría`, `Certificación`, `Extra` + `Acreditación`), removal of obsolete subsections & extra exploration cards, minimalist dashboard, `Perfil` view | `src/lib/healthCheck.ts`, `src/views/header.ts`, `src/views/dashboardView.ts`, `src/views/auditoriasView.ts`, `src/views/certificacionView.ts`, `src/views/extraView.ts`, `src/views/profileView.ts` (new), `src/main.ts` |
+| **Phase 3** | [`phase_3.md`](./phase_3.md) | Borderless compact breadcrumb UI, single-row overflow ellipsis, composite-key loop prevention, contextual cross-entity navigation preservation | `src/lib/breadcrumb.ts`, `src/views/breadcrumbView.ts`, `src/main.ts` |
+| **Phase 4.1** | [`phase_4.1.md`](./phase_4.1.md) | Universal Multi View template, collapsible hamburger facet sidebar, reactive intersection counts, single unified search bar (no double `"X"`), `Acreditación` Multi View | `src/lib/universalTemplate.ts`, `src/views/universalTemplate.ts`, `src/views/organizacionView.ts`, `src/views/certificadoView.ts`, `src/views/auditorView.ts`, `src/views/programacionView.ts`, `src/views/normaView.ts`, `src/views/sectorIafView.ts`, `src/views/estatusView.ts`, `src/views/tipoAuditoriaView.ts`, `src/views/metodologiaAuditoriaView.ts`, `src/views/acreditacionView.ts` (new) |
+| **Phase 4.2** | [`phase_4.2.md`](./phase_4.2.md) | 3-zone Detail View refactor (strip `ZONA` headings, Parent→Divider→Record→Children), child list-only drill-downs, new Detail Views for `Acreditación`, `Sitio`, `Proceso`, `Turno` | `src/views/detailTemplate.ts`, `src/views/certificadoView.ts`, `src/views/organizacionView.ts`, `src/views/auditorView.ts`, `src/views/programacionView.ts`, `src/views/acreditacionView.ts`, `src/views/sitioView.ts` (new), `src/views/procesoView.ts` (new), `src/views/turnoView.ts` (new), decommission `src/views/drillDownView.ts` |
+| **Phase 5** | [`phase_5.md`](./phase_5.md) | Archive/restore confirmation UX with dependency summary, expanded `node:test` suites, `tsc --noEmit`, `vite build`, Chromium responsive verification | `src/lib/*.test.ts`, `src/main.ts`, Playwright verification suite |
 
 ---
 
