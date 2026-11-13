@@ -11,9 +11,13 @@ import {
   type SortDirection,
 } from '../lib/universalTemplate';
 import { renderUniversalTemplate } from './universalTemplate';
+import { renderDetailPageTemplate } from './detailTemplate';
+import type { CertificadoDetailEntity } from '../lib/multisiteSampling';
+import type { ProgramacionAuditEntity } from '../lib/auditExecution';
 
 export interface EstatusViewState {
   selectedEstatusId: string | null;
+  activeChildTab?: 'reglas' | 'certificados' | 'auditorias';
   query: string;
   selectedCategory?: string;
   viewMode: 'grid' | 'list';
@@ -27,11 +31,13 @@ export interface EstatusViewProps {
   profile: UserProfile;
   state: EstatusViewState;
   estatusList: EstatusCatalogItem[];
+  certificados?: CertificadoDetailEntity[];
+  audits?: ProgramacionAuditEntity[];
   loading?: boolean;
 }
 
 export function renderEstatusView(props: EstatusViewProps): string {
-  const { state, estatusList } = props;
+  const { state, estatusList, certificados = [], audits = [] } = props;
 
   // If a specific status is selected, render its detail page
   if (state.selectedEstatusId) {
@@ -42,7 +48,13 @@ export function renderEstatusView(props: EstatusViewProps): string {
     if (selectedItem) {
       return renderEstatusDetailPage({
         item: selectedItem,
-        allStatuses: estatusList,
+        activeTab: state.activeChildTab || 'certificados',
+        certificados: certificados.filter(
+          (c) => c.estatus.toLowerCase() === selectedItem.estatus.toLowerCase()
+        ),
+        audits: audits.filter(
+          (a) => a.estatus.toLowerCase() === selectedItem.estatus.toLowerCase()
+        ),
       });
     }
   }
@@ -290,100 +302,156 @@ function renderEstatusDirectoryView(params: {
 
 function renderEstatusDetailPage(params: {
   item: EstatusCatalogItem;
-  allStatuses: EstatusCatalogItem[];
+  activeTab: 'reglas' | 'certificados' | 'auditorias';
+  certificados: CertificadoDetailEntity[];
+  audits: ProgramacionAuditEntity[];
 }): string {
-  const { item } = params;
+  const { item, activeTab, certificados, audits } = params;
   const badgeClass = getStatusBadgeClasses(item.color_token);
 
-  return `
-    <div class="space-y-6">
-      <!-- Zone 0: Action Bar (Back to Estatus List + Changelog Trigger) -->
-      <div class="flex items-center justify-between gap-4">
-        <button
-          type="button"
-          data-action="back-to-estatus-list"
-          class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
-        >
-          <span>←</span>
-          <span>Volver al Catálogo de Estatus</span>
-        </button>
-
-        <!-- Top-Right Changelog Trigger [🕒 Historial de Cambios] -->
-        <button
-          type="button"
-          data-action="open-changelog"
-          data-table-name="estatus"
-          data-record-id="${escapeHtml(item.id)}"
-          data-entity-name="Estatus ${escapeHtml(item.estatus)}"
-          title="Ver registro cronológico de auditoría forense para este estatus"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
-        >
-          <span aria-hidden="true">🕒</span>
-          <span>Historial de Cambios</span>
-        </button>
-      </div>
-
-      <!-- Zone 1: Main Entity Banner -->
-      <header class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs space-y-4">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div class="flex items-start gap-3">
-            <span class="text-3xl select-none shrink-0" aria-hidden="true">🏷️</span>
-            <div class="space-y-1 min-w-0">
-              <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 font-mono">
-                ESTATUS CANÓNICO TITLE-CASE
-              </div>
-              <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 truncate">
-                ${escapeHtml(item.estatus)}
-              </h1>
-              <p class="text-xs text-slate-600 font-medium">
-                ${escapeHtml(item.descripcion)}
-              </p>
-            </div>
-          </div>
-
-          <div class="self-start sm:self-auto shrink-0">
-            <span class="inline-flex items-center px-3 py-1 rounded-md text-xs font-bold border ${badgeClass}">
-              ${escapeHtml(item.estatus)}
-            </span>
-          </div>
-        </div>
-      </header>
-
-      <!-- Zone 2: Visual Separator -->
-      <div class="border-t border-slate-200/60 my-1"></div>
-
-      <!-- Zone 3: Direct Record Attributes -->
-      <section class="space-y-3">
-        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-600">
-          Atributos Directos del Estatus
-        </h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <div class="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-2xs space-y-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Denominación Canónica</div>
-            <div class="text-xs font-bold text-slate-900">${escapeHtml(item.estatus)}</div>
-          </div>
-          <div class="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-2xs space-y-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Ámbitos de Aplicación</div>
-            <div class="text-xs font-semibold text-indigo-700">${escapeHtml(item.categoria_aplicable)}</div>
-          </div>
-          <div class="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-2xs space-y-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Token Visual de Color</div>
-            <div class="text-xs font-mono font-semibold text-slate-800">${escapeHtml(item.color_token)}</div>
-          </div>
-          <div class="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-2xs space-y-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Registros en el Sistema</div>
-            <div class="text-xs font-bold text-slate-900">${item.usage_count} Entidades Asignadas</div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Zone 4: Usage and Normative Context -->
-      <section class="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs space-y-3">
-        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700">Reglas Normativas del Ciclo de Vida</h3>
-        <p class="text-xs text-slate-600 leading-relaxed">
-          En conformidad con <strong>ISO/IEC 17021-1:2015 cláusulas 9.6 y 9.7</strong>, este estatus forma parte del ciclo de vida controlado de la certificación. Los cambios a este estatus requieren registro auditable en <code>public.audit_log</code> con trazabilidad forense del actor responsable y justificación técnica correspondiente.
-        </p>
-      </section>
+  const tabCertificadosHtml = `
+    <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+      <table class="w-full text-left text-xs border-collapse">
+        <thead>
+          <tr class="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200">
+            <th class="py-3 px-4">N° Certificado</th>
+            <th class="py-3 px-4">Organización</th>
+            <th class="py-3 px-4">Norma</th>
+            <th class="py-3 px-4">Vigencia</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          ${
+            certificados.length === 0
+              ? `
+                <tr>
+                  <td colspan="4" class="py-8 text-center text-slate-400 text-xs italic">
+                    No hay certificados con estatus "${escapeHtml(item.estatus)}".
+                  </td>
+                </tr>
+              `
+              : certificados
+                  .map(
+                    (c) => `
+                      <tr class="hover:bg-slate-50/70 transition-colors">
+                        <td class="py-3 px-4 whitespace-nowrap">
+                          <button
+                            type="button"
+                            data-action="select-cert"
+                            data-cert-id="${escapeHtml(c.id)}"
+                            class="font-mono font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+                          >
+                            📜 ${escapeHtml(c.numero_certificado)}
+                          </button>
+                        </td>
+                        <td class="py-3 px-4 font-semibold text-slate-800">${escapeHtml(c.organizacion_nombre)}</td>
+                        <td class="py-3 px-4 text-slate-700">${escapeHtml(c.norma_codigo)}</td>
+                        <td class="py-3 px-4 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                          ${escapeHtml(c.fecha_emision)} → ${escapeHtml(c.fecha_vencimiento)}
+                        </td>
+                      </tr>
+                    `
+                  )
+                  .join('')
+          }
+        </tbody>
+      </table>
     </div>
   `;
+
+  const tabAuditoriasHtml = `
+    <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+      <table class="w-full text-left text-xs border-collapse">
+        <thead>
+          <tr class="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200">
+            <th class="py-3 px-4">Código Auditoría</th>
+            <th class="py-3 px-4">Organización</th>
+            <th class="py-3 px-4">Modalidad</th>
+            <th class="py-3 px-4">Fechas</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          ${
+            audits.length === 0
+              ? `
+                <tr>
+                  <td colspan="4" class="py-8 text-center text-slate-400 text-xs italic">
+                    No hay auditorías con estatus "${escapeHtml(item.estatus)}".
+                  </td>
+                </tr>
+              `
+              : audits
+                  .map(
+                    (a) => `
+                      <tr class="hover:bg-slate-50/70 transition-colors">
+                        <td class="py-3 px-4 whitespace-nowrap">
+                          <button
+                            type="button"
+                            data-action="select-prog-audit"
+                            data-audit-id="${escapeHtml(a.id)}"
+                            class="font-mono font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+                          >
+                            🗓️ ${escapeHtml(a.codigo_auditoria)}
+                          </button>
+                        </td>
+                        <td class="py-3 px-4 font-semibold text-slate-800">${escapeHtml(a.organizacion_nombre)}</td>
+                        <td class="py-3 px-4 text-slate-700">${escapeHtml(a.tipo_auditoria)} · ${escapeHtml(a.metodologia)}</td>
+                        <td class="py-3 px-4 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                          ${escapeHtml(a.fecha_inicio)} → ${escapeHtml(a.fecha_fin)}
+                        </td>
+                      </tr>
+                    `
+                  )
+                  .join('')
+          }
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  const tabReglasHtml = `
+    <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+      <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700">Reglas Normativas del Ciclo de Vida</h3>
+      <p class="text-xs text-slate-600 leading-relaxed">
+        En conformidad con <strong>ISO/IEC 17021-1:2015 cláusulas 9.6 y 9.7</strong>, este estatus forma parte del ciclo de vida controlado de la certificación. Los cambios a este estatus requieren registro auditable en <code>public.audit_log</code> con trazabilidad forense del actor responsable y justificación técnica correspondiente.
+      </p>
+    </div>
+  `;
+
+  return renderDetailPageTemplate({
+    entityType: 'Estatus Canónico',
+    entitySymbol: '🏷️',
+    title: item.estatus,
+    subtitle: item.descripcion,
+    statusBadge: {
+      label: item.estatus,
+      badgeClass,
+    },
+    backButton: {
+      label: 'Volver al Catálogo de Estatus',
+      nav: 'extra',
+      subview: 'estatus',
+      action: 'back-to-estatus-list',
+    },
+    parents: [],
+    tableName: 'estatus',
+    recordId: item.id,
+    attributes: [
+      { label: 'Denominación Canónica', value: item.estatus },
+      { label: 'Ámbitos de Aplicación', value: item.categoria_aplicable },
+      { label: 'Registros en el Sistema', value: `${item.usage_count} Entidades Asignadas` },
+    ],
+    childTabs: [
+      { id: 'certificados', label: 'Certificados', symbol: '📜', count: certificados.length },
+      { id: 'auditorias', label: 'Auditorías', symbol: '🗓️', count: audits.length },
+      { id: 'reglas', label: 'Reglas del Ciclo', symbol: '⚖️', count: 1 },
+    ],
+    activeChildTabId: activeTab,
+    childTabAttrName: 'data-estatus-tab',
+    renderChildTabContent: (tabId) => {
+      if (tabId === 'auditorias') return tabAuditoriasHtml;
+      if (tabId === 'reglas') return tabReglasHtml;
+      return tabCertificadosHtml;
+    },
+  });
 }

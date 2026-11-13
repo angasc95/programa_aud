@@ -7,6 +7,7 @@ import {
   type CertificadoSummary,
   type OrganizacionEntity,
 } from '../lib/activeCertificates';
+import type { ProgramacionAuditEntity } from '../lib/auditExecution';
 import {
   computeReactiveFacetCounts,
   filterRecordsWithFacets,
@@ -17,6 +18,7 @@ import {
   type SortDirection,
 } from '../lib/universalTemplate';
 import { renderUniversalTemplate } from './universalTemplate';
+import { renderDetailPageTemplate, type DetailParentChip } from './detailTemplate';
 
 export interface OrganizacionViewState {
   selectedOrganizacionId: string | null;
@@ -27,7 +29,7 @@ export interface OrganizacionViewState {
   sortColumn: 'nombre' | 'rif' | 'certificados_activos' | 'sector' | null;
   sortDirection: SortDirection;
   isEditingAttributes: boolean;
-  activeChildTab: 'certificados';
+  activeChildTab: 'certificados' | 'auditorias';
   editFormData?: Partial<OrganizacionEntity>;
   editErrorMessage?: string | null;
   saveSuccessMessage?: string | null;
@@ -42,16 +44,17 @@ export interface OrganizacionViewProps {
   state: OrganizacionViewState;
   organizaciones: OrganizacionEntity[];
   certificados: CertificadoSummary[];
+  auditorias?: ProgramacionAuditEntity[];
   loading?: boolean;
 }
 
 export function renderOrganizacionView(props: OrganizacionViewProps): string {
-  const { profile, state, organizaciones, certificados, loading } = props;
+  const { profile, state, organizaciones, certificados, auditorias = [], loading } = props;
   const isStaff =
     (profile.role === 'ADMIN' || profile.role === 'WORKER') &&
     (!profile.status || profile.status === 'APPROVED');
 
-  // If an organization is selected, render the Standardized 4-Zone Detail Page
+  // If an organization is selected, render the Standardized 3-Zone Detail Page
   if (state.selectedOrganizacionId) {
     const org =
       organizaciones.find((o) => o.id === state.selectedOrganizacionId) ||
@@ -62,6 +65,7 @@ export function renderOrganizacionView(props: OrganizacionViewProps): string {
         state,
         org,
         certificados,
+        auditorias,
         isStaff,
       });
     }
@@ -490,240 +494,162 @@ function renderOrganizacionDirectoryView(props: {
 }
 
 /**
- * Standardized 4-Zone Detail Page Architecture for Organización
+ * Standardized 3-Zone Detail Page Architecture for Organización
  */
 function renderOrganizacionDetailView(props: {
   profile: UserProfile;
   state: OrganizacionViewState;
   org: OrganizacionEntity;
   certificados: CertificadoSummary[];
+  auditorias: ProgramacionAuditEntity[];
   isStaff: boolean;
 }): string {
-  const { state, org, certificados, isStaff } = props;
+  const { state, org, certificados, auditorias, isStaff } = props;
 
   // Active certificates vs total certificates
   const activeCount = countActiveCertificates(certificados, org.id);
   const orgCertificates = getCertificatesByOrganizacion(certificados, org.id);
+  const orgAudits = auditorias.filter(
+    (a) =>
+      a.id_organizacion === org.id ||
+      a.organizacion_nombre.trim().toLowerCase() === org.nombre.trim().toLowerCase()
+  );
   const activeBadge = formatActiveCertificateBadge(activeCount);
 
   // Edit form state
   const isEditing = state.isEditingAttributes && isStaff;
   const currentFormData = state.editFormData || { ...org };
+  const activeTab: 'certificados' | 'auditorias' =
+    state.activeChildTab === 'auditorias' ? 'auditorias' : 'certificados';
 
-  return `
-    <div class="space-y-6">
-      <!-- Top Action Bar & Forensic Changelog Trigger -->
-      <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+  const parents: DetailParentChip[] = [];
+  if (org.sector_iaf_numero || org.sector_principal) {
+    parents.push({
+      label: 'Sector IAF',
+      value: `Sector ${org.sector_iaf_numero || '—'} · ${org.sector_principal || 'General'}`,
+      symbol: '🏭',
+      navAction: {
+        nav: 'extra',
+        subview: 'iaf',
+        entityType: 'sector_iaf',
+        entityId: org.id_sector_iaf,
+        sectorNumber: org.sector_iaf_numero || 17,
+      },
+    });
+  }
+  if (org.grupo_corporativo && org.grupo_corporativo !== 'Independiente') {
+    parents.push({
+      label: 'Grupo Corporativo',
+      value: org.grupo_corporativo,
+      symbol: '🏛️',
+    });
+  }
+
+  const recordActionsHtml = isStaff
+    ? isEditing
+      ? `
         <button
           type="button"
-          data-action="back-to-org-list"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200/80 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+          id="cancelEditOrgBtn"
+          class="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
         >
-          <span>←</span>
-          <span>Volver a Organizaciones</span>
+          ✕ Cancelar Edición
         </button>
+      `
+      : `
+        <button
+          type="button"
+          id="startEditOrgBtn"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+        >
+          <span aria-hidden="true">✏️</span>
+          <span>Editar</span>
+        </button>
+      `
+    : '';
 
-        <div class="flex items-center gap-2">
-          <!-- Top-Right Changelog Trigger (Mandatory 🕒 Historial de Cambios) -->
-          <button
-            type="button"
-            data-action="open-changelog"
-            data-table-name="organizacion"
-            data-record-id="${escapeHtml(org.id)}"
-            data-entity-name="${escapeHtml(org.nombre)}"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 text-xs font-bold transition-colors cursor-pointer shadow-2xs"
-            title="Ver trazabilidad forense de mutaciones en public.audit_log"
-          >
-            <span>🕒</span>
-            <span>Historial de Cambios</span>
-          </button>
-        </div>
+  const feedbackHtml = `
+    ${
+      state.saveSuccessMessage
+        ? `
+      <div class="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium rounded-lg flex items-center gap-2">
+        <span>✓</span>
+        <span>${escapeHtml(state.saveSuccessMessage)}</span>
       </div>
-
-      <!-- Detail Card Container -->
-      <div class="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-        <!-- Main Header Banner -->
-        <div class="p-6 border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-emerald-50/20">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div class="space-y-1">
-              <div class="inline-flex items-center gap-2">
-                <span class="text-xl" aria-hidden="true">🏢</span>
-                <span class="text-xs font-bold uppercase tracking-wider text-emerald-800 bg-emerald-100/70 px-2.5 py-0.5 rounded">
-                  ORGANIZACIÓN CLIENTE
-                </span>
-                <span class="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                  RIF: ${escapeHtml(org.rif)}
-                </span>
-              </div>
-              <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">
-                ${escapeHtml(org.nombre)}
-              </h1>
-              <p class="text-xs text-slate-500">
-                Sector Principal: <strong>Sector ${org.sector_iaf_numero || '—'} · ${escapeHtml(org.sector_principal || 'No especificado')}</strong>
-              </p>
-            </div>
-
-            <!-- Active certificate KPI pill -->
-            <div class="flex flex-col sm:items-end gap-1">
-              <span class="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full border shadow-2xs ${activeBadge.badgeClass}">
-                <span>${activeBadge.symbol}</span>
-                <span>${activeBadge.label}</span>
-              </span>
-              <span class="text-[11px] text-slate-400">
-                ${orgCertificates.length} certificado${orgCertificates.length === 1 ? '' : 's'} emitido${orgCertificates.length === 1 ? '' : 's'} en total
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div class="p-6 space-y-6">
-          <!-- ZONE 1: PARENT DATA SECTION (UPPER ZONE - RELATIONAL METADATA) -->
-          <section aria-labelledby="zone1-heading" class="space-y-3">
-            <h3 id="zone1-heading" class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-              <span>🔗</span>
-              <span>ZONA 1: METADATOS RELACIONALES Y SECTOR ECONÓMICO</span>
-            </h3>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <!-- Holding / Corporate Group -->
-              <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
-                <span class="text-[10px] uppercase font-bold text-slate-400">Grupo Corporativo / Holding:</span>
-                <p class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <span>🏛️</span>
-                  <span>${escapeHtml(org.grupo_corporativo || 'Independiente (Sin Matriz Corporativa)')}</span>
-                </p>
-              </div>
-
-              <!-- Primary Economic / IAF Sector with Interactive Navigation Link -->
-              <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
-                <span class="text-[10px] uppercase font-bold text-slate-400">Sector Económico Principal (IAF):</span>
-                <p class="text-xs font-bold text-indigo-700 flex items-center gap-1.5">
-                  <span>💻</span>
-                  <button
-                    type="button"
-                    data-action="view-sector-iaf"
-                    data-sector-number="${org.sector_iaf_numero || 17}"
-                    class="hover:underline cursor-pointer font-bold text-left"
-                    title="Hacer clic para inspeccionar sector técnico IAF"
-                  >
-                    Sector ${org.sector_iaf_numero || '—'} · ${escapeHtml(org.sector_principal || 'General')} →
-                  </button>
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <!-- ZONE 2: VISUAL SEPARATOR (CLEAN MINIMAL RULE) -->
-          <div class="relative py-1">
-            <div class="absolute inset-0 flex items-center" aria-hidden="true">
-              <div class="w-full border-t border-slate-200"></div>
-            </div>
-            <div class="relative flex justify-center">
-              <span class="bg-white px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                DATOS DIRECTOS DE LA EMPRESA
-              </span>
-            </div>
-          </div>
-
-          <!-- ZONE 3: DIRECT RECORD ATTRIBUTES SECTION (MULTI-COLUMN VIEW / EDIT STATE) -->
-          <section aria-labelledby="zone3-heading" class="space-y-4">
-            <div class="flex items-center justify-between pb-1">
-              <h3 id="zone3-heading" class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                <span>📋</span>
-                <span>ZONA 3: ATRIBUTOS FISCALES Y DE CONTACTO</span>
-              </h3>
-
-              ${
-                isStaff
-                  ? `
-                <div class="flex items-center gap-2">
-                  ${
-                    isEditing
-                      ? `
-                    <button
-                      type="button"
-                      id="cancelEditOrgBtn"
-                      class="px-2.5 py-1 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
-                    >
-                      Cancelar Edición
-                    </button>
-                  `
-                      : `
-                    <button
-                      type="button"
-                      id="startEditOrgBtn"
-                      class="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors cursor-pointer shadow-2xs"
-                    >
-                      <span>✏️</span>
-                      <span>Editar Atributos</span>
-                    </button>
-                  `
-                  }
-                </div>
-              `
-                  : ''
-              }
-            </div>
-
-            ${
-              state.saveSuccessMessage
-                ? `
-              <div class="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium rounded-lg flex items-center gap-2">
-                <span>✓</span>
-                <span>${escapeHtml(state.saveSuccessMessage)}</span>
-              </div>
-            `
-                : ''
-            }
-
-            ${
-              state.editErrorMessage
-                ? `
-              <div class="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium rounded-lg flex items-center gap-2">
-                <span>✕</span>
-                <span>${escapeHtml(state.editErrorMessage)}</span>
-              </div>
-            `
-                : ''
-            }
-
-            ${
-              isEditing
-                ? renderEditForm(org, currentFormData)
-                : renderReadOnlyAttributes(org)
-            }
-          </section>
-
-          <!-- ZONE 4: MULTIPAGE / CHILD TABS SECTION (LOWER ZONE) -->
-          <section aria-labelledby="zone4-heading" class="space-y-4 pt-4 border-t border-slate-200">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold shadow-2xs flex items-center gap-1.5">
-                  <span>📜</span>
-                  <span>Certificados (${orgCertificates.length})</span>
-                </span>
-              </div>
-
-              <span class="text-xs text-slate-500">
-                Auditorías activas y trazabilidad ISO 17021-1
-              </span>
-            </div>
-
-            <!-- Child Tab 1: Certificados de la Organización -->
-            ${renderChildCertificatesTable(orgCertificates, org)}
-          </section>
-        </div>
+    `
+        : ''
+    }
+    ${
+      state.editErrorMessage
+        ? `
+      <div class="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium rounded-lg flex items-center gap-2">
+        <span>✕</span>
+        <span>${escapeHtml(state.editErrorMessage)}</span>
       </div>
-    </div>
+    `
+        : ''
+    }
   `;
+
+  return renderDetailPageTemplate({
+    entityType: 'Organización Cliente',
+    entitySymbol: '🏢',
+    title: org.nombre,
+    eyebrowCode: `RIF: ${org.rif}`,
+    subtitle: `Sector Principal: Sector ${org.sector_iaf_numero || '—'} · ${org.sector_principal || 'No especificado'} · ${orgCertificates.length} certificado${orgCertificates.length === 1 ? '' : 's'} en total`,
+    statusBadge: {
+      label: activeBadge.label,
+      badgeClass: activeBadge.badgeClass,
+      symbol: activeBadge.symbol,
+    },
+    backButton: {
+      label: 'Volver a Organizaciones',
+      nav: 'certificacion',
+      subview: 'organizations',
+      action: 'back-to-org-list',
+    },
+    parents,
+    tableName: 'organizacion',
+    recordId: org.id,
+    recordActionsHtml,
+    feedbackHtml,
+    attributes: [],
+    customRecordBodyHtml: isEditing
+      ? renderEditForm(org, currentFormData)
+      : renderReadOnlyAttributes(org, activeCount, orgCertificates.length),
+    childTabs: [
+      {
+        id: 'certificados',
+        label: 'Certificados',
+        symbol: '📜',
+        count: orgCertificates.length,
+      },
+      {
+        id: 'auditorias',
+        label: 'Auditorías',
+        symbol: '🗓️',
+        count: orgAudits.length,
+      },
+    ],
+    activeChildTabId: activeTab,
+    childTabAttrName: 'data-org-tab',
+    renderChildTabContent: (tabId) =>
+      tabId === 'auditorias'
+        ? renderChildAuditsTable(orgAudits, org)
+        : renderChildCertificatesTable(orgCertificates, org),
+  });
 }
 
 /**
- * Read-Only Attributes Grid for Zone 3
+ * Read-Only Attributes Grid for Record Zone
  */
-function renderReadOnlyAttributes(org: OrganizacionEntity): string {
+function renderReadOnlyAttributes(
+  org: OrganizacionEntity,
+  activeCount: number,
+  totalCount: number
+): string {
   return `
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
       <!-- Legal Name -->
       <div class="p-3 bg-slate-50/70 border border-slate-200 rounded-lg space-y-0.5">
         <span class="text-[10px] uppercase font-bold text-slate-400">Razón Social:</span>
@@ -769,8 +695,14 @@ function renderReadOnlyAttributes(org: OrganizacionEntity): string {
         <p class="text-xs font-mono font-medium text-slate-800">${escapeHtml(org.telefono_contacto || '—')}</p>
       </div>
 
-      <!-- Fiscal Address (full width) -->
-      <div class="md:col-span-3 p-3 bg-slate-50/70 border border-slate-200 rounded-lg space-y-0.5">
+      <!-- Certificados Activos -->
+      <div class="p-3 bg-slate-50/70 border border-slate-200 rounded-lg space-y-0.5">
+        <span class="text-[10px] uppercase font-bold text-slate-400">Certificados Activos / Emitidos:</span>
+        <p class="text-xs font-bold text-slate-900 tabular-nums">${activeCount} activos (${totalCount} emitidos)</p>
+      </div>
+
+      <!-- Fiscal Address (full width 2 cols) -->
+      <div class="md:col-span-2 p-3 bg-slate-50/70 border border-slate-200 rounded-lg space-y-0.5">
         <span class="text-[10px] uppercase font-bold text-slate-400">Dirección Fiscal de la Sede Principal:</span>
         <p class="text-xs font-medium text-slate-800">${escapeHtml(org.direccion_fiscal || 'No especificada')}</p>
       </div>
@@ -895,7 +827,7 @@ function renderEditForm(
       <div class="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
         <button
           type="button"
-          id="cancelEditOrgBtn"
+          id="cancelEditOrgBtnSecondary"
           class="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
         >
           Cancelar
@@ -1024,6 +956,97 @@ function renderChildCertificatesTable(
                   </td>
                 </tr>
               `;
+              })
+              .join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Child Tab 2: Auditorías de la Organización (List-Only)
+ */
+function renderChildAuditsTable(
+  auditorias: ProgramacionAuditEntity[],
+  org: OrganizacionEntity
+): string {
+  if (auditorias.length === 0) {
+    return `
+      <div class="p-8 text-center bg-slate-50/70 border border-slate-200 rounded-xl space-y-2">
+        <div class="text-2xl">🗓️</div>
+        <h4 class="text-xs font-bold text-slate-800">No hay auditorías programadas para esta organización</h4>
+        <p class="text-xs text-slate-500 max-w-sm mx-auto">
+          ${escapeHtml(org.nombre)} aún no registra jornadas de auditoría en el cronograma operativo.
+        </p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+              <th scope="col" class="py-3 px-4">Código Auditoría</th>
+              <th scope="col" class="py-3 px-4">Certificado</th>
+              <th scope="col" class="py-3 px-4">Modalidad</th>
+              <th scope="col" class="py-3 px-4">Fechas</th>
+              <th scope="col" class="py-3 px-4">Auditor Líder</th>
+              <th scope="col" class="py-3 px-4 text-center">Estatus</th>
+              <th scope="col" class="py-3 px-4 text-right">Acción</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            ${auditorias
+              .map((aud) => {
+                const isCompleted = aud.estatus === 'Completado' || aud.estatus === 'Cerrado';
+                return `
+                  <tr class="hover:bg-slate-50/80 transition-colors">
+                    <td class="py-3 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
+                      <button
+                        type="button"
+                        data-action="select-prog-audit"
+                        data-audit-id="${escapeHtml(aud.id)}"
+                        class="text-indigo-600 hover:text-indigo-800 hover:underline font-bold font-mono cursor-pointer inline-flex items-center gap-1.5"
+                      >
+                        <span>🗓️</span>
+                        <span>${escapeHtml(aud.codigo_auditoria)}</span>
+                      </button>
+                    </td>
+                    <td class="py-3 px-4 font-mono text-slate-700 whitespace-nowrap">${escapeHtml(aud.numero_certificado)}</td>
+                    <td class="py-3 px-4 text-slate-800 whitespace-nowrap">
+                      <span class="font-semibold">${escapeHtml(aud.tipo_auditoria)}</span>
+                      <span class="text-slate-400"> · </span>
+                      <span class="text-slate-600">${escapeHtml(aud.metodologia)}</span>
+                    </td>
+                    <td class="py-3 px-4 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                      ${escapeHtml(aud.fecha_inicio)} → ${escapeHtml(aud.fecha_fin)}
+                    </td>
+                    <td class="py-3 px-4 text-slate-800 whitespace-nowrap">${escapeHtml(aud.auditor_lider)}</td>
+                    <td class="py-3 px-4 text-center whitespace-nowrap">
+                      <span class="inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                        isCompleted
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                      }">
+                        ${escapeHtml(aud.estatus)}
+                      </span>
+                    </td>
+                    <td class="py-3 px-4 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        data-action="select-prog-audit"
+                        data-audit-id="${escapeHtml(aud.id)}"
+                        class="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                      >
+                        Inspeccionar →
+                      </button>
+                    </td>
+                  </tr>
+                `;
               })
               .join('')}
           </tbody>

@@ -1,10 +1,17 @@
 import { escapeHtml } from '../lib/html';
 import type { UserProfile } from '../lib/healthCheck';
 import {
+  formatAcreditacionStatusBadge,
   formatRiskCategoryBadge,
+  type AcreditacionNormaIaf,
   type SectorIafEntity,
   type SubsectorIafEntity,
 } from '../lib/extraDomain';
+import type { CertificadoDetailEntity } from '../lib/multisiteSampling';
+import {
+  getQualificationStatusVisual,
+  type AuditorDetailEntity,
+} from '../lib/competencyMatrix';
 import {
   computeReactiveFacetCounts,
   filterRecordsWithFacets,
@@ -15,10 +22,11 @@ import {
   type SortDirection,
 } from '../lib/universalTemplate';
 import { renderUniversalTemplate } from './universalTemplate';
+import { renderDetailPageTemplate } from './detailTemplate';
 
 export interface SectorIafViewState {
   selectedSectorId: string | null;
-  activeChildTab: 'subsectores' | 'auditores';
+  activeChildTab: 'subsectores' | 'acreditaciones' | 'certificados' | 'auditores';
   query: string;
   selectedRisk: string;
   viewMode: 'grid' | 'list';
@@ -34,14 +42,26 @@ export interface SectorIafViewProps {
   state: SectorIafViewState;
   sectores: SectorIafEntity[];
   subsectores: SubsectorIafEntity[];
+  acreditaciones?: AcreditacionNormaIaf[];
+  certificados?: CertificadoDetailEntity[];
+  auditores?: AuditorDetailEntity[];
   loading?: boolean;
 }
 
 export function renderSectorIafView(props: SectorIafViewProps): string {
-  const { profile, state, sectores, subsectores, loading } = props;
+  const {
+    profile,
+    state,
+    sectores,
+    subsectores,
+    acreditaciones = [],
+    certificados = [],
+    auditores = [],
+    loading,
+  } = props;
   const isStaff = profile.role === 'ADMIN' || profile.role === 'WORKER';
 
-  // If a specific Sector is selected, render the Standardized 4-Zone Detail Page
+  // If a specific Sector is selected, render the Standardized 3-Zone Detail Page
   if (state.selectedSectorId) {
     const selectedSector =
       sectores.find((s) => s.id === state.selectedSectorId || String(s.sector) === state.selectedSectorId) ||
@@ -55,6 +75,17 @@ export function renderSectorIafView(props: SectorIafViewProps): string {
         subsectores: subsectores.filter(
           (sub) => sub.id_sector_iaf === selectedSector.id || sub.sector_numero === selectedSector.sector
         ),
+        acreditaciones: acreditaciones.filter(
+          (acc) =>
+            acc.id_sector_iaf === selectedSector.id ||
+            acc.sector_iaf_numero === selectedSector.sector
+        ),
+        certificados: certificados.filter(
+          (c) =>
+            c.id_sector_iaf === selectedSector.id ||
+            c.sector_iaf === selectedSector.sector
+        ),
+        auditores: auditores.filter((aud) => aud.sectores_iaf.includes(selectedSector.sector)),
         isAddSubsectorModalOpen: state.isAddSubsectorModalOpen,
         isStaff,
       });
@@ -331,19 +362,31 @@ function renderSectorDirectoryView(params: {
 }
 
 /**
- * Standardized 4-Zone Detail Page for a Single Sector IAF
+ * Standardized 3-Zone Detail Page for a Single Sector IAF
  */
 function renderSectorDetailPage(params: {
   profile: UserProfile;
   sector: SectorIafEntity;
-  activeTab: 'subsectores' | 'auditores';
+  activeTab: 'subsectores' | 'acreditaciones' | 'certificados' | 'auditores';
   subsectores: SubsectorIafEntity[];
+  acreditaciones: AcreditacionNormaIaf[];
+  certificados: CertificadoDetailEntity[];
+  auditores: AuditorDetailEntity[];
   isAddSubsectorModalOpen: boolean;
   isStaff: boolean;
 }): string {
-  const { sector, activeTab, subsectores, isAddSubsectorModalOpen, isStaff } = params;
+  const {
+    sector,
+    activeTab,
+    subsectores,
+    acreditaciones,
+    certificados,
+    auditores,
+    isAddSubsectorModalOpen,
+    isStaff,
+  } = params;
 
-  // Tab 1: Sub-Sectores Content
+  // Tab 1: Sub-Sectores Content (List-only table)
   const tabSubsectoresHtml = `
     <div class="space-y-4">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -433,54 +476,269 @@ function renderSectorDetailPage(params: {
     </div>
   `;
 
-  // Tab 2: Auditores Calificados Content
-  const tabAuditoresHtml = `
+  // Tab 2: Acreditaciones que amparan este Sector IAF (List-only table)
+  const tabAcreditacionesHtml = `
     <div class="space-y-4">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h3 class="text-sm font-bold text-slate-900">Evaluadores Técnicos con Competencia Sectorial</h3>
-          <p class="text-xs text-slate-500">
-            Auditores habilitados para liderar o evaluar auditorías en el Sector IAF ${sector.sector}
-          </p>
-        </div>
+      <div>
+        <h3 class="text-sm font-bold text-slate-900">Acreditaciones Vigentes en Sector IAF ${sector.sector}</h3>
+        <p class="text-xs text-slate-500">
+          Alcances de acreditación otorgados por organismos oficiales (ENAC, UKAS, ANAB) para este sector económico.
+        </p>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div class="p-4 bg-slate-50/75 border border-slate-200 rounded-xl space-y-2">
-          <div class="flex items-center justify-between">
-            <h4 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-              <span>👤</span>
-              <span>Ing. Carlos Mendoza</span>
-            </h4>
-            <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
-              Auditor Líder Certificado
-            </span>
-          </div>
-          <p class="text-xs text-slate-600">
-            Habilitado en Sector IAF ${sector.sector} para normas ISO 9001:2015 e ISO 14001:2015.
-          </p>
-          <div class="text-[11px] font-mono text-slate-500 pt-1">
-            Sub-sectores amparados: 17.1, 17.2, 28.1
-          </div>
-        </div>
+      <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200">
+              <th class="py-3 px-4">N° Acreditación</th>
+              <th class="py-3 px-4">Organismo</th>
+              <th class="py-3 px-4">Norma Amparada</th>
+              <th class="py-3 px-4">Vigencia</th>
+              <th class="py-3 px-4 text-center">Estado</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            ${
+              acreditaciones.length === 0
+                ? `
+                  <tr>
+                    <td colspan="5" class="py-8 text-center text-slate-400 text-xs italic">
+                      No hay acreditaciones específicas asignadas a este sector IAF.
+                    </td>
+                  </tr>
+                `
+                : acreditaciones
+                    .map((acc) => {
+                      const accStatus = formatAcreditacionStatusBadge(acc.estatus);
+                      return `
+                        <tr class="hover:bg-slate-50/70 transition-colors">
+                          <td class="py-3 px-4 whitespace-nowrap">
+                            <button
+                              type="button"
+                              data-action="select-accreditation"
+                              data-accreditation-id="${escapeHtml(acc.id)}"
+                              class="font-mono font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+                            >
+                              ${escapeHtml(acc.numero_acreditacion)}
+                            </button>
+                          </td>
+                          <td class="py-3 px-4">
+                            <span class="font-bold text-slate-900">${escapeHtml(acc.organismo_codigo)}</span>
+                            <span class="text-slate-500 ml-1">${escapeHtml(acc.organismo_nombre)}</span>
+                          </td>
+                          <td class="py-3 px-4">
+                            <button
+                              type="button"
+                              data-action="select-norma"
+                              data-norma-id="${escapeHtml(acc.id_norma)}"
+                              class="font-semibold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+                            >
+                              📘 ${escapeHtml(acc.norma_codigo)}
+                            </button>
+                          </td>
+                          <td class="py-3 px-4 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                            ${escapeHtml(acc.fecha_concesion)} → ${escapeHtml(acc.fecha_vencimiento || 'Indefinida')}
+                          </td>
+                          <td class="py-3 px-4 text-center whitespace-nowrap">
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${accStatus.badgeClass}">
+                              <span>${accStatus.symbol}</span>
+                              <span>${escapeHtml(accStatus.label)}</span>
+                            </span>
+                          </td>
+                        </tr>
+                      `;
+                    })
+                    .join('')
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 
-        <div class="p-4 bg-slate-50/75 border border-slate-200 rounded-xl space-y-2">
-          <div class="flex items-center justify-between">
-            <h4 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-              <span>👤</span>
-              <span>Auditor Técnico Evaluador</span>
-            </h4>
-            <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-              Auditor Técnico Calificado
-            </span>
-          </div>
-          <p class="text-xs text-slate-600">
-            Especialista técnico para evaluación de conformidad en planta y procesos medulares.
-          </p>
-          <div class="text-[11px] font-mono text-slate-500 pt-1">
-            Sub-sectores amparados: 17.2, 33.1
-          </div>
-        </div>
+  // Tab 3: Certificados en este Sector IAF (List-only table)
+  const tabCertificadosHtml = `
+    <div class="space-y-4">
+      <div>
+        <h3 class="text-sm font-bold text-slate-900">Certificados Emitidos en Sector IAF ${sector.sector}</h3>
+        <p class="text-xs text-slate-500">
+          Certificados activos e históricos clasificados bajo este código sectorial.
+        </p>
+      </div>
+
+      <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200">
+              <th class="py-3 px-4">N° Certificado</th>
+              <th class="py-3 px-4">Organización</th>
+              <th class="py-3 px-4">Norma</th>
+              <th class="py-3 px-4">Vigencia</th>
+              <th class="py-3 px-4 text-center">Estatus</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            ${
+              certificados.length === 0
+                ? `
+                  <tr>
+                    <td colspan="5" class="py-8 text-center text-slate-400 text-xs italic">
+                      No hay certificados registrados en este sector IAF.
+                    </td>
+                  </tr>
+                `
+                : certificados
+                    .map((c) => `
+                      <tr class="hover:bg-slate-50/70 transition-colors">
+                        <td class="py-3 px-4 whitespace-nowrap">
+                          <button
+                            type="button"
+                            data-action="select-cert"
+                            data-cert-id="${escapeHtml(c.id)}"
+                            class="font-mono font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+                          >
+                            📜 ${escapeHtml(c.numero_certificado)}
+                          </button>
+                        </td>
+                        <td class="py-3 px-4 font-semibold text-slate-800">
+                          <button
+                            type="button"
+                            data-action="select-org"
+                            data-org-id="${escapeHtml(c.id_organizacion)}"
+                            class="text-slate-800 hover:text-indigo-700 hover:underline font-semibold cursor-pointer text-left"
+                          >
+                            🏢 ${escapeHtml(c.organizacion_nombre)}
+                          </button>
+                        </td>
+                        <td class="py-3 px-4 font-medium text-slate-700 whitespace-nowrap">
+                          ${escapeHtml(c.norma_codigo)}
+                        </td>
+                        <td class="py-3 px-4 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                          ${escapeHtml(c.fecha_emision)} → ${escapeHtml(c.fecha_vencimiento)}
+                        </td>
+                        <td class="py-3 px-4 text-center whitespace-nowrap">
+                          <span class="inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-200">
+                            ${escapeHtml(c.estatus)}
+                          </span>
+                        </td>
+                      </tr>
+                    `)
+                    .join('')
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  // Tab 4: Auditores Calificados Content (List-only table)
+  const fallbackNames = Array.from(
+    new Set(subsectores.flatMap((s) => s.auditores_nombres || []))
+  );
+
+  const tabAuditoresHtml = `
+    <div class="space-y-4">
+      <div>
+        <h3 class="text-sm font-bold text-slate-900">Evaluadores Técnicos con Competencia Sectorial</h3>
+        <p class="text-xs text-slate-500">
+          Auditores habilitados para liderar o evaluar auditorías en el Sector IAF ${sector.sector}
+        </p>
+      </div>
+
+      <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200">
+              <th class="py-3 px-4">Auditor</th>
+              <th class="py-3 px-4">Credencial</th>
+              <th class="py-3 px-4">Normas Calificadas</th>
+              <th class="py-3 px-4">Sub-Sectores en IAF ${sector.sector}</th>
+              <th class="py-3 px-4 text-center">Calificación</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            ${
+              auditores.length > 0
+                ? auditores
+                    .map((aud) => {
+                      const qualVisual = getQualificationStatusVisual(aud.calificacion);
+                      const sectorComps = aud.competencias.filter(
+                        (c) => c.sector_iaf_numero === sector.sector
+                      );
+                      const subCodes = Array.from(
+                        new Set(
+                          sectorComps
+                            .map((c) => c.subsector_iaf_codigo)
+                            .filter((code): code is string => Boolean(code))
+                        )
+                      );
+                      return `
+                        <tr class="hover:bg-slate-50/70 transition-colors">
+                          <td class="py-3 px-4">
+                            <button
+                              type="button"
+                              data-action="select-auditor"
+                              data-auditor-id="${escapeHtml(aud.id)}"
+                              class="font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer text-left"
+                            >
+                              🪪 ${escapeHtml(aud.nombre)}
+                            </button>
+                            <div class="text-[11px] text-slate-500">${escapeHtml(aud.titulo_profesional)}</div>
+                          </td>
+                          <td class="py-3 px-4 font-mono font-semibold text-slate-700 whitespace-nowrap">
+                            ${escapeHtml(aud.codigo_credencial)}
+                          </td>
+                          <td class="py-3 px-4">
+                            <div class="flex flex-wrap gap-1">
+                              ${aud.normas_acreditadas
+                                .map(
+                                  (n) =>
+                                    `<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-semibold">${escapeHtml(n)}</span>`
+                                )
+                                .join('')}
+                            </div>
+                          </td>
+                          <td class="py-3 px-4 font-mono text-[11px] text-slate-700">
+                            ${subCodes.length > 0 ? escapeHtml(subCodes.join(', ')) : 'Sector completo'}
+                          </td>
+                          <td class="py-3 px-4 text-center whitespace-nowrap">
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${qualVisual.badgeClass}">
+                              <span class="w-1.5 h-1.5 rounded-full ${qualVisual.dotClass}"></span>
+                              <span>${escapeHtml(qualVisual.label)}</span>
+                            </span>
+                          </td>
+                        </tr>
+                      `;
+                    })
+                    .join('')
+                : fallbackNames.length > 0
+                ? fallbackNames
+                    .map(
+                      (name) => `
+                        <tr class="hover:bg-slate-50/70 transition-colors">
+                          <td class="py-3 px-4 font-bold text-slate-900">👤 ${escapeHtml(name)}</td>
+                          <td class="py-3 px-4 font-mono text-slate-500">—</td>
+                          <td class="py-3 px-4 text-slate-600">Según matriz de competencia</td>
+                          <td class="py-3 px-4 font-mono text-[11px] text-slate-600">Sector IAF ${sector.sector}</td>
+                          <td class="py-3 px-4 text-center">
+                            <span class="inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                              Calificado
+                            </span>
+                          </td>
+                        </tr>
+                      `
+                    )
+                    .join('')
+                : `
+                  <tr>
+                    <td colspan="5" class="py-8 text-center text-slate-400 text-xs italic">
+                      No hay auditores calificados registrados para este sector IAF.
+                    </td>
+                  </tr>
+                `
+            }
+          </tbody>
+        </table>
       </div>
     </div>
   `;
@@ -536,142 +794,48 @@ function renderSectorDetailPage(params: {
     `
     : '';
 
-  return `
-    <div class="space-y-6">
-      <!-- Zone 0: Action Bar (Back to Sectors + Changelog Trigger) -->
-      <div class="flex items-center justify-between gap-4">
-        <button
-          type="button"
-          data-action="back-to-iaf-list"
-          class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
-        >
-          <span>←</span>
-          <span>Volver al Directorio de Sectores IAF</span>
-        </button>
+  const qualifiedCount = auditores.length > 0 ? auditores.length : sector.auditores_count;
 
-        <!-- Top-Right Changelog Trigger [🕒 Historial de Cambios] -->
-        <button
-          type="button"
-          data-action="open-changelog"
-          data-table-name="sector_iaf"
-          data-record-id="${escapeHtml(sector.id)}"
-          data-entity-name="Sector IAF ${sector.sector}"
-          title="Ver registro cronológico de auditoría forense para este sector"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
-        >
-          <span aria-hidden="true">🕒</span>
-          <span>Historial de Cambios</span>
-        </button>
-      </div>
-
-      <!-- Zone 1: Main Entity Banner -->
-      <header class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs space-y-4">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div class="flex items-start gap-3">
-            <span class="text-3xl select-none shrink-0" aria-hidden="true">🏭</span>
-            <div class="space-y-1 min-w-0">
-              <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 font-mono">
-                SECTOR TÉCNICO IAF
-              </div>
-              <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 truncate">
-                Sector IAF ${sector.sector}
-              </h1>
-              <p class="text-xs text-slate-600 font-medium">
-                ${escapeHtml(sector.descripcion)}
-              </p>
-            </div>
-          </div>
-
-          <div class="self-start sm:self-auto shrink-0">
-            <span class="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-bold border bg-emerald-50 text-emerald-800 border-emerald-200">
-              <span>✓</span>
-              <span>ACREDITADO</span>
-            </span>
-          </div>
-        </div>
-      </header>
-
-      <!-- Zone 2: Visual Separator -->
-      <div class="border-t border-slate-200/60 my-1"></div>
-
-      <!-- Zone 3: Direct Record Attributes -->
-      <section class="space-y-3">
-        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-600">
-          Atributos Directos del Sector
-        </h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <div class="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-2xs space-y-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Código de Sector</div>
-            <div class="text-xs font-mono font-bold text-slate-900">Sector IAF ${sector.sector}</div>
-          </div>
-          <div class="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-2xs space-y-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Sub-Sectores Definidos</div>
-            <div class="text-xs font-bold text-indigo-700">${subsectores.length} Sub-sector(es)</div>
-          </div>
-          <div class="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-2xs space-y-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Auditores Calificados</div>
-            <div class="text-xs font-bold text-slate-900">${sector.auditores_count} Evaluadores Calificados</div>
-          </div>
-          <div class="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-2xs space-y-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Normativa Internacional</div>
-            <div class="text-xs font-semibold text-slate-800">ISO/IEC 17021-1 / IAF MD 5</div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Zone 4: Multipage Child Tabs -->
-      <section class="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
-        <!-- Tab Bar -->
-        <div class="px-4 pt-3 border-b border-slate-200 bg-slate-50/70 flex flex-wrap gap-2" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            data-iaf-tab="subsectores"
-            aria-selected="${activeTab === 'subsectores' ? 'true' : 'false'}"
-            class="px-4 py-2 text-xs font-semibold rounded-t-lg transition-all cursor-pointer inline-flex items-center gap-1.5 border-b-2 ${
-              activeTab === 'subsectores'
-                ? 'bg-white text-indigo-700 border-indigo-600 shadow-2xs font-bold'
-                : 'text-slate-600 hover:text-slate-900 border-transparent hover:bg-slate-100/60'
-            }"
-          >
-            <span aria-hidden="true">🏷️</span>
-            <span>Sub-Sectores</span>
-            <span class="text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-              activeTab === 'subsectores' ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200/80 text-slate-600'
-            }">
-              ${subsectores.length}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            data-iaf-tab="auditores"
-            aria-selected="${activeTab === 'auditores' ? 'true' : 'false'}"
-            class="px-4 py-2 text-xs font-semibold rounded-t-lg transition-all cursor-pointer inline-flex items-center gap-1.5 border-b-2 ${
-              activeTab === 'auditores'
-                ? 'bg-white text-indigo-700 border-indigo-600 shadow-2xs font-bold'
-                : 'text-slate-600 hover:text-slate-900 border-transparent hover:bg-slate-100/60'
-            }"
-          >
-            <span aria-hidden="true">👥</span>
-            <span>Auditores Calificados</span>
-            <span class="text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-              activeTab === 'auditores' ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200/80 text-slate-600'
-            }">
-              ${sector.auditores_count}
-            </span>
-          </button>
-        </div>
-
-        <!-- Tab Body -->
-        <div class="p-5">
-          ${activeTab === 'subsectores' ? tabSubsectoresHtml : tabAuditoresHtml}
-        </div>
-      </section>
-
-      <!-- Modal -->
-      ${newSubsectorModalHtml}
-    </div>
-  `;
+  return renderDetailPageTemplate({
+    entityType: 'Sector Técnico IAF',
+    entitySymbol: '🏭',
+    title: `Sector IAF ${sector.sector}`,
+    eyebrowCode: `IAF ${sector.sector}`,
+    subtitle: sector.descripcion,
+    statusBadge: {
+      label: 'ACREDITADO',
+      badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+      symbol: '✓',
+    },
+    backButton: {
+      label: 'Volver al Directorio de Sectores IAF',
+      nav: 'extra',
+      subview: 'iaf',
+      action: 'back-to-iaf-list',
+    },
+    parents: [],
+    tableName: 'sector_iaf',
+    recordId: sector.id,
+    attributes: [
+      { label: 'Código de Sector', value: `Sector IAF ${sector.sector}`, isMono: true },
+      { label: 'Sub-Sectores Definidos', value: `${subsectores.length} Sub-sector(es)` },
+      { label: 'Auditores Calificados', value: `${qualifiedCount} Evaluadores Calificados` },
+      { label: 'Normativa Internacional', value: 'ISO/IEC 17021-1 / IAF MD 5' },
+    ],
+    childTabs: [
+      { id: 'subsectores', label: 'Sub-Sectores', symbol: '🏷️', count: subsectores.length },
+      { id: 'acreditaciones', label: 'Acreditaciones', symbol: '🏛️', count: acreditaciones.length },
+      { id: 'certificados', label: 'Certificados', symbol: '📜', count: certificados.length },
+      { id: 'auditores', label: 'Auditores Calificados', symbol: '👥', count: qualifiedCount },
+    ],
+    activeChildTabId: activeTab,
+    childTabAttrName: 'data-iaf-tab',
+    renderChildTabContent: (tabId) => {
+      if (tabId === 'acreditaciones') return tabAcreditacionesHtml;
+      if (tabId === 'certificados') return tabCertificadosHtml;
+      if (tabId === 'auditores') return tabAuditoresHtml;
+      return tabSubsectoresHtml;
+    },
+    modalsHtml: newSubsectorModalHtml,
+  });
 }

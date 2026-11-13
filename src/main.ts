@@ -264,7 +264,7 @@ interface AppState {
   auditorDomain: AuditorViewState;
   extraDomain: {
     selectedNormaId: string | null;
-    activeNormaTab: 'acreditacion' | 'requisitos';
+    activeNormaTab: 'acreditacion' | 'requisitos' | 'certificados';
     normaSearchQuery: string;
     normaFilterStatus: string;
     normaFilterScheme: string;
@@ -277,7 +277,7 @@ interface AppState {
     inspectingClauseId: string | null;
 
     selectedSectorId: string | null;
-    activeSectorTab: 'subsectores' | 'auditores';
+    activeSectorTab: 'subsectores' | 'acreditaciones' | 'certificados' | 'auditores';
     iafSearchQuery: string;
     iafFilterRisk: string;
     iafViewMode: 'grid' | 'list';
@@ -288,6 +288,7 @@ interface AppState {
     isAddSubsectorModalOpen: boolean;
 
     selectedEstatusId: string | null;
+    activeEstatusTab: 'reglas' | 'certificados' | 'auditorias';
     estatusSearchQuery: string;
     estatusViewMode: 'grid' | 'list';
     estatusSortColumn: string | null;
@@ -770,6 +771,7 @@ const state: AppState = {
     isAddSubsectorModalOpen: false,
 
     selectedEstatusId: null,
+    activeEstatusTab: 'certificados',
     estatusSearchQuery: '',
     estatusViewMode: 'grid',
     estatusSortColumn: null,
@@ -1022,6 +1024,7 @@ function render(): void {
       allCertificadosDetailed: scopedDetailedCerts,
       auditorState: state.auditorDomain,
       allAuditorsDetailed: state.domainData.allAuditorsDetailed,
+      programacionAudits: scopedProgramacionAudits,
     });
   } else if (effectiveRoute === 'extra') {
     const coverageCerts: CertificateCoverageInput[] = [];
@@ -1077,6 +1080,9 @@ function render(): void {
       loading: state.domainData.loading,
       organismos: state.domainData.allOrganismos,
       accreditations: enrichedAcreditaciones,
+      certificates: scopedDetailedCerts,
+      auditors: state.domainData.allAuditorsDetailed,
+      audits: scopedProgramacionAudits,
       normaState: {
         selectedNormaId: state.extraDomain.selectedNormaId,
         activeChildTab: state.extraDomain.activeNormaTab,
@@ -1106,6 +1112,7 @@ function render(): void {
       acreditacionState: acreditacionViewState,
       estatusState: {
         selectedEstatusId: state.extraDomain.selectedEstatusId,
+        activeChildTab: state.extraDomain.activeEstatusTab,
         query: state.extraDomain.estatusSearchQuery,
         viewMode: state.extraDomain.estatusViewMode,
         sortColumn: state.extraDomain.estatusSortColumn,
@@ -1355,7 +1362,7 @@ function applyBreadcrumbSegmentState(targetSeg: BreadcrumbSegment): void {
 
   if (entityType === 'org' && entityId) {
     state.organizacionDomain.selectedOrganizacionId = entityId;
-    state.organizacionDomain.activeChildTab = 'certificados';
+    state.organizacionDomain.activeChildTab = tab === 'auditorias' ? 'auditorias' : 'certificados';
   } else if (
     (entityType === 'cert' || entityType === 'sitio' || entityType === 'proceso' || entityType === 'turno') &&
     entityId
@@ -1366,6 +1373,7 @@ function applyBreadcrumbSegmentState(targetSeg: BreadcrumbSegment): void {
       tab === 'procesos' ||
       tab === 'turnos' ||
       tab === 'no_aplicables' ||
+      tab === 'cobertura' ||
       tab === 'auditorias'
     ) {
       state.certificadoDomain.activeChildTab = tab;
@@ -1388,18 +1396,24 @@ function applyBreadcrumbSegmentState(targetSeg: BreadcrumbSegment): void {
     } else {
       state.programacionDomain.selectedAuditId = entityId;
       state.programacionDomain.activeChildTab =
-        tab === 'muestreo' || tab === 'matriz' ? tab : 'equipo';
+        tab === 'muestreo' || tab === 'matriz' || tab === 'hallazgos' ? tab : 'equipo';
     }
   } else if (entityType === 'norma' && entityId) {
     state.extraDomain.selectedNormaId = entityId;
-    state.extraDomain.activeNormaTab = tab === 'requisitos' ? 'requisitos' : 'acreditacion';
+    state.extraDomain.activeNormaTab =
+      tab === 'requisitos' || tab === 'certificados' ? tab : 'acreditacion';
   } else if (entityType === 'sector_iaf' && entityId) {
     state.extraDomain.selectedSectorId = entityId;
-    state.extraDomain.activeSectorTab = tab === 'auditores' ? 'auditores' : 'subsectores';
+    state.extraDomain.activeSectorTab =
+      tab === 'auditores' || tab === 'acreditaciones' || tab === 'certificados'
+        ? tab
+        : 'subsectores';
   } else if (entityType === 'accreditation' && entityId) {
     state.extraDomain.selectedAccreditationId = entityId;
   } else if (entityType === 'estatus' && entityId) {
     state.extraDomain.selectedEstatusId = entityId;
+    state.extraDomain.activeEstatusTab =
+      tab === 'auditorias' || tab === 'reglas' ? tab : 'certificados';
   } else if (entityType === 'tipo' && entityId) {
     state.extraDomain.selectedTipoId = entityId;
   } else if (entityType === 'metodologia' && entityId) {
@@ -1931,6 +1945,9 @@ function bindAuthenticatedEvents(): void {
         render();
         return;
       }
+      if (el.dataset.parentNav === 'true') {
+        return;
+      }
 
       const target = el.dataset.nav as ActiveRoute | undefined;
       if (!target || !canAccessRoute(state.profile, target)) return;
@@ -1985,6 +2002,251 @@ function bindAuthenticatedEvents(): void {
       } else if (target === 'database' && isApprovedAdmin() && state.dbCheck.lastCheckedAt === null) {
         void runHealthChecks();
       }
+    });
+  });
+
+  // Standardized Detail Template Parent Zone Contextual Navigation (pushBreadcrumb, preserving domain lineage)
+  document.querySelectorAll<HTMLElement>('[data-parent-nav="true"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetNav = btn.dataset.nav as ActiveRoute | undefined;
+      const rawSubview = btn.dataset.subview || null;
+      const parentType = btn.dataset.parentType as BreadcrumbEntityType | undefined;
+      const entityId = btn.dataset.entityId || '';
+      const sectorNumber = btn.dataset.sectorNumber || '';
+
+      if (!targetNav) return;
+      const allowAuditorContextual =
+        state.profile?.role === 'AUDITOR' &&
+        state.profile?.status === 'APPROVED' &&
+        targetNav === 'certificacion' &&
+        Boolean(entityId);
+      if (!canAccessRoute(state.profile, targetNav) && !allowAuditorContextual) {
+        return;
+      }
+
+      const subview =
+        targetNav === 'auditorias' || targetNav === 'certificacion' || targetNav === 'extra'
+          ? normalizeDomainSubview(targetNav, rawSubview)
+          : null;
+
+      if (parentType === 'org' && entityId) {
+        const org =
+          state.domainData.allOrganizaciones.find((o) => o.id === entityId) ||
+          INITIAL_ORGANIZACIONES.find((o) => o.id === entityId);
+        state.activeRoute = 'certificacion';
+        state.activeSubSection = 'organizations';
+        state.organizacionDomain.selectedOrganizacionId = entityId;
+        state.organizacionDomain.isEditingAttributes = false;
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `org-${entityId}`,
+          label: org?.nombre || 'Organización',
+          route: 'certificacion',
+          subview: 'organizations',
+          entityType: 'org',
+          entityId,
+          tab: state.organizacionDomain.activeChildTab,
+          tooltip: `Organización > ${org?.nombre || entityId}`,
+        });
+        syncUrlHash('certificacion', 'organizations');
+        render();
+        return;
+      }
+
+      if (parentType === 'cert' && entityId) {
+        const cert =
+          state.domainData.allCertificadosDetailed.find((c) => c.id === entityId) ||
+          INITIAL_CERTIFICADOS_DETAILED.find((c) => c.id === entityId);
+        state.activeRoute = 'certificacion';
+        state.activeSubSection = 'certificates';
+        state.certificadoDomain.selectedCertId = entityId;
+        state.certificadoDomain.activeChildTab = 'sitios';
+        state.certificadoDomain.isEditingAttributes = false;
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `cert-${entityId}`,
+          label: cert?.numero_certificado || 'Certificado',
+          route: 'certificacion',
+          subview: 'certificates',
+          entityType: 'cert',
+          entityId,
+          tab: 'sitios',
+          tooltip: `Certificado > ${cert?.numero_certificado || entityId}`,
+        });
+        syncUrlHash('certificacion', 'certificates');
+        render();
+        return;
+      }
+
+      if (parentType === 'norma') {
+        const matchedNorma =
+          INITIAL_NORMAS.find((n) => n.id === entityId) ||
+          state.domainData.standards.find((s) => s.id === entityId);
+        const resolvedId = matchedNorma?.id || entityId || null;
+        state.activeRoute = 'extra';
+        state.activeSubSection = 'standards';
+        state.extraDomain.selectedNormaId = resolvedId;
+        if (resolvedId) {
+          const normaLabel = matchedNorma?.norma || 'Norma ISO';
+          state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+            id: `norma-${resolvedId}`,
+            label: normaLabel,
+            route: 'extra',
+            subview: 'standards',
+            entityType: 'norma',
+            entityId: resolvedId,
+            tab: state.extraDomain.activeNormaTab,
+            tooltip: `Norma ISO > ${normaLabel}`,
+          });
+        }
+        syncUrlHash('extra', 'standards');
+        render();
+        return;
+      }
+
+      if (parentType === 'sector_iaf') {
+        const lookup = entityId || sectorNumber;
+        const matchedSector =
+          INITIAL_SECTORES_IAF.find(
+            (s) => s.id === lookup || String(s.sector) === lookup || String(s.sector) === sectorNumber
+          ) ||
+          state.domainData.iafSectors.find(
+            (s) => s.id === lookup || String(s.sector) === lookup || String(s.sector) === sectorNumber
+          );
+        const resolvedId = matchedSector?.id || entityId || null;
+        state.activeRoute = 'extra';
+        state.activeSubSection = 'iaf';
+        state.extraDomain.selectedSectorId = resolvedId;
+        if (resolvedId) {
+          const secLabel = matchedSector ? `Sector ${matchedSector.sector}` : 'Sector IAF';
+          state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+            id: `sector-${resolvedId}`,
+            label: secLabel,
+            route: 'extra',
+            subview: 'iaf',
+            entityType: 'sector_iaf',
+            entityId: resolvedId,
+            tab: state.extraDomain.activeSectorTab,
+            tooltip: `Sector IAF > ${matchedSector?.descripcion || secLabel}`,
+          });
+        }
+        syncUrlHash('extra', 'iaf');
+        render();
+        return;
+      }
+
+      if (parentType === 'tipo' && entityId) {
+        const matchedTipo = INITIAL_TIPOS_AUDITORIA_CATALOG.find(
+          (t) => t.id === entityId || t.tipo.toLowerCase() === entityId.toLowerCase()
+        );
+        const resolvedId = matchedTipo?.id || entityId;
+        state.activeRoute = 'extra';
+        state.activeSubSection = 'tipos';
+        state.extraDomain.selectedTipoId = resolvedId;
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `tipo-${resolvedId}`,
+          label: matchedTipo?.tipo || entityId,
+          route: 'extra',
+          subview: 'tipos',
+          entityType: 'tipo',
+          entityId: resolvedId,
+          tooltip: `Tipo Auditoría > ${matchedTipo?.tipo || entityId}`,
+        });
+        syncUrlHash('extra', 'tipos');
+        render();
+        return;
+      }
+
+      if (parentType === 'metodologia' && entityId) {
+        const matchedMet = INITIAL_METODOLOGIAS_CATALOG.find(
+          (m) => m.id === entityId || m.metodologia.toLowerCase() === entityId.toLowerCase()
+        );
+        const resolvedId = matchedMet?.id || entityId;
+        state.activeRoute = 'extra';
+        state.activeSubSection = 'metodologias';
+        state.extraDomain.selectedMetodologiaId = resolvedId;
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `metodologia-${resolvedId}`,
+          label: matchedMet?.metodologia || entityId,
+          route: 'extra',
+          subview: 'metodologias',
+          entityType: 'metodologia',
+          entityId: resolvedId,
+          tooltip: `Metodología > ${matchedMet?.metodologia || entityId}`,
+        });
+        syncUrlHash('extra', 'metodologias');
+        render();
+        return;
+      }
+
+      if (parentType === 'estatus' && entityId) {
+        const matchedEst = INITIAL_ESTATUS_CATALOG.find(
+          (e) => e.id === entityId || e.estatus.toLowerCase() === entityId.toLowerCase()
+        );
+        const resolvedId = matchedEst?.id || entityId;
+        state.activeRoute = 'extra';
+        state.activeSubSection = 'estatus';
+        state.extraDomain.selectedEstatusId = resolvedId;
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `estatus-${resolvedId}`,
+          label: matchedEst?.estatus || entityId,
+          route: 'extra',
+          subview: 'estatus',
+          entityType: 'estatus',
+          entityId: resolvedId,
+          tab: state.extraDomain.activeEstatusTab,
+          tooltip: `Estatus > ${matchedEst?.estatus || entityId}`,
+        });
+        syncUrlHash('extra', 'estatus');
+        render();
+        return;
+      }
+
+      if (parentType === 'accreditation' && entityId) {
+        const acr = state.domainData.allAcreditaciones.find((a) => a.id === entityId);
+        state.activeRoute = 'extra';
+        state.activeSubSection = 'accreditations';
+        state.extraDomain.selectedAccreditationId = entityId;
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `accreditation-${entityId}`,
+          label: acr ? `${acr.organismo_codigo} ${acr.numero_acreditacion}` : 'Acreditación',
+          route: 'extra',
+          subview: 'accreditations',
+          entityType: 'accreditation',
+          entityId,
+          tooltip: acr
+            ? `Acreditación > ${acr.organismo_codigo} · ${acr.numero_acreditacion}`
+            : 'Acreditación',
+        });
+        syncUrlHash('extra', 'accreditations');
+        render();
+        return;
+      }
+
+      if (parentType === 'auditor' && entityId) {
+        const aud =
+          state.domainData.allAuditorsDetailed.find((a) => a.id === entityId) ||
+          INITIAL_AUDITORES_DETAILED.find((a) => a.id === entityId);
+        state.activeRoute = 'certificacion';
+        state.activeSubSection = 'auditors';
+        state.auditorDomain.selectedAuditorId = entityId;
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `aud-${entityId}`,
+          label: aud?.nombre || 'Auditor',
+          route: 'certificacion',
+          subview: 'auditors',
+          entityType: 'auditor',
+          entityId,
+          tab: state.auditorDomain.activeChildTab,
+          tooltip: `Auditor > ${aud?.nombre || entityId}`,
+        });
+        syncUrlHash('certificacion', 'auditors');
+        render();
+        return;
+      }
+
+      state.activeRoute = targetNav;
+      state.activeSubSection = subview;
+      syncUrlHash(targetNav, subview);
+      render();
     });
   });
 
@@ -2377,6 +2639,8 @@ function bindAuthenticatedEvents(): void {
     btn.addEventListener('click', () => {
       const normaId = btn.dataset.normaId;
       if (!normaId) return;
+      state.activeRoute = 'extra';
+      state.activeSubSection = 'standards';
       state.extraDomain.selectedNormaId = normaId;
       const norma = INITIAL_NORMAS.find((n) => n.id === normaId);
       state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
@@ -2389,12 +2653,14 @@ function bindAuthenticatedEvents(): void {
         tab: state.extraDomain.activeNormaTab,
         tooltip: `Norma ISO > ${norma?.codigo || normaId}`,
       });
+      syncUrlHash('extra', 'standards');
       render();
     });
   });
 
   document.querySelectorAll<HTMLElement>('[data-action="back-to-normas-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.dataset.navBack === 'true') return;
       backtrackToParentBreadcrumb();
       render();
     });
@@ -2403,7 +2669,7 @@ function bindAuthenticatedEvents(): void {
   document.querySelectorAll<HTMLElement>('[data-norma-tab]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const tab = btn.dataset.normaTab;
-      if (tab === 'acreditacion' || tab === 'requisitos') {
+      if (tab === 'acreditacion' || tab === 'requisitos' || tab === 'certificados') {
         state.extraDomain.activeNormaTab = tab;
         syncCurrentBreadcrumbTab(tab);
         render();
@@ -2493,6 +2759,7 @@ function bindAuthenticatedEvents(): void {
 
   document.querySelectorAll<HTMLElement>('[data-action="back-to-iaf-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.dataset.navBack === 'true') return;
       backtrackToParentBreadcrumb();
       render();
     });
@@ -2501,7 +2768,12 @@ function bindAuthenticatedEvents(): void {
   document.querySelectorAll<HTMLElement>('[data-iaf-tab]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const tab = btn.dataset.iafTab;
-      if (tab === 'subsectores' || tab === 'auditores') {
+      if (
+        tab === 'subsectores' ||
+        tab === 'acreditaciones' ||
+        tab === 'certificados' ||
+        tab === 'auditores'
+      ) {
         state.extraDomain.activeSectorTab = tab;
         syncCurrentBreadcrumbTab(tab);
         render();
@@ -2571,8 +2843,19 @@ function bindAuthenticatedEvents(): void {
   });
   document.querySelectorAll<HTMLElement>('[data-action="back-to-estatus-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.dataset.navBack === 'true') return;
       backtrackToParentBreadcrumb();
       render();
+    });
+  });
+  document.querySelectorAll<HTMLElement>('[data-estatus-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.estatusTab;
+      if (tab === 'certificados' || tab === 'auditorias' || tab === 'reglas') {
+        state.extraDomain.activeEstatusTab = tab;
+        syncCurrentBreadcrumbTab(tab);
+        render();
+      }
     });
   });
   // --- 4. Tipos de Auditoría Events ---
@@ -2596,6 +2879,7 @@ function bindAuthenticatedEvents(): void {
   });
   document.querySelectorAll<HTMLElement>('[data-action="back-to-tipo-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.dataset.navBack === 'true') return;
       backtrackToParentBreadcrumb();
       render();
     });
@@ -2621,6 +2905,7 @@ function bindAuthenticatedEvents(): void {
   });
   document.querySelectorAll<HTMLElement>('[data-action="back-to-metodologia-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.dataset.navBack === 'true') return;
       backtrackToParentBreadcrumb();
       render();
     });
@@ -2630,6 +2915,8 @@ function bindAuthenticatedEvents(): void {
   const navigateToAccreditationDetail = (accredId: string): void => {
     if (!accredId) return;
     const acr = state.domainData.allAcreditaciones.find((a) => a.id === accredId);
+    state.activeRoute = 'extra';
+    state.activeSubSection = 'accreditations';
     state.extraDomain.selectedAccreditationId = accredId;
     state.extraDomain.accredCreateSuccessMessage = null;
     state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
@@ -2680,6 +2967,7 @@ function bindAuthenticatedEvents(): void {
     .querySelectorAll<HTMLElement>('[data-action="back-to-accreditations-list"]')
     .forEach((btn) => {
       btn.addEventListener('click', () => {
+        if (btn.dataset.navBack === 'true') return;
         backtrackToParentBreadcrumb();
         render();
       });
@@ -2917,6 +3205,8 @@ function bindAuthenticatedEvents(): void {
     btn.addEventListener('click', () => {
       const orgId = btn.dataset.orgId;
       if (!orgId) return;
+      state.activeRoute = 'certificacion';
+      state.activeSubSection = 'organizations';
       state.organizacionDomain.selectedOrganizacionId = orgId;
       state.organizacionDomain.isEditingAttributes = false;
       state.organizacionDomain.editErrorMessage = null;
@@ -2936,6 +3226,7 @@ function bindAuthenticatedEvents(): void {
         tab: state.organizacionDomain.activeChildTab,
         tooltip: `Organización > ${org?.nombre || orgId}`,
       });
+      syncUrlHash('certificacion', 'organizations');
       render();
     });
   });
@@ -2943,8 +3234,21 @@ function bindAuthenticatedEvents(): void {
   // 2. Back to parent breadcrumb (organizations list or originating parent)
   document.querySelectorAll<HTMLElement>('[data-action="back-to-org-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.dataset.navBack === 'true') return;
       backtrackToParentBreadcrumb();
       render();
+    });
+  });
+
+  // 2b. Organización child tab switching (Certificados | Auditorías)
+  document.querySelectorAll<HTMLElement>('[data-org-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.orgTab;
+      if (tab === 'certificados' || tab === 'auditorias') {
+        state.organizacionDomain.activeChildTab = tab;
+        syncCurrentBreadcrumbTab(tab);
+        render();
+      }
     });
   });
 
@@ -3090,11 +3394,13 @@ function bindAuthenticatedEvents(): void {
     state.organizacionDomain.saveSuccessMessage = null;
     render();
   });
-  document.getElementById('cancelEditOrgBtn')?.addEventListener('click', () => {
+  const cancelOrgEdit = () => {
     state.organizacionDomain.isEditingAttributes = false;
     state.organizacionDomain.editErrorMessage = null;
     render();
-  });
+  };
+  document.getElementById('cancelEditOrgBtn')?.addEventListener('click', cancelOrgEdit);
+  document.getElementById('cancelEditOrgBtnSecondary')?.addEventListener('click', cancelOrgEdit);
 
   // 9. Save edited organization attributes
   document.getElementById('editOrgForm')?.addEventListener('submit', (e) => {
@@ -3275,6 +3581,7 @@ function bindAuthenticatedEvents(): void {
   // 2. Back to parent breadcrumb (certificates list or originating parent)
   document.querySelectorAll<HTMLElement>('[data-action="back-to-cert-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.dataset.navBack === 'true') return;
       backtrackToParentBreadcrumb();
       render();
     });
@@ -3698,6 +4005,7 @@ function bindAuthenticatedEvents(): void {
   // 2. Back to parent breadcrumb (auditor list or originating parent)
   document.querySelectorAll<HTMLElement>('[data-action="back-to-auditor-list"]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.dataset.navBack === 'true') return;
       backtrackToParentBreadcrumb();
       render();
     });
@@ -3921,6 +4229,107 @@ function bindAuthenticatedEvents(): void {
     });
   });
 
+  // 13. Cross-entity navigation from Auditor / Norma / Certificado tables
+  document
+    .querySelectorAll<HTMLElement>('[data-action="view-norma-from-auditor"]')
+    .forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const normaCode = btn.dataset.normaCode || '';
+        const matchedNorma =
+          INITIAL_NORMAS.find(
+            (n) =>
+              n.codigo.toLowerCase() === normaCode.toLowerCase() ||
+              n.norma.toLowerCase() === normaCode.toLowerCase()
+          ) ||
+          state.domainData.standards.find(
+            (s) =>
+              s.norma.toLowerCase() === normaCode.toLowerCase() ||
+              (s.codigo || '').toLowerCase() === normaCode.toLowerCase()
+          );
+        const resolvedId = matchedNorma?.id || null;
+        state.activeRoute = 'extra';
+        state.activeSubSection = 'standards';
+        state.extraDomain.selectedNormaId = resolvedId;
+        if (resolvedId) {
+          state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+            id: `norma-${resolvedId}`,
+            label: matchedNorma?.norma || normaCode || 'Norma ISO',
+            route: 'extra',
+            subview: 'standards',
+            entityType: 'norma',
+            entityId: resolvedId,
+            tab: state.extraDomain.activeNormaTab,
+            tooltip: `Norma ISO > ${matchedNorma?.norma || normaCode}`,
+          });
+        }
+        syncUrlHash('extra', 'standards');
+        render();
+      });
+    });
+
+  document
+    .querySelectorAll<HTMLElement>('[data-action="view-iaf-from-auditor"]')
+    .forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const secNum = btn.dataset.sectorNumber || '';
+        const matchedSector =
+          INITIAL_SECTORES_IAF.find((s) => String(s.sector) === secNum) ||
+          state.domainData.iafSectors.find((s) => String(s.sector) === secNum);
+        const resolvedId = matchedSector?.id || null;
+        state.activeRoute = 'extra';
+        state.activeSubSection = 'iaf';
+        state.extraDomain.selectedSectorId = resolvedId;
+        if (resolvedId) {
+          state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+            id: `sector-${resolvedId}`,
+            label: `Sector ${matchedSector?.sector ?? secNum}`,
+            route: 'extra',
+            subview: 'iaf',
+            entityType: 'sector_iaf',
+            entityId: resolvedId,
+            tab: state.extraDomain.activeSectorTab,
+            tooltip: `Sector IAF > ${matchedSector?.descripcion || secNum}`,
+          });
+        }
+        syncUrlHash('extra', 'iaf');
+        render();
+      });
+    });
+
+  document
+    .querySelectorAll<HTMLElement>('[data-action="select-prog-audit-by-code"]')
+    .forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const auditIdAttr = btn.dataset.auditId || '';
+        const auditCode = btn.dataset.auditCode || '';
+        const matchedAudit =
+          state.domainData.programacionAudits.find(
+            (a) =>
+              (auditIdAttr && a.id === auditIdAttr) ||
+              (auditCode && a.codigo_auditoria.toLowerCase() === auditCode.toLowerCase())
+          ) || state.domainData.programacionAudits[0];
+        if (!matchedAudit) return;
+        state.activeRoute = 'auditorias';
+        state.activeSubSection = 'scheduling';
+        state.programacionDomain.selectedAuditId = matchedAudit.id;
+        state.programacionDomain.activeChildTab = 'equipo';
+        state.programacionDomain.isEditingAttributes = false;
+        state.programacionDomain.isAddingTeamMember = false;
+        state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+          id: `prog-audit-${matchedAudit.id}`,
+          label: matchedAudit.codigo_auditoria,
+          route: 'auditorias',
+          subview: 'scheduling',
+          entityType: 'audit',
+          entityId: matchedAudit.id,
+          tab: 'equipo',
+          tooltip: `${matchedAudit.codigo_auditoria} — ${matchedAudit.organizacion_nombre}`,
+        });
+        syncUrlHash('auditorias', 'scheduling');
+        render();
+      });
+    });
+
   // ===============================================
   // DOMAIN AUDITORÍAS (Phase 5: Programación, Calendario & Resultado)
   // ===============================================
@@ -3988,7 +4397,9 @@ function bindPhase5AuditoriasEvents(): void {
     });
   });
 
-  document.getElementById('backToProgramacionListBtn')?.addEventListener('click', () => {
+  const backProgBtn = document.getElementById('backToProgramacionListBtn');
+  backProgBtn?.addEventListener('click', () => {
+    if (backProgBtn.dataset.navBack === 'true') return;
     backtrackToParentBreadcrumb();
     render();
   });
@@ -4091,11 +4502,13 @@ function bindPhase5AuditoriasEvents(): void {
     render();
   });
 
-  document.getElementById('cancelEditProgAuditBtn')?.addEventListener('click', () => {
+  const cancelProgEdit = () => {
     state.programacionDomain.isEditingAttributes = false;
     state.programacionDomain.editErrorMessage = null;
     render();
-  });
+  };
+  document.getElementById('cancelEditProgAuditBtn')?.addEventListener('click', cancelProgEdit);
+  document.getElementById('cancelEditProgAuditBtnSecondary')?.addEventListener('click', cancelProgEdit);
 
   document.getElementById('editProgAuditForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -6014,6 +6427,7 @@ function resetClientSessionState(): void {
     isAddSubsectorModalOpen: false,
 
     selectedEstatusId: null,
+    activeEstatusTab: 'certificados',
     estatusSearchQuery: '',
     estatusViewMode: 'grid',
     estatusSortColumn: null,

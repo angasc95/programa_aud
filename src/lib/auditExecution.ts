@@ -120,7 +120,7 @@ export interface Phase5FindingEntity extends FindingRecord {
   fecha_cierre?: string | null;
 }
 
-export type ProgramacionChildTab = 'equipo' | 'muestreo' | 'matriz';
+export type ProgramacionChildTab = 'equipo' | 'muestreo' | 'matriz' | 'hallazgos';
 export type CalendarDisplayMode = 'month' | 'quarter' | 'gantt';
 export type FindingsDisplayMode = 'list' | 'kanban';
 

@@ -83,6 +83,7 @@ export function renderAuditoriasView(
       audits: state.programacionAudits,
       auditors: state.allAuditorsDetailed,
       certificates: state.certificates,
+      findings: state.phase5Findings,
       loading: state.loading,
     });
   }

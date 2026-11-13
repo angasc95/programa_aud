@@ -102,6 +102,7 @@ export type CertificadoChildTab =
   | 'procesos'
   | 'turnos'
   | 'no_aplicables'
+  | 'cobertura'
   | 'auditorias';
 
 export interface CertificadoViewState {

@@ -9,8 +9,11 @@ import {
 } from '../lib/accessControl';
 import {
   getAuditStatusVisualStyle,
+  getLifecycleStatusMeta,
   getMethodologyVisualStyle,
   getModalityVisualStyle,
+  getPhase5FindingTypeMeta,
+  type Phase5FindingEntity,
   type ProgramacionAuditEntity,
   type ProgramacionChildTab,
   type ProgramacionViewState,
@@ -24,6 +27,10 @@ import {
   type MultiViewSelectionMap,
 } from '../lib/universalTemplate';
 import { renderUniversalTemplate } from './universalTemplate';
+import {
+  renderDetailPageTemplate,
+  type DetailParentChip,
+} from './detailTemplate';
 
 export type { ProgramacionViewState, ProgramacionChildTab };
 
@@ -33,16 +40,17 @@ export interface ProgramacionViewProps {
   audits: ProgramacionAuditEntity[];
   auditors: AuditorDetailEntity[];
   certificates: CertificateRecord[];
+  findings?: Phase5FindingEntity[];
   loading?: boolean;
 }
 
 export function renderProgramacionView(props: ProgramacionViewProps): string {
-  const { profile, state, audits, auditors, certificates, loading = false } = props;
+  const { profile, state, audits, auditors, certificates, findings = [], loading = false } = props;
 
   if (state.selectedAuditId) {
     const selected = audits.find((a) => a.id === state.selectedAuditId);
     if (selected) {
-      return renderProgramacionDetailView(profile, state, selected, auditors);
+      return renderProgramacionDetailView(profile, state, selected, auditors, findings);
     }
   }
 
@@ -542,13 +550,14 @@ function renderPlanAuditForm(
 }
 
 /**
- * Standardized 4-Zone Detail View for a Scheduled Audit Event
+ * Standardized 3-Zone Detail View for a Scheduled Audit Event
  */
 function renderProgramacionDetailView(
   profile: UserProfile,
   state: ProgramacionViewState,
   audit: ProgramacionAuditEntity,
-  allAuditors: AuditorDetailEntity[]
+  allAuditors: AuditorDetailEntity[],
+  allFindings: Phase5FindingEntity[]
 ): string {
   const canEditSchedule = canEditAuditScheduleOrTeam(profile);
   const canAssignTeam = canEditSchedule;
@@ -558,229 +567,181 @@ function renderProgramacionDetailView(
   const st = getAuditStatusVisualStyle(audit.estatus);
 
   const sortedSites = sortSitesWithPrincipalFirst(audit.sitiosMuestreo);
+  const auditFindings = allFindings.filter((f) => f.id_auditoria === audit.id);
   const activeTab: ProgramacionChildTab = state.activeChildTab || 'equipo';
 
-  const tabs: Array<{ id: ProgramacionChildTab; label: string; symbol: string; count: number }> = [
-    { id: 'equipo', label: 'Equipo Evaluador', symbol: '👥', count: audit.equipo.length },
-    { id: 'muestreo', label: 'Sedes y Muestreo', symbol: '🏭', count: sortedSites.length },
-    { id: 'matriz', label: 'Matriz de Verificación Normativa', symbol: '✅', count: audit.matrizNormativa.length },
+  const parents: DetailParentChip[] = [
+    {
+      label: 'Organización',
+      value: audit.organizacion_nombre,
+      symbol: '🏢',
+      navAction: {
+        nav: 'certificacion',
+        subview: 'organizations',
+        entityType: 'org',
+        entityId: audit.id_organizacion,
+      },
+    },
+    {
+      label: 'Certificado',
+      value: audit.numero_certificado,
+      symbol: '📜',
+      navAction: {
+        nav: 'certificacion',
+        subview: 'certificates',
+        entityType: 'cert',
+        entityId: audit.id_certificado,
+      },
+    },
+    {
+      label: 'Tipo',
+      value: audit.tipo_auditoria,
+      symbol: mod.symbol,
+      navAction: {
+        nav: 'extra',
+        subview: 'tipos',
+        entityType: 'tipo',
+        entityId: audit.tipo_auditoria,
+      },
+    },
+    {
+      label: 'Metodología',
+      value: audit.metodologia,
+      symbol: met.symbol,
+      navAction: {
+        nav: 'extra',
+        subview: 'metodologias',
+        entityType: 'metodologia',
+        entityId: audit.metodologia,
+      },
+    },
   ];
 
-  let tabContentHtml = '';
-  if (activeTab === 'equipo') {
-    tabContentHtml = renderTeamChildTab(audit, allAuditors, canAssignTeam, state.isAddingTeamMember);
-  } else if (activeTab === 'muestreo') {
-    tabContentHtml = renderSamplingChildTab(audit, sortedSites, canEditSchedule);
-  } else {
-    tabContentHtml = renderVerificationMatrixTab(audit, canEditMatrix);
-  }
+  const parentMetaHtml = audit.recomendacion
+    ? `
+      <span class="px-2.5 py-1 rounded font-bold text-[11px] border ${
+        audit.recomendacion.estado === 'APROBADA'
+          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+          : 'bg-rose-50 text-rose-800 border-rose-200'
+      }">
+        Recomendación ISO 17021-1: ${escapeHtml(audit.recomendacion.estado)}
+      </span>
+    `
+    : '';
 
-  return `
-    <div class="space-y-6">
-      <!-- Zone 0: Action Bar -->
-      <div class="flex flex-wrap items-center justify-between gap-3">
+  const extraActionButtonsHtml = `
+    <button
+      type="button"
+      data-action="go-audit-results"
+      data-audit-id="${escapeHtml(audit.id)}"
+      class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-xs font-semibold transition-colors cursor-pointer"
+    >
+      <span aria-hidden="true">📋</span>
+      <span>Ver Resultados y Hallazgos</span>
+    </button>
+  `;
+
+  const recordActionsHtml = canEditSchedule
+    ? !state.isEditingAttributes
+      ? `
         <button
           type="button"
-          id="backToProgramacionListBtn"
-          class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+          id="startEditProgAuditBtn"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 cursor-pointer"
         >
-          <span>←</span>
-          <span>Volver a Programación</span>
+          <span aria-hidden="true">✏️</span>
+          <span>Editar</span>
         </button>
+      `
+      : `
+        <button
+          type="button"
+          id="cancelEditProgAuditBtn"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-xs font-semibold text-rose-700 cursor-pointer"
+        >
+          <span>✕</span>
+          <span>Cancelar Edición</span>
+        </button>
+      `
+    : '';
 
-        <div class="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            data-action="go-audit-results"
-            data-audit-id="${escapeHtml(audit.id)}"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-xs font-semibold transition-colors cursor-pointer"
-          >
-            <span aria-hidden="true">📋</span>
-            <span>Ver Resultados y Hallazgos</span>
-          </button>
-
-          <button
-            type="button"
-            data-action="open-changelog"
-            data-table-name="auditoria"
-            data-record-id="${escapeHtml(audit.id)}"
-            data-entity-name="${escapeHtml(audit.codigo_auditoria)} · ${escapeHtml(audit.organizacion_nombre)}"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
-          >
-            <span aria-hidden="true">🕒</span>
-            <span>Historial de Cambios</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Zone 1: Relational Header Banner -->
-      <header class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs space-y-4">
-        <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-          <div class="flex items-start gap-3">
-            <span class="text-3xl select-none shrink-0" aria-hidden="true">🗓️</span>
-            <div class="space-y-1">
-              <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                Evento de Auditoría Planificado
-              </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 font-mono">
-                  ${escapeHtml(audit.codigo_auditoria)}
-                </h2>
-                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-xs font-semibold border ${mod.badgeClass}">
-                  <span aria-hidden="true">${mod.symbol}</span>
-                  <span>${escapeHtml(audit.tipo_auditoria)}</span>
-                </span>
-                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-xs font-semibold border ${met.badgeClass}">
-                  <span aria-hidden="true">${met.symbol}</span>
-                  <span>${escapeHtml(audit.metodologia)}</span>
-                </span>
-              </div>
-              <p class="text-xs text-slate-500">
-                ${escapeHtml(audit.norma_codigo)} · Sector IAF ${audit.sector_iaf} · ${escapeHtml(audit.sede_principal_direccion)}
-              </p>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-2 self-start">
-            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${st.badgeClass}">
-              <span class="w-2 h-2 rounded-full ${st.dotClass}"></span>
-              <span>${escapeHtml(st.label)}</span>
-            </span>
-          </div>
-        </div>
-
-        <!-- Parent Relational Links (Zero-UUID) -->
-        <div class="px-4 py-2.5 rounded-lg bg-slate-50 border border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div class="flex flex-wrap items-center gap-4">
-            <div class="flex items-center gap-1.5">
-              <span class="text-slate-400 font-medium">Organización Cliente:</span>
-              <button
-                type="button"
-                data-action="open-org-from-audit"
-                data-org-id="${escapeHtml(audit.id_organizacion)}"
-                class="font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer inline-flex items-center gap-1"
-              >
-                <span aria-hidden="true">🏢</span>
-                <span>${escapeHtml(audit.organizacion_nombre)}</span>
-              </button>
-            </div>
-            <div class="flex items-center gap-1.5">
-              <span class="text-slate-400 font-medium">Certificado Vinculado:</span>
-              <button
-                type="button"
-                data-action="open-cert-from-audit"
-                data-cert-id="${escapeHtml(audit.id_certificado)}"
-                class="font-mono font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
-              >
-                📜 ${escapeHtml(audit.numero_certificado)}
-              </button>
-            </div>
-          </div>
-          ${
-            audit.recomendacion
-              ? `
-                <span class="px-2.5 py-0.5 rounded font-bold text-[11px] border ${
-                  audit.recomendacion.estado === 'APROBADA'
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                    : 'bg-rose-50 text-rose-800 border-rose-200'
-                }">
-                  Recomendación ISO 17021-1: ${escapeHtml(audit.recomendacion.estado)}
-                </span>
-              `
-              : ''
-          }
-        </div>
-      </header>
-
-      <!-- Zone 2: Separator -->
-      <div class="border-t border-slate-200/60"></div>
-
-      <!-- Zone 3: Direct Record Attributes + Inline Edit -->
-      <section class="space-y-3">
-        <div class="flex items-center justify-between gap-2">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600">
-            Atributos Directos de Planificación
-          </h3>
-          ${
-            canEditSchedule && !state.isEditingAttributes
-              ? `
-                <button
-                  type="button"
-                  id="startEditProgAuditBtn"
-                  class="px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer"
-                >
-                  ✏️ Editar Planificación
-                </button>
-              `
-              : ''
-          }
-        </div>
-
-        ${
-          state.saveSuccessMessage
-            ? `<div class="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">✓ ${escapeHtml(state.saveSuccessMessage)}</div>`
-            : ''
-        }
-        ${
-          state.editErrorMessage
-            ? `<div class="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">⚠️ ${escapeHtml(state.editErrorMessage)}</div>`
-            : ''
-        }
-
-        ${
-          state.isEditingAttributes && canEditSchedule
-            ? renderEditAuditAttributesForm(audit, allAuditors)
-            : `
-              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                ${renderAttrCard('Código de Auditoría', audit.codigo_auditoria, true)}
-                ${renderAttrCard('Tipo / Modalidad', audit.tipo_auditoria)}
-                ${renderAttrCard('Metodología de Ejecución', audit.metodologia)}
-                ${renderAttrCard('Fecha Inicio / Fin', `${audit.fecha_inicio} → ${audit.fecha_fin}`, true)}
-                ${renderAttrCard('Días-Auditor Planificados', `${audit.dias_auditor} día(s)-auditor`)}
-                ${renderAttrCard('Auditor Líder', audit.auditor_lider)}
-                ${renderAttrCard('Norma Evaluada', audit.norma_codigo)}
-                ${renderAttrCard('Sector IAF', `Sector IAF ${audit.sector_iaf}`)}
-                ${renderAttrCard('Estatus Operativo', audit.estatus)}
-              </div>
-            `
-        }
-      </section>
-
-      <!-- Zone 4: 3 Specialized Child Tabs -->
-      <section class="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
-        <div class="px-4 pt-3 border-b border-slate-200 bg-slate-50/70 flex flex-wrap gap-2" role="tablist" aria-label="Secciones de Programación de Auditoría">
-          ${tabs
-            .map((tab) => {
-              const isActive = tab.id === activeTab;
-              return `
-                <button
-                  type="button"
-                  role="tab"
-                  data-prog-tab="${tab.id}"
-                  aria-selected="${isActive ? 'true' : 'false'}"
-                  class="px-3.5 py-2 text-xs font-semibold rounded-t-lg transition-all cursor-pointer inline-flex items-center gap-1.5 border-b-2 ${
-                    isActive
-                      ? 'bg-white text-indigo-700 border-indigo-600 shadow-2xs font-bold'
-                      : 'text-slate-600 hover:text-slate-900 border-transparent hover:bg-slate-100/60'
-                  }"
-                >
-                  <span aria-hidden="true">${tab.symbol}</span>
-                  <span>${escapeHtml(tab.label)}</span>
-                  <span class="text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    isActive ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200/80 text-slate-600'
-                  }">${tab.count}</span>
-                </button>
-              `;
-            })
-            .join('')}
-        </div>
-
-        <div class="p-5">
-          ${tabContentHtml}
-        </div>
-      </section>
-    </div>
+  const feedbackHtml = `
+    ${
+      state.saveSuccessMessage
+        ? `<div class="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">✓ ${escapeHtml(state.saveSuccessMessage)}</div>`
+        : ''
+    }
+    ${
+      state.editErrorMessage
+        ? `<div class="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">⚠️ ${escapeHtml(state.editErrorMessage)}</div>`
+        : ''
+    }
   `;
+
+  const customRecordBodyHtml =
+    state.isEditingAttributes && canEditSchedule
+      ? renderEditAuditAttributesForm(audit, allAuditors)
+      : `
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          ${renderAttrCard('Código de Auditoría', audit.codigo_auditoria, true)}
+          ${renderAttrCard('Tipo / Modalidad', audit.tipo_auditoria)}
+          ${renderAttrCard('Metodología de Ejecución', audit.metodologia)}
+          ${renderAttrCard('Fecha Inicio / Fin', `${audit.fecha_inicio} → ${audit.fecha_fin}`, true)}
+          ${renderAttrCard('Días-Auditor Planificados', `${audit.dias_auditor} día(s)-auditor`)}
+          ${renderAttrCard('Auditor Líder', audit.auditor_lider)}
+          ${renderAttrCard('Norma Evaluada', audit.norma_codigo)}
+          ${renderAttrCard('Sector IAF', `Sector IAF ${audit.sector_iaf}`)}
+          ${renderAttrCard('Estatus Operativo', audit.estatus)}
+        </div>
+      `;
+
+  return renderDetailPageTemplate({
+    entityType: 'Evento de Auditoría Planificado',
+    entitySymbol: '🗓️',
+    title: audit.codigo_auditoria,
+    eyebrowCode: `${audit.tipo_auditoria} · ${audit.metodologia}`,
+    subtitle: `${audit.norma_codigo} · Sector IAF ${audit.sector_iaf} · ${audit.sede_principal_direccion}`,
+    statusBadge: {
+      label: st.label,
+      badgeClass: st.badgeClass,
+      dotClass: st.dotClass,
+    },
+    backButton: {
+      label: 'Volver a Programación',
+      nav: 'auditorias',
+      subview: 'scheduling',
+      action: 'back-to-programacion-list',
+    },
+    extraActionButtonsHtml,
+    parents,
+    parentMetaHtml,
+    tableName: 'auditoria',
+    recordId: audit.id,
+    recordActionsHtml,
+    feedbackHtml,
+    attributes: [],
+    customRecordBodyHtml,
+    childTabs: [
+      { id: 'equipo', label: 'Equipo Auditor', symbol: '👥', count: audit.equipo.length },
+      { id: 'muestreo', label: 'Sedes y Muestreo', symbol: '🏭', count: sortedSites.length },
+      { id: 'matriz', label: 'Matriz Normativa', symbol: '✅', count: audit.matrizNormativa.length },
+      { id: 'hallazgos', label: 'Hallazgos', symbol: '📋', count: auditFindings.length },
+    ],
+    activeChildTabId: activeTab,
+    childTabAttrName: 'data-prog-tab',
+    renderChildTabContent: (tabId) => {
+      if (tabId === 'muestreo') {
+        return renderSamplingChildTab(audit, sortedSites, canEditSchedule);
+      }
+      if (tabId === 'matriz') {
+        return renderVerificationMatrixTab(audit, canEditMatrix);
+      }
+      if (tabId === 'hallazgos') {
+        return renderFindingsChildTab(audit, auditFindings);
+      }
+      return renderTeamChildTab(audit, allAuditors, canAssignTeam, state.isAddingTeamMember);
+    },
+  });
 }
 
 function renderAttrCard(label: string, value: string, isMono = false): string {
@@ -876,7 +837,7 @@ function renderEditAuditAttributesForm(
       </div>
 
       <div class="flex items-center justify-end gap-2">
-        <button type="button" id="cancelEditProgAuditBtn" class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold cursor-pointer">
+        <button type="button" id="cancelEditProgAuditBtnSecondary" class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold cursor-pointer">
           Cancelar
         </button>
         <button type="submit" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer">
@@ -993,7 +954,16 @@ function renderTeamChildTab(
                       : 'bg-rose-50 text-rose-800 border-rose-200';
                   return `
                     <tr class="hover:bg-slate-50/70">
-                      <td class="px-4 py-3 font-bold text-slate-900">${escapeHtml(m.nombre)}</td>
+                      <td class="px-4 py-3 font-bold text-slate-900">
+                        <button
+                          type="button"
+                          data-action="select-auditor"
+                          data-auditor-id="${escapeHtml(m.id_auditor)}"
+                          class="text-indigo-700 hover:text-indigo-900 hover:underline font-bold cursor-pointer text-left"
+                        >
+                          ${escapeHtml(m.nombre)}
+                        </button>
+                      </td>
                       <td class="px-3 py-3">
                         <span class="inline-flex px-2 py-0.5 rounded text-[11px] font-bold border ${roleBadge}">
                           ${escapeHtml(m.rol)}
@@ -1257,6 +1227,118 @@ function renderVerificationMatrixTab(
                       </td>
                       <td class="px-4 py-3 text-slate-600">
                         ${escapeHtml(item.notas || '—')}
+                      </td>
+                    </tr>
+                  `;
+                })
+                .join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderFindingsChildTab(
+  audit: ProgramacionAuditEntity,
+  findings: Phase5FindingEntity[]
+): string {
+  if (findings.length === 0) {
+    return `
+      <div class="space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h4 class="text-sm font-bold text-slate-900">Hallazgos Registrados en el Evento</h4>
+            <p class="text-xs text-slate-500">
+              No conformidades, observaciones y oportunidades de mejora vinculadas a ${escapeHtml(audit.codigo_auditoria)}.
+            </p>
+          </div>
+          <button
+            type="button"
+            data-action="go-audit-results"
+            data-audit-id="${escapeHtml(audit.id)}"
+            class="px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-xs font-semibold cursor-pointer self-start sm:self-auto"
+          >
+            Abrir Tablero de Hallazgos →
+          </button>
+        </div>
+        <div class="p-8 text-center text-slate-500 text-xs bg-slate-50 rounded-xl border border-slate-200">
+          Esta auditoría aún no tiene hallazgos ni comentarios de campo registrados.
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          <h4 class="text-sm font-bold text-slate-900">Hallazgos y Desviaciones Detectadas</h4>
+          <p class="text-xs text-slate-500">
+            Registro resumido de hallazgos vinculados a ${escapeHtml(audit.codigo_auditoria)}.
+          </p>
+        </div>
+        <button
+          type="button"
+          data-action="go-audit-results"
+          data-audit-id="${escapeHtml(audit.id)}"
+          class="px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-xs font-semibold cursor-pointer self-start sm:self-auto"
+        >
+          Gestionar en Resultado →
+        </button>
+      </div>
+
+      <div class="border border-slate-200 rounded-lg overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-600">
+              <tr>
+                <th class="px-4 py-2.5">Código</th>
+                <th class="px-3 py-2.5">Clasificación</th>
+                <th class="px-3 py-2.5">Cláusula & Proceso</th>
+                <th class="px-3 py-2.5">Descripción</th>
+                <th class="px-3 py-2.5">Ciclo de Vida</th>
+                <th class="px-4 py-2.5 text-right">Acción</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 bg-white">
+              ${findings
+                .map((f) => {
+                  const tMeta = getPhase5FindingTypeMeta(f.tipo);
+                  const lMeta = getLifecycleStatusMeta(f.estado_ciclo);
+                  return `
+                    <tr class="hover:bg-slate-50/70 transition-colors">
+                      <td class="px-4 py-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                        ${escapeHtml(f.codigo_hallazgo)}
+                      </td>
+                      <td class="px-3 py-3 whitespace-nowrap">
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border ${tMeta.badgeClass}">
+                          <span>${tMeta.symbol}</span>
+                          <span>${escapeHtml(tMeta.shortLabel)}</span>
+                        </span>
+                      </td>
+                      <td class="px-3 py-3">
+                        <div class="font-mono font-semibold text-indigo-700">Cláusula ${escapeHtml(f.requisito_codigo)}</div>
+                        <div class="text-[11px] text-slate-500">${escapeHtml(f.proceso_nombre)}</div>
+                      </td>
+                      <td class="px-3 py-3 text-slate-700 max-w-xs">
+                        <p class="line-clamp-2">${escapeHtml(f.descripcion)}</p>
+                      </td>
+                      <td class="px-3 py-3 whitespace-nowrap">
+                        <span class="inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${lMeta.badgeClass}">
+                          ${escapeHtml(lMeta.label)}
+                        </span>
+                      </td>
+                      <td class="px-4 py-3 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          data-action="go-audit-results"
+                          data-audit-id="${escapeHtml(audit.id)}"
+                          class="text-xs font-semibold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+                        >
+                          Revisar →
+                        </button>
                       </td>
                     </tr>
                   `;

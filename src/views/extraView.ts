@@ -21,6 +21,9 @@ import {
   toLegacyAcreditacionNormaIaf,
   type AcreditacionDetailEntity,
 } from '../lib/acreditacionDomain';
+import type { CertificadoDetailEntity } from '../lib/multisiteSampling';
+import type { AuditorDetailEntity } from '../lib/competencyMatrix';
+import type { ProgramacionAuditEntity } from '../lib/auditExecution';
 import {
   renderNormaView,
   type NormaViewState,
@@ -92,6 +95,9 @@ export interface ExtraViewState {
   loading: boolean;
   organismos?: OrganismoAcreditacion[];
   accreditations?: AcreditacionDetailEntity[];
+  certificates?: CertificadoDetailEntity[];
+  auditors?: AuditorDetailEntity[];
+  audits?: ProgramacionAuditEntity[];
   // Deep navigation sub-states
   normaState?: Partial<NormaViewState>;
   iafState?: Partial<SectorIafViewState>;
@@ -195,6 +201,9 @@ export function renderExtraView(
       state: iafState,
       sectores: mappedSectores,
       subsectores: INITIAL_SUBSECTORES_IAF,
+      acreditaciones: legacyAcreditaciones,
+      certificados: state.certificates || [],
+      auditores: state.auditors || [],
       loading: state.loading,
     });
   } else if (
@@ -228,6 +237,7 @@ export function renderExtraView(
   } else if (activeSub === 'estatus') {
     const estatusState: EstatusViewState = {
       selectedEstatusId: state.estatusState?.selectedEstatusId || null,
+      activeChildTab: state.estatusState?.activeChildTab || 'certificados',
       query: state.estatusState?.query || '',
       selectedCategory: state.estatusState?.selectedCategory || 'ALL',
       viewMode: state.estatusState?.viewMode || 'grid',
@@ -241,6 +251,8 @@ export function renderExtraView(
       profile,
       state: estatusState,
       estatusList: INITIAL_ESTATUS_CATALOG,
+      certificados: state.certificates || [],
+      audits: state.audits || [],
       loading: state.loading,
     });
   } else if (activeSub === 'tipos' || activeSub === 'tipo') {
@@ -259,6 +271,7 @@ export function renderExtraView(
       profile,
       state: tipoState,
       tiposList: INITIAL_TIPOS_AUDITORIA_CATALOG,
+      audits: state.audits || [],
       loading: state.loading,
     });
   } else if (activeSub === 'metodologias' || activeSub === 'metodologia') {
@@ -276,6 +289,7 @@ export function renderExtraView(
       profile,
       state: metState,
       metodologiasList: INITIAL_METODOLOGIAS_CATALOG,
+      audits: state.audits || [],
       loading: state.loading,
     });
   } else {
@@ -303,6 +317,7 @@ export function renderExtraView(
       organismos: mappedOrganismos,
       requisitos: mappedRequisitos,
       sectores: mappedSectores,
+      certificados: state.certificates || [],
       loading: state.loading,
     });
   }

@@ -297,11 +297,15 @@ describe('Phase 4.2 - Zero-UUID Exposure Compliance & Clean List Rule', () => {
       loading: false,
     });
 
-    // Check Zones
-    assert.ok(detailHtml.includes('ZONA 1: METADATOS RELACIONALES'));
-    assert.ok(detailHtml.includes('DECLARACIÓN TÉCNICA Y ATRIBUTOS DIRECTOS'));
-    assert.ok(detailHtml.includes('ZONA 3: ATRIBUTOS DIRECTOS'));
-    assert.ok(detailHtml.includes('ZONA 4: PESTAÑAS RELACIONALES ESPECIALIZADAS'));
+    // Check Standardized 3-Zone Architecture (Parent Zone -> Divider -> Record Zone -> List-only Child Tabs)
+    assert.ok(detailHtml.includes('aria-label="Contexto y relaciones superiores"'));
+    assert.ok(detailHtml.includes('data-parent-nav="true"'));
+    assert.ok(detailHtml.includes('<hr class="border-t border-slate-200 my-4" />'));
+    assert.ok(detailHtml.includes('aria-label="Detalle del registro"'));
+    assert.ok(detailHtml.includes('role="tablist"'));
+    assert.ok(!detailHtml.includes('ZONA 1:'));
+    assert.ok(!detailHtml.includes('ZONA 3:'));
+    assert.ok(!detailHtml.includes('ZONA 4:'));
 
     // Check Site 0 principal badge
     assert.ok(detailHtml.includes('Sede Central / Principal'));

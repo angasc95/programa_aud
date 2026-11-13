@@ -28,6 +28,7 @@ import {
   INITIAL_AUDITORES_DETAILED,
   type AuditorDetailEntity,
 } from '../lib/competencyMatrix';
+import type { ProgramacionAuditEntity } from '../lib/auditExecution';
 
 export interface OrganizationRecord {
   id: string;
@@ -79,6 +80,7 @@ export interface CertificacionViewState {
   allCertificadosDetailed?: CertificadoDetailEntity[];
   auditorState?: Partial<AuditorViewState>;
   allAuditorsDetailed?: AuditorDetailEntity[];
+  programacionAudits?: ProgramacionAuditEntity[];
 }
 
 export function renderCertificacionView(
@@ -99,7 +101,7 @@ export function renderCertificacionView(
       sortColumn: state.organizacionState?.sortColumn || null,
       sortDirection: state.organizacionState?.sortDirection || 'none',
       isEditingAttributes: Boolean(state.organizacionState?.isEditingAttributes),
-      activeChildTab: 'certificados',
+      activeChildTab: state.organizacionState?.activeChildTab || 'certificados',
       editFormData: state.organizacionState?.editFormData,
       editErrorMessage: state.organizacionState?.editErrorMessage,
       saveSuccessMessage: state.organizacionState?.saveSuccessMessage,
@@ -136,6 +138,7 @@ export function renderCertificacionView(
       state: orgState,
       organizaciones: orgList,
       certificados: certSummaries,
+      auditorias: state.programacionAudits || [],
       loading: state.loading,
     });
   } else if (activeSub === 'auditors') {

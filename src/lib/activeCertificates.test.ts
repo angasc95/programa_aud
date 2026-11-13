@@ -306,7 +306,7 @@ describe('Organización View - 4-Zone Detail & Zero-UUID Compliance', () => {
     );
   });
 
-  it('renders 4-Zone detail view without exposing raw UUIDs in visible text', () => {
+  it('renders Standardized 3-Zone detail view without exposing raw UUIDs in visible text', () => {
     const detailHtml = renderOrganizacionView({
       profile: mockProfile,
       state: {
@@ -330,11 +330,16 @@ describe('Organización View - 4-Zone Detail & Zero-UUID Compliance', () => {
       `Exposed UUIDs in Organización detail: ${compliance.exposedUuids.join(', ')}`
     );
 
-    // Verify all 4 zones exist
-    assert.ok(detailHtml.includes('ZONA 1: METADATOS RELACIONALES'));
-    assert.ok(detailHtml.includes('DATOS DIRECTOS DE LA EMPRESA'));
-    assert.ok(detailHtml.includes('ZONA 3: ATRIBUTOS FISCALES'));
-    assert.ok(detailHtml.includes('Certificados ('));
+    // Verify Standardized 3-Zone Layout without legacy ZONA developer text
+    assert.ok(detailHtml.includes('aria-label="Contexto y relaciones superiores"'));
+    assert.ok(detailHtml.includes('data-parent-nav="true"'));
+    assert.ok(detailHtml.includes('<hr class="border-t border-slate-200 my-4" />'));
+    assert.ok(detailHtml.includes('aria-label="Detalle del registro"'));
+    assert.ok(detailHtml.includes('role="tablist"'));
+    assert.ok(!detailHtml.includes('ZONA 1:'));
+    assert.ok(!detailHtml.includes('ZONA 3:'));
+    assert.ok(detailHtml.includes('Certificados'));
+    assert.ok(detailHtml.includes('Auditorías'));
     assert.ok(detailHtml.includes('Historial de Cambios'));
     assert.ok(detailHtml.includes('FN-QMS-2024-001'));
   });

@@ -21,6 +21,10 @@ import {
   type MultiViewSelectionMap,
 } from '../lib/universalTemplate';
 import { renderUniversalTemplate } from './universalTemplate';
+import {
+  renderDetailPageTemplate,
+  type DetailParentChip,
+} from './detailTemplate';
 
 export type { AuditorViewState, AuditorChildTab };
 
@@ -466,11 +470,7 @@ function renderAuditorDirectory(
 }
 
 /**
- * Standardized 4-Zone Detail Page Architecture & Competency Matrix
- * Zone 1: Parent Data Section (Accreditation Body & Professional Category)
- * Zone 2: Visual Separator
- * Zone 3: Direct Record Attributes (View / Edit Mode with Credential, Bio & Contacts)
- * Zone 4: Multipage Child Tabs (Tab 1: Matriz de Competencias, Tab 2: Historial de Auditorías)
+ * Standardized 3-Zone Detail Page Architecture & Competency Matrix
  */
 function renderAuditorDetailPage(
   profile: UserProfile,
@@ -488,319 +488,216 @@ function renderAuditorDetailPage(
     ? state.editFormData?.biografia ?? auditor.biografia
     : auditor.biografia;
 
-  return `
-    <div class="space-y-6">
-      <!-- Top Action Bar: Back Navigation + Forensic Changelog Trigger -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+  const parents: DetailParentChip[] = [
+    {
+      label: 'Registro',
+      value: auditor.instituto_registro,
+      symbol: '🏛️',
+    },
+    {
+      label: 'Categoría',
+      value: auditor.categoria_profesional,
+      symbol: '★',
+    },
+    ...(auditor.normas_acreditadas.length > 0
+      ? [
+          {
+            label: 'Normas Calificadas',
+            value: auditor.normas_acreditadas.join(', '),
+            symbol: '📘',
+          },
+        ]
+      : []),
+  ];
+
+  const recordActionsHtml = isStaff
+    ? !isEditing
+      ? `
         <button
           type="button"
-          data-action="back-to-auditor-list"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer self-start"
+          id="startEditAuditorBtn"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
         >
-          <span>←</span>
-          <span>Volver a Auditores</span>
+          <span aria-hidden="true">✏️</span>
+          <span>Editar</span>
         </button>
-
+      `
+      : `
         <button
           type="button"
-          data-action="open-changelog"
-          data-table-name="auditor"
-          data-record-id="${auditor.id}"
-          data-entity-name="${escapeHtml(auditor.nombre)}"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors cursor-pointer self-start sm:self-auto"
+          id="cancelEditAuditorBtn"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
         >
-          <span>🕒</span>
-          <span>Historial de Cambios</span>
+          <span>✕</span>
+          <span>Cancelar Edición</span>
         </button>
+      `
+    : '';
+
+  const feedbackHtml = `
+    ${
+      state.editErrorMessage
+        ? `
+      <div class="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs font-medium">
+        ⚠️ ${escapeHtml(state.editErrorMessage)}
       </div>
-
-      <!-- Main Detail Card -->
-      <div class="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-        <!-- Hero Header -->
-        <div class="p-6 bg-slate-900 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div class="space-y-1">
-            <div class="flex items-center gap-2">
-              <span class="text-xs font-bold px-2.5 py-0.5 rounded bg-slate-800 text-indigo-400 border border-slate-700">
-                📋 AUDITOR TÉCNICO CALIFICADO
-              </span>
-              <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${statusVisual.badgeClass}">
-                <span class="w-1.5 h-1.5 rounded-full ${statusVisual.dotClass}"></span>
-                <span>${escapeHtml(statusVisual.label)}</span>
-              </span>
-            </div>
-            <h1 class="text-2xl font-bold tracking-tight text-white">
-              ${escapeHtml(auditor.nombre)}
-            </h1>
-            <p class="text-xs text-slate-300">
-              ${escapeHtml(auditor.titulo_profesional)}
-            </p>
-          </div>
-
-          <div class="text-left md:text-right space-y-1">
-            <span class="font-mono text-xs font-bold text-slate-200 bg-slate-800 px-3 py-1 rounded-lg border border-slate-700 inline-block">
-              🪪 ${escapeHtml(auditor.codigo_credencial)}
-            </span>
-            <div class="text-[11px] text-slate-400">${escapeHtml(auditor.instituto_registro)}</div>
-          </div>
-        </div>
-
-        <div class="p-6 space-y-6">
-          <!-- ZONE 1: UPPER ZONE - RELATIONAL METADATA (PARENT DATA SECTION) -->
-          <section aria-labelledby="zone1-auditor-title" class="space-y-3">
-            <h3 id="zone1-auditor-title" class="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-              <span>🔗</span>
-              <span>ZONA 1: METADATOS RELACIONALES Y REGISTRO PROFESIONAL (ISO/IEC 17021-1:2015)</span>
-            </h3>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <!-- Item 1: Instituto de Registro -->
-              <div class="p-3.5 bg-slate-50/80 border border-slate-200 rounded-lg space-y-1">
-                <span class="text-[10px] uppercase font-bold text-slate-500 block">Instituto de Registro / Acreditación:</span>
-                <p class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                  <span>🏛️</span>
-                  <span>${escapeHtml(auditor.instituto_registro)}</span>
-                </p>
-              </div>
-
-              <!-- Item 2: Categoría Profesional -->
-              <div class="p-3.5 bg-slate-50/80 border border-slate-200 rounded-lg space-y-1">
-                <span class="text-[10px] uppercase font-bold text-slate-500 block">Categoría Profesional Principal:</span>
-                <p class="text-xs font-bold text-indigo-700 flex items-center gap-1.5">
-                  <span>★</span>
-                  <span>${escapeHtml(auditor.categoria_profesional)}</span>
-                </p>
-              </div>
-
-              <!-- Item 3: Estatus de Calificación -->
-              <div class="p-3.5 bg-slate-50/80 border border-slate-200 rounded-lg space-y-1">
-                <span class="text-[10px] uppercase font-bold text-slate-500 block">Estado de Calificación Operativa:</span>
-                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold border ${statusVisual.badgeClass}">
-                  <span class="w-1.5 h-1.5 rounded-full ${statusVisual.dotClass}"></span>
-                  <span>${escapeHtml(auditor.calificacion)}</span>
-                </span>
-              </div>
-            </div>
-          </section>
-
-          <!-- ZONE 2: VISUAL SEPARATOR (CLEAN MINIMAL RULE) -->
-          <div class="relative py-2" role="separator">
-            <div class="absolute inset-0 flex items-center">
-              <div class="w-full border-t border-slate-200"></div>
-            </div>
-            <div class="relative flex justify-center">
-              <span class="bg-white px-3 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                ATRIBUTOS PROFESIONALES Y CREDENCIALES
-              </span>
-            </div>
-          </div>
-
-          <!-- ZONE 3: DIRECT RECORD ATTRIBUTES SECTION (VIEW / EDIT STATE) -->
-          <section aria-labelledby="zone3-auditor-title" class="space-y-4">
-            <div class="flex items-center justify-between">
-              <h3 id="zone3-auditor-title" class="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                <span>📋</span>
-                <span>ZONA 3: ATRIBUTOS DIRECTOS Y PERFIL PROFESIONAL</span>
-              </h3>
-              ${
-                isStaff
-                  ? !isEditing
-                    ? `
-                <button
-                  type="button"
-                  id="startEditAuditorBtn"
-                  class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
-                >
-                  <span>✏️</span>
-                  <span>Editar Perfil</span>
-                </button>
-              `
-                    : `
-                <button
-                  type="button"
-                  id="cancelEditAuditorBtn"
-                  class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg transition-colors cursor-pointer"
-                >
-                  <span>✕</span>
-                  <span>Cancelar Edición</span>
-                </button>
-              `
-                  : ''
-              }
-            </div>
-
-            <!-- Feedback Notifications -->
-            ${
-              state.editErrorMessage
-                ? `
-              <div class="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs font-medium">
-                ⚠️ ${escapeHtml(state.editErrorMessage)}
-              </div>
-            `
-                : ''
-            }
-            ${
-              state.saveSuccessMessage
-                ? `
-              <div class="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-medium">
-                ✓ ${escapeHtml(state.saveSuccessMessage)}
-              </div>
-            `
-                : ''
-            }
-
-            ${
-              !isEditing
-                ? `
-              <!-- Read-only View -->
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="p-3.5 bg-slate-50/60 border border-slate-200 rounded-lg space-y-1">
-                  <span class="text-[10px] uppercase font-bold text-slate-500 block">Código de Credencial:</span>
-                  <p class="font-mono text-xs font-bold text-slate-900">${escapeHtml(auditor.codigo_credencial)}</p>
-                </div>
-                <div class="p-3.5 bg-slate-50/60 border border-slate-200 rounded-lg space-y-1">
-                  <span class="text-[10px] uppercase font-bold text-slate-500 block">Correo Electrónico:</span>
-                  <p class="font-mono text-xs font-medium text-slate-900">${escapeHtml(auditor.email)}</p>
-                </div>
-                <div class="p-3.5 bg-slate-50/60 border border-slate-200 rounded-lg space-y-1">
-                  <span class="text-[10px] uppercase font-bold text-slate-500 block">Teléfono de Contacto:</span>
-                  <p class="font-mono text-xs font-medium text-slate-900">${escapeHtml(auditor.telefono)}</p>
-                </div>
-
-                <!-- Biography Block -->
-                <div class="col-span-1 md:col-span-3 p-4 bg-slate-50/70 border border-slate-200 rounded-lg space-y-2">
-                  <span class="text-[10px] uppercase font-bold text-slate-500 block">
-                    Biografía y Resumen Profesional (ISO 19011:2018):
-                  </span>
-                  <p class="text-xs text-slate-800 leading-relaxed font-sans bg-white p-3.5 rounded border border-slate-200/80">
-                    ${escapeHtml(auditor.biografia || 'Sin biografía registrada.')}
-                  </p>
-                </div>
-              </div>
-            `
-                : `
-              <!-- Edit Form -->
-              <form id="editAuditorForm" class="space-y-4 bg-slate-50 p-4 border border-slate-200 rounded-xl">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div class="space-y-1">
-                    <label for="editAuditorTitulo" class="text-xs font-bold text-slate-700">Título Profesional *</label>
-                    <input
-                      type="text"
-                      id="editAuditorTitulo"
-                      name="titulo_profesional"
-                      value="${escapeHtml(state.editFormData?.titulo_profesional || auditor.titulo_profesional)}"
-                      required
-                      class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-slate-900 focus:outline-none"
-                    />
-                  </div>
-                  <div class="space-y-1">
-                    <label for="editAuditorEmail" class="text-xs font-bold text-slate-700">Correo Electrónico *</label>
-                    <input
-                      type="email"
-                      id="editAuditorEmail"
-                      name="email"
-                      value="${escapeHtml(state.editFormData?.email || auditor.email)}"
-                      required
-                      class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-slate-900 focus:outline-none"
-                    />
-                  </div>
-                  <div class="space-y-1">
-                    <label for="editAuditorTelefono" class="text-xs font-bold text-slate-700">Teléfono *</label>
-                    <input
-                      type="text"
-                      id="editAuditorTelefono"
-                      name="telefono"
-                      value="${escapeHtml(state.editFormData?.telefono || auditor.telefono)}"
-                      required
-                      class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-slate-900 focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div class="space-y-1.5">
-                  <label for="editAuditorBio" class="text-xs font-bold text-slate-700">
-                    Biografía y Resumen Profesional
-                  </label>
-                  <textarea
-                    id="editAuditorBio"
-                    name="biografia"
-                    rows="3"
-                    class="w-full p-3 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 font-sans focus:ring-2 focus:ring-slate-900 focus:outline-none leading-relaxed"
-                  >${escapeHtml(currentBio)}</textarea>
-                </div>
-
-                <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-                  <button
-                    type="button"
-                    id="cancelEditAuditorBtnSecondary"
-                    class="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    class="px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shadow-xs"
-                  >
-                    💾 Guardar Cambios
-                  </button>
-                </div>
-              </form>
-            `
-            }
-          </section>
-
-          <!-- ZONE 4: MULTIPAGE / CHILD TABS SECTION (LOWER ZONE) -->
-          <section aria-labelledby="zone4-auditor-title" class="space-y-4 pt-4 border-t border-slate-100">
-            <h3 id="zone4-auditor-title" class="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-              <span>📑</span>
-              <span>ZONA 4: PESTAÑAS RELACIONALES (MATRIZ DE COMPETENCIAS E HISTORIAL DE AUDITORÍAS)</span>
-            </h3>
-
-            <!-- 2 Child Tab Navigation Buttons -->
-            <div class="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200" role="tablist">
-              <button
-                type="button"
-                data-auditor-tab="competencias"
-                role="tab"
-                aria-selected="${activeTab === 'competencias' ? 'true' : 'false'}"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs transition-colors cursor-pointer ${
-                  activeTab === 'competencias'
-                    ? 'bg-white text-slate-900 font-bold shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }"
-              >
-                <span>🛡️</span>
-                <span>Matriz de Competencias (${auditor.competencias.length})</span>
-              </button>
-
-              <button
-                type="button"
-                data-auditor-tab="historial"
-                role="tab"
-                aria-selected="${activeTab === 'historial' ? 'true' : 'false'}"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs transition-colors cursor-pointer ${
-                  activeTab === 'historial'
-                    ? 'bg-white text-slate-900 font-bold shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }"
-              >
-                <span>📋</span>
-                <span>Historial de Auditorías (${auditor.historialAuditorias.length})</span>
-              </button>
-            </div>
-
-            <!-- Active Child Tab Content -->
-            <div class="pt-2">
-              ${
-                activeTab === 'competencias'
-                  ? renderCompetenciasChildTab(auditor.competencias, profile.role === 'ADMIN')
-                  : renderHistorialChildTab(auditor.historialAuditorias)
-              }
-            </div>
-          </section>
-        </div>
+    `
+        : ''
+    }
+    ${
+      state.saveSuccessMessage
+        ? `
+      <div class="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-medium">
+        ✓ ${escapeHtml(state.saveSuccessMessage)}
       </div>
-    </div>
+    `
+        : ''
+    }
   `;
+
+  const customRecordBodyHtml = !isEditing
+    ? `
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="p-3.5 bg-slate-50/70 border border-slate-200 rounded-lg space-y-1">
+          <span class="text-[10px] uppercase font-bold text-slate-400 block">Código de Credencial</span>
+          <p class="font-mono text-xs font-bold text-slate-900">${escapeHtml(auditor.codigo_credencial)}</p>
+        </div>
+        <div class="p-3.5 bg-slate-50/70 border border-slate-200 rounded-lg space-y-1">
+          <span class="text-[10px] uppercase font-bold text-slate-400 block">Correo Electrónico</span>
+          <p class="font-mono text-xs font-medium text-slate-900">${escapeHtml(auditor.email)}</p>
+        </div>
+        <div class="p-3.5 bg-slate-50/70 border border-slate-200 rounded-lg space-y-1">
+          <span class="text-[10px] uppercase font-bold text-slate-400 block">Teléfono de Contacto</span>
+          <p class="font-mono text-xs font-medium text-slate-900">${escapeHtml(auditor.telefono)}</p>
+        </div>
+
+        <div class="col-span-1 md:col-span-3 p-4 bg-slate-50/70 border border-slate-200 rounded-lg space-y-2">
+          <span class="text-[10px] uppercase font-bold text-slate-400 block">
+            Biografía y Resumen Profesional (ISO 19011:2018)
+          </span>
+          <p class="text-xs text-slate-800 leading-relaxed font-sans bg-white p-3.5 rounded border border-slate-200/80">
+            ${escapeHtml(auditor.biografia || 'Sin biografía registrada.')}
+          </p>
+        </div>
+      </div>
+    `
+    : `
+      <form id="editAuditorForm" class="space-y-4 bg-slate-50 p-4 border border-slate-200 rounded-xl">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="space-y-1">
+            <label for="editAuditorTitulo" class="text-xs font-bold text-slate-700">Título Profesional *</label>
+            <input
+              type="text"
+              id="editAuditorTitulo"
+              name="titulo_profesional"
+              value="${escapeHtml(state.editFormData?.titulo_profesional || auditor.titulo_profesional)}"
+              required
+              class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-slate-900 focus:outline-none"
+            />
+          </div>
+          <div class="space-y-1">
+            <label for="editAuditorEmail" class="text-xs font-bold text-slate-700">Correo Electrónico *</label>
+            <input
+              type="email"
+              id="editAuditorEmail"
+              name="email"
+              value="${escapeHtml(state.editFormData?.email || auditor.email)}"
+              required
+              class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-slate-900 focus:outline-none"
+            />
+          </div>
+          <div class="space-y-1">
+            <label for="editAuditorTelefono" class="text-xs font-bold text-slate-700">Teléfono *</label>
+            <input
+              type="text"
+              id="editAuditorTelefono"
+              name="telefono"
+              value="${escapeHtml(state.editFormData?.telefono || auditor.telefono)}"
+              required
+              class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-slate-900 focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div class="space-y-1.5">
+          <label for="editAuditorBio" class="text-xs font-bold text-slate-700">
+            Biografía y Resumen Profesional
+          </label>
+          <textarea
+            id="editAuditorBio"
+            name="biografia"
+            rows="3"
+            class="w-full p-3 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 font-sans focus:ring-2 focus:ring-slate-900 focus:outline-none leading-relaxed"
+          >${escapeHtml(currentBio)}</textarea>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+          <button
+            type="button"
+            id="cancelEditAuditorBtnSecondary"
+            class="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            class="px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shadow-xs"
+          >
+            💾 Guardar Cambios
+          </button>
+        </div>
+      </form>
+    `;
+
+  return renderDetailPageTemplate({
+    entityType: 'Auditor Calificado',
+    entitySymbol: '🪪',
+    title: auditor.nombre,
+    eyebrowCode: auditor.codigo_credencial,
+    subtitle: `${auditor.titulo_profesional} · ${auditor.instituto_registro}`,
+    statusBadge: {
+      label: statusVisual.label,
+      badgeClass: statusVisual.badgeClass,
+      dotClass: statusVisual.dotClass,
+    },
+    secondaryHeaderBadge: {
+      label: auditor.categoria_profesional,
+      badgeClass: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+    },
+    backButton: {
+      label: 'Volver a Auditores',
+      nav: 'certificacion',
+      subview: 'auditors',
+      action: 'back-to-auditor-list',
+    },
+    parents,
+    tableName: 'auditor',
+    recordId: auditor.id,
+    recordActionsHtml,
+    feedbackHtml,
+    attributes: [],
+    customRecordBodyHtml,
+    childTabs: [
+      {
+        id: 'competencias',
+        label: 'Competencias',
+        symbol: '🛡️',
+        count: auditor.competencias.length,
+      },
+      {
+        id: 'historial',
+        label: 'Historial de Auditorías',
+        symbol: '📋',
+        count: auditor.historialAuditorias.length,
+      },
+    ],
+    activeChildTabId: activeTab,
+    childTabAttrName: 'data-auditor-tab',
+    renderChildTabContent: (tabId) =>
+      tabId === 'competencias'
+        ? renderCompetenciasChildTab(auditor.competencias, profile.role === 'ADMIN')
+        : renderHistorialChildTab(auditor.historialAuditorias),
+  });
 }
 
 /**
@@ -868,21 +765,31 @@ function renderCompetenciasChildTab(
 
                   return `
                   <tr class="hover:bg-slate-50/70 transition-colors">
-                    <!-- Norma -->
                     <td class="py-3.5 px-4 font-bold text-slate-900 whitespace-nowrap">
-                      📘 ${escapeHtml(comp.norma_codigo)}
+                      <button
+                        type="button"
+                        data-action="view-norma-from-auditor"
+                        data-norma-code="${escapeHtml(comp.norma_codigo)}"
+                        class="inline-flex items-center gap-1 text-indigo-700 hover:text-indigo-900 hover:underline font-bold cursor-pointer"
+                      >
+                        <span aria-hidden="true">📘</span>
+                        <span>${escapeHtml(comp.norma_codigo)}</span>
+                      </button>
                     </td>
 
-                    <!-- Sector IAF -->
                     <td class="py-3.5 px-4">
-                      <span class="inline-flex items-center gap-1 font-semibold text-slate-800">
-                        <span>🏭</span>
+                      <button
+                        type="button"
+                        data-action="view-iaf-from-auditor"
+                        data-sector-number="${comp.sector_iaf_numero}"
+                        class="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+                      >
+                        <span aria-hidden="true">🏭</span>
                         <span>Sector ${comp.sector_iaf_numero}</span>
-                      </span>
+                      </button>
                       <p class="text-[11px] text-slate-500 line-clamp-1">${escapeHtml(comp.sector_iaf_descripcion)}</p>
                     </td>
 
-                    <!-- Sub-Sector IAF -->
                     <td class="py-3.5 px-4">
                       ${
                         comp.subsector_iaf_codigo
@@ -896,7 +803,6 @@ function renderCompetenciasChildTab(
                       }
                     </td>
 
-                    <!-- Rol Calificado -->
                     <td class="py-3.5 px-4 text-center whitespace-nowrap">
                       <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${roleVisual.badgeClass}">
                         <span>${roleVisual.icon}</span>
@@ -904,7 +810,6 @@ function renderCompetenciasChildTab(
                       </span>
                     </td>
 
-                    <!-- Validity Date & State -->
                     <td class="py-3.5 px-4 text-center whitespace-nowrap">
                       <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${validityBadgeClass}">
                         <span>${validityState === 'Vencido' ? '⚠️' : '✓'}</span>
@@ -912,7 +817,6 @@ function renderCompetenciasChildTab(
                       </span>
                     </td>
 
-                    <!-- N° Folio / Registro -->
                     <td class="py-3.5 px-4 text-right font-mono text-slate-500 whitespace-nowrap">
                       ${escapeHtml(comp.numero_registro || '—')}
                     </td>
@@ -964,7 +868,15 @@ function renderHistorialChildTab(historial: AuditoriaRealizadaEntity[]): string 
                 return `
                 <tr class="hover:bg-slate-50/70 transition-colors">
                   <td class="py-3.5 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
-                    📋 ${escapeHtml(aud.codigo_auditoria)}
+                    <button
+                      type="button"
+                      data-action="select-prog-audit-by-code"
+                      data-audit-code="${escapeHtml(aud.codigo_auditoria)}"
+                      class="inline-flex items-center gap-1 text-indigo-700 hover:text-indigo-900 hover:underline font-mono font-bold cursor-pointer"
+                    >
+                      <span aria-hidden="true">📋</span>
+                      <span>${escapeHtml(aud.codigo_auditoria)}</span>
+                    </button>
                   </td>
                   <td class="py-3.5 px-4 font-bold text-slate-800">
                     🏢 ${escapeHtml(aud.organizacion_nombre)}

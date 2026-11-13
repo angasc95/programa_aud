@@ -11,6 +11,8 @@ import {
   type SortDirection,
 } from '../lib/universalTemplate';
 import { renderUniversalTemplate } from './universalTemplate';
+import { renderDetailPageTemplate } from './detailTemplate';
+import type { ProgramacionAuditEntity } from '../lib/auditExecution';
 
 export interface MetodologiaAuditoriaViewState {
   selectedMetodologiaId: string | null;
@@ -26,11 +28,12 @@ export interface MetodologiaAuditoriaViewProps {
   profile: UserProfile;
   state: MetodologiaAuditoriaViewState;
   metodologiasList: MetodologiaAuditoriaCatalogItem[];
+  audits?: ProgramacionAuditEntity[];
   loading?: boolean;
 }
 
 export function renderMetodologiaAuditoriaView(props: MetodologiaAuditoriaViewProps): string {
-  const { state, metodologiasList } = props;
+  const { state, metodologiasList, audits = [] } = props;
 
   // If a specific methodology is selected, render its detail page
   if (state.selectedMetodologiaId) {
@@ -44,7 +47,9 @@ export function renderMetodologiaAuditoriaView(props: MetodologiaAuditoriaViewPr
     if (selectedItem) {
       return renderMetodologiaDetailPage({
         item: selectedItem,
-        allMetodologias: metodologiasList,
+        audits: audits.filter(
+          (a) => a.metodologia.toLowerCase() === selectedItem.metodologia.toLowerCase()
+        ),
       });
     }
   }
@@ -244,103 +249,98 @@ function renderMetodologiaDirectoryView(params: {
 
 function renderMetodologiaDetailPage(params: {
   item: MetodologiaAuditoriaCatalogItem;
-  allMetodologias: MetodologiaAuditoriaCatalogItem[];
+  audits: ProgramacionAuditEntity[];
 }): string {
-  const { item } = params;
+  const { item, audits } = params;
 
-  return `
-    <div class="space-y-6">
-      <!-- Zone 0: Action Bar (Back to Metodologias List + Changelog Trigger) -->
-      <div class="flex items-center justify-between gap-4">
-        <button
-          type="button"
-          data-action="back-to-metodologia-list"
-          class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
-        >
-          <span>←</span>
-          <span>Volver al Catálogo de Metodologías</span>
-        </button>
-
-        <!-- Top-Right Changelog Trigger [🕒 Historial de Cambios] -->
-        <button
-          type="button"
-          data-action="open-changelog"
-          data-table-name="metodologia_auditoria"
-          data-record-id="${escapeHtml(item.id)}"
-          data-entity-name="Metodología ${escapeHtml(item.metodologia)}"
-          title="Ver registro cronológico de auditoría forense para esta metodología"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
-        >
-          <span aria-hidden="true">🕒</span>
-          <span>Historial de Cambios</span>
-        </button>
-      </div>
-
-      <!-- Zone 1: Main Entity Banner -->
-      <header class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs space-y-4">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div class="flex items-start gap-3">
-            <span class="text-3xl select-none shrink-0" aria-hidden="true">🌐</span>
-            <div class="space-y-1 min-w-0">
-              <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 font-mono">
-                METODOLOGÍA CANÓNICA (ISO 19011 / IAF MD 4)
-              </div>
-              <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 truncate font-mono">
-                ${escapeHtml(item.metodologia)}
-              </h1>
-              <p class="text-xs text-slate-600 font-medium">
-                ${escapeHtml(item.descripcion)}
-              </p>
-            </div>
-          </div>
-
-          <div class="self-start sm:self-auto shrink-0">
-            <span class="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-bold border bg-teal-50 text-teal-800 border-teal-200">
-              <span>✓</span>
-              <span>NORMALIZADA</span>
-            </span>
-          </div>
-        </div>
-      </header>
-
-      <!-- Zone 2: Visual Separator -->
-      <div class="border-t border-slate-200/60 my-1"></div>
-
-      <!-- Zone 3: Direct Record Attributes -->
-      <section class="space-y-3">
-        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-600">
-          Atributos y Parámetros Operacionales
-        </h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <div class="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-2xs space-y-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Modalidad de Ejecución</div>
-            <div class="text-xs font-mono font-bold text-slate-900">${escapeHtml(item.metodologia)}</div>
-          </div>
-          <div class="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-2xs space-y-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Normativa de Referencia</div>
-            <div class="text-xs font-bold text-indigo-700">ISO 19011:2018 / IAF MD 4</div>
-          </div>
-          <div class="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-2xs space-y-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Auditorías Realizadas</div>
-            <div class="text-xs font-bold text-slate-900">${item.usage_count} Eventos Ejecutados</div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
-          <div class="bg-white border border-slate-200/80 rounded-xl p-4 shadow-2xs space-y-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Protocolo TIC Requerido</div>
-            <p class="text-xs text-slate-700 font-medium leading-relaxed">${escapeHtml(item.protocolo_tic)}</p>
-          </div>
-          <div class="bg-white border border-slate-200/80 rounded-xl p-4 shadow-2xs space-y-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Reglas de Muestreo de Evidencias</div>
-            <p class="text-xs text-slate-700 font-medium leading-relaxed">${escapeHtml(item.regla_muestreo)}</p>
-          </div>
-          <div class="bg-white border border-slate-200/80 rounded-xl p-4 shadow-2xs space-y-1">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Seguridad & Confidencialidad</div>
-            <p class="text-xs text-slate-700 font-medium leading-relaxed">${escapeHtml(item.seguridad_confidencialidad)}</p>
-          </div>
-        </div>
-      </section>
+  const tabAuditoriasHtml = `
+    <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+      <table class="w-full text-left text-xs border-collapse">
+        <thead>
+          <tr class="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200">
+            <th class="py-3 px-4">Código Auditoría</th>
+            <th class="py-3 px-4">Organización</th>
+            <th class="py-3 px-4">Modalidad</th>
+            <th class="py-3 px-4">Fechas</th>
+            <th class="py-3 px-4 text-center">Estatus</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          ${
+            audits.length === 0
+              ? `
+                <tr>
+                  <td colspan="5" class="py-8 text-center text-slate-400 text-xs italic">
+                    No hay auditorías ejecutadas con metodología "${escapeHtml(item.metodologia)}".
+                  </td>
+                </tr>
+              `
+              : audits
+                  .map(
+                    (a) => `
+                      <tr class="hover:bg-slate-50/70 transition-colors">
+                        <td class="py-3 px-4 whitespace-nowrap">
+                          <button
+                            type="button"
+                            data-action="select-prog-audit"
+                            data-audit-id="${escapeHtml(a.id)}"
+                            class="font-mono font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+                          >
+                            🗓️ ${escapeHtml(a.codigo_auditoria)}
+                          </button>
+                        </td>
+                        <td class="py-3 px-4 font-semibold text-slate-800">${escapeHtml(a.organizacion_nombre)}</td>
+                        <td class="py-3 px-4 text-slate-700">${escapeHtml(a.tipo_auditoria)} · ${escapeHtml(a.norma_codigo)}</td>
+                        <td class="py-3 px-4 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                          ${escapeHtml(a.fecha_inicio)} → ${escapeHtml(a.fecha_fin)}
+                        </td>
+                        <td class="py-3 px-4 text-center whitespace-nowrap">
+                          <span class="inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-200">
+                            ${escapeHtml(a.estatus)}
+                          </span>
+                        </td>
+                      </tr>
+                    `
+                  )
+                  .join('')
+          }
+        </tbody>
+      </table>
     </div>
   `;
+
+  return renderDetailPageTemplate({
+    entityType: 'Metodología Canónica (ISO 19011 / IAF MD 4)',
+    entitySymbol: '🌐',
+    title: item.metodologia,
+    subtitle: item.descripcion,
+    statusBadge: {
+      label: 'NORMALIZADA',
+      badgeClass: 'bg-teal-50 text-teal-800 border-teal-200',
+      symbol: '✓',
+    },
+    backButton: {
+      label: 'Volver al Catálogo de Metodologías',
+      nav: 'extra',
+      subview: 'metodologias',
+      action: 'back-to-metodologia-list',
+    },
+    parents: [],
+    tableName: 'metodologia_auditoria',
+    recordId: item.id,
+    attributes: [
+      { label: 'Modalidad de Ejecución', value: item.metodologia, isMono: true },
+      { label: 'Normativa de Referencia', value: 'ISO 19011:2018 / IAF MD 4' },
+      { label: 'Auditorías Realizadas', value: `${item.usage_count} Eventos Ejecutados` },
+      { label: 'Protocolo TIC Requerido', value: item.protocolo_tic },
+      { label: 'Reglas de Muestreo de Evidencias', value: item.regla_muestreo },
+      { label: 'Seguridad & Confidencialidad', value: item.seguridad_confidencialidad },
+    ],
+    childTabs: [
+      { id: 'auditorias', label: 'Auditorías Vinculadas', symbol: '🗓️', count: audits.length },
+    ],
+    activeChildTabId: 'auditorias',
+    childTabAttrName: 'data-metodologia-tab',
+    renderChildTabContent: () => tabAuditoriasHtml,
+  });
 }
