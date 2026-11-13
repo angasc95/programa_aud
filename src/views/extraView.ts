@@ -12,9 +12,15 @@ import {
   INITIAL_METODOLOGIAS_CATALOG,
   calculateLtreeIndentation,
   type NormaEntity,
+  type OrganismoAcreditacion,
   type RequisitoLtree,
   type SectorIafEntity,
 } from '../lib/extraDomain';
+import {
+  buildInitialAcreditacionEntities,
+  toLegacyAcreditacionNormaIaf,
+  type AcreditacionDetailEntity,
+} from '../lib/acreditacionDomain';
 import {
   renderNormaView,
   type NormaViewState,
@@ -23,6 +29,10 @@ import {
   renderSectorIafView,
   type SectorIafViewState,
 } from './sectorIafView';
+import {
+  renderAcreditacionView,
+  type AcreditacionViewState,
+} from './acreditacionView';
 import {
   renderEstatusView,
   type EstatusViewState,
@@ -80,9 +90,12 @@ export interface ExtraViewState {
   iafSectors: IafRecord[];
   catalogs: CatalogItem[];
   loading: boolean;
+  organismos?: OrganismoAcreditacion[];
+  accreditations?: AcreditacionDetailEntity[];
   // Deep navigation sub-states
   normaState?: Partial<NormaViewState>;
   iafState?: Partial<SectorIafViewState>;
+  acreditacionState?: Partial<AcreditacionViewState>;
   estatusState?: Partial<EstatusViewState>;
   tipoState?: Partial<TipoAuditoriaViewState>;
   metodologiaState?: Partial<MetodologiaAuditoriaViewState>;
@@ -146,6 +159,21 @@ export function renderExtraView(
       })
     : [...INITIAL_REQUISITOS_LTREE];
 
+  const mappedOrganismos: OrganismoAcreditacion[] =
+    state.organismos && state.organismos.length > 0
+      ? state.organismos
+      : [...INITIAL_ORGANISMOS];
+
+  const mappedAcreditaciones: AcreditacionDetailEntity[] =
+    state.accreditations && state.accreditations.length > 0
+      ? state.accreditations
+      : buildInitialAcreditacionEntities();
+
+  const legacyAcreditaciones =
+    state.accreditations && state.accreditations.length > 0
+      ? mappedAcreditaciones.map(toLegacyAcreditacionNormaIaf)
+      : [...INITIAL_ACREDITACIONES];
+
   let activeContentHtml = '';
 
   if (activeSub === 'iaf' || activeSub === 'sector_iaf') {
@@ -174,66 +202,29 @@ export function renderExtraView(
     activeSub === 'acreditacion' ||
     activeSub === 'acreditaciones'
   ) {
-    activeContentHtml = `
-      <div class="space-y-6">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h1 class="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-              <span aria-hidden="true">🏅</span>
-              <span>Organismos y Alcances de Acreditación</span>
-            </h1>
-            <p class="text-xs text-slate-500 mt-0.5">
-              Catálogo de acreditaciones vigentes por organismo acreditador, norma ISO y sector técnico IAF.
-            </p>
-          </div>
-          <span class="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-700 rounded-md border border-slate-200 self-start sm:self-auto">
-            ${INITIAL_ACREDITACIONES.length} Acreditaciones · ${INITIAL_ORGANISMOS.length} Organismos
-          </span>
-        </div>
+    const acredState: AcreditacionViewState = {
+      selectedAccreditationId: state.acreditacionState?.selectedAccreditationId || null,
+      query: state.acreditacionState?.query || '',
+      viewMode: state.acreditacionState?.viewMode || 'grid',
+      sortColumn: state.acreditacionState?.sortColumn || null,
+      sortDirection: state.acreditacionState?.sortDirection || 'none',
+      isSidebarOpen: state.acreditacionState?.isSidebarOpen ?? true,
+      facetSelections: state.acreditacionState?.facetSelections,
+      isCreating: Boolean(state.acreditacionState?.isCreating),
+      createErrorMessage: state.acreditacionState?.createErrorMessage ?? null,
+      createSuccessMessage: state.acreditacionState?.createSuccessMessage ?? null,
+      organismoMode: state.acreditacionState?.organismoMode || 'existing',
+    };
 
-        <div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr class="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
-                  <th class="py-3 px-4">Organismo</th>
-                  <th class="py-3 px-4">N° Acreditación</th>
-                  <th class="py-3 px-4">Norma</th>
-                  <th class="py-3 px-4">Concesión</th>
-                  <th class="py-3 px-4">Estatus</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100">
-                ${INITIAL_ACREDITACIONES.map(
-                  (acr) => `
-                  <tr class="hover:bg-slate-50/80 transition-colors">
-                    <td class="py-3 px-4 font-semibold text-slate-900">
-                      <span>${escapeHtml(acr.organismo_codigo)}</span>
-                      <span class="text-slate-500 font-normal"> · ${escapeHtml(acr.organismo_nombre)}</span>
-                    </td>
-                    <td class="py-3 px-4 font-mono text-slate-700">${escapeHtml(acr.numero_acreditacion)}</td>
-                    <td class="py-3 px-4 font-semibold text-slate-800">${escapeHtml(acr.norma_codigo)}</td>
-                    <td class="py-3 px-4 font-mono text-slate-600">${escapeHtml(acr.fecha_concesion)}</td>
-                    <td class="py-3 px-4">
-                      <span class="inline-flex px-2 py-0.5 rounded text-[11px] font-semibold border ${
-                        acr.estatus === 'Activa'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : acr.estatus === 'En Renovación'
-                          ? 'bg-amber-50 text-amber-800 border-amber-200'
-                          : 'bg-rose-50 text-rose-700 border-rose-200'
-                      }">
-                        ${escapeHtml(acr.estatus)}
-                      </span>
-                    </td>
-                  </tr>
-                `
-                ).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    `;
+    activeContentHtml = renderAcreditacionView({
+      profile,
+      state: acredState,
+      acreditaciones: mappedAcreditaciones,
+      organismos: mappedOrganismos,
+      normas: mappedNormas,
+      sectores: mappedSectores,
+      loading: state.loading,
+    });
   } else if (activeSub === 'estatus') {
     const estatusState: EstatusViewState = {
       selectedEstatusId: state.estatusState?.selectedEstatusId || null,
@@ -308,8 +299,8 @@ export function renderExtraView(
       profile,
       state: normaState,
       normas: mappedNormas,
-      acreditaciones: INITIAL_ACREDITACIONES,
-      organismos: INITIAL_ORGANISMOS,
+      acreditaciones: legacyAcreditaciones,
+      organismos: mappedOrganismos,
       requisitos: mappedRequisitos,
       sectores: mappedSectores,
       loading: state.loading,

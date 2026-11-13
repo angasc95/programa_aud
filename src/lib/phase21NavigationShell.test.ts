@@ -233,6 +233,7 @@ test('Phase 2.1: Domain dispatchers emit zero wrapper banner cards, tablists, or
   assert.equal(extraAccHtml.includes('Navegación del Dominio Extra'), false);
   assert.equal(extraAccHtml.includes('Requisitos LTREE'), false);
   assert.equal(extraAccHtml.includes('Todos los Catálogos'), false);
-  assert.ok(extraAccHtml.includes('Organismos y Alcances de Acreditación'));
+  assert.ok(extraAccHtml.includes('Acreditaciones Vigentes'));
+  assert.ok(extraAccHtml.includes('data-mv-domain="acreditaciones"'));
   assert.equal(assertZeroUuidExposure(extraAccHtml).compliant, true);
 });
