@@ -8,7 +8,6 @@ import {
   canMutateAuditExecution,
 } from '../lib/accessControl';
 import {
-  filterAndSortProgramacionAudits,
   getAuditStatusVisualStyle,
   getMethodologyVisualStyle,
   getModalityVisualStyle,
@@ -16,6 +15,15 @@ import {
   type ProgramacionChildTab,
   type ProgramacionViewState,
 } from '../lib/auditExecution';
+import {
+  computeReactiveFacetCounts,
+  filterRecordsWithFacets,
+  sortItems,
+  type ColumnDefinition,
+  type MultiViewFacetCategory,
+  type MultiViewSelectionMap,
+} from '../lib/universalTemplate';
+import { renderUniversalTemplate } from './universalTemplate';
 
 export type { ProgramacionViewState, ProgramacionChildTab };
 
@@ -41,6 +49,16 @@ export function renderProgramacionView(props: ProgramacionViewProps): string {
   return renderProgramacionDirectoryView(profile, state, audits, auditors, certificates, loading);
 }
 
+function hasLeadAuditorAssigned(audit: ProgramacionAuditEntity): boolean {
+  const hasLeaderName = Boolean(
+    audit.auditor_lider &&
+      audit.auditor_lider.trim() &&
+      audit.auditor_lider.trim().toLowerCase() !== 'por asignar' &&
+      audit.auditor_lider.trim().toLowerCase() !== 'sin asignar'
+  );
+  return hasLeaderName || audit.equipo.some((m) => m.rol === 'Auditor Líder');
+}
+
 function renderProgramacionDirectoryView(
   profile: UserProfile,
   state: ProgramacionViewState,
@@ -51,281 +69,344 @@ function renderProgramacionDirectoryView(
 ): string {
   const canPlan = canEditAuditScheduleOrTeam(profile);
 
-  const filtered = filterAndSortProgramacionAudits(allAudits, {
-    query: state.query,
-    selectedTipo: state.selectedTipo,
-    selectedMetodologia: state.selectedMetodologia,
-    selectedEstatus: state.selectedEstatus,
-    selectedAuditorLider: state.selectedAuditorLider,
-    sortColumn: state.sortColumn,
-    sortDirection: state.sortDirection,
-  });
+  const facetCategories: MultiViewFacetCategory<ProgramacionAuditEntity>[] = [
+    {
+      id: 'tipo',
+      label: 'Tipo de Auditoría',
+      extractValues: (a) => a.tipo_auditoria,
+    },
+    {
+      id: 'metodologia',
+      label: 'Metodología',
+      options: ['Presencial', 'Remota', 'Mixta'],
+      extractValues: (a) => a.metodologia,
+    },
+    {
+      id: 'norma',
+      label: 'Norma ISO',
+      extractValues: (a) => a.norma_codigo,
+    },
+    {
+      id: 'estado_equipo',
+      label: 'Estado de Equipo',
+      options: [
+        { value: 'CON_LIDER', label: 'Con Auditor Líder' },
+        { value: 'PENDIENTE', label: 'Pendiente de Equipo' },
+      ],
+      extractValues: (a) => (hasLeadAuditorAssigned(a) ? 'CON_LIDER' : 'PENDIENTE'),
+    },
+  ];
 
-  // Facet counts
-  const tipoCounts: Record<string, number> = {};
-  const metCounts: Record<string, number> = {};
-  const statusCounts: Record<string, number> = {};
-  const leaderCounts: Record<string, number> = {};
+  const effectiveSelections: MultiViewSelectionMap = state.facetSelections
+    ? state.facetSelections
+    : {
+        tipo: state.selectedTipo !== 'ALL' ? new Set([state.selectedTipo]) : new Set<string>(),
+        metodologia:
+          state.selectedMetodologia !== 'ALL'
+            ? new Set([state.selectedMetodologia])
+            : new Set<string>(),
+        norma: new Set<string>(),
+        estado_equipo: new Set<string>(),
+      };
 
-  for (const a of allAudits) {
-    tipoCounts[a.tipo_auditoria] = (tipoCounts[a.tipo_auditoria] || 0) + 1;
-    metCounts[a.metodologia] = (metCounts[a.metodologia] || 0) + 1;
-    statusCounts[a.estatus] = (statusCounts[a.estatus] || 0) + 1;
-    leaderCounts[a.auditor_lider] = (leaderCounts[a.auditor_lider] || 0) + 1;
-  }
-
-  const hasActiveFilter =
-    Boolean(state.query.trim()) ||
-    state.selectedTipo !== 'ALL' ||
-    state.selectedMetodologia !== 'ALL' ||
-    state.selectedEstatus !== 'ALL' ||
-    state.selectedAuditorLider !== 'ALL';
-
-  const renderSortArrow = (col: NonNullable<ProgramacionViewState['sortColumn']>) => {
-    if (state.sortColumn !== col || state.sortDirection === 'none') {
-      return '<span class="text-slate-300 ml-1">⇅</span>';
-    }
-    return state.sortDirection === 'asc'
-      ? '<span class="text-indigo-700 ml-1 font-bold">↑</span>'
-      : '<span class="text-indigo-700 ml-1 font-bold">↓</span>';
+  const searchOptions = {
+    getSearchableText: (a: ProgramacionAuditEntity) =>
+      [
+        a.codigo_auditoria,
+        a.numero_certificado,
+        a.organizacion_nombre,
+        a.tipo_auditoria,
+        a.metodologia,
+        a.norma_codigo,
+        a.auditor_lider,
+        a.equipo.map((m) => m.nombre).join(' '),
+      ].join(' '),
   };
 
-  return `
-    <div class="space-y-6">
-      <!-- Semantic Header Banner -->
-      <header class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs space-y-4">
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div class="space-y-1">
-            <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-800 text-[11px] font-bold border border-indigo-200">
-              <span aria-hidden="true">🗓️</span>
-              <span>DOMINIO AUDITORÍAS · PROGRAMACIÓN</span>
-            </div>
-            <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-              Programación de Auditorías de Campo
-            </h2>
-            <p class="text-xs text-slate-500 max-w-3xl">
-              Planificación de eventos de evaluación, asignación de equipos auditores y muestreo multisitio conforme a ISO/IEC 17021-1:2015 e ISO 19011:2018
-            </p>
-          </div>
+  let filtered = filterRecordsWithFacets(
+    allAudits,
+    state.query,
+    facetCategories,
+    effectiveSelections,
+    searchOptions
+  );
 
-          ${
-            canPlan
-              ? `
-                <div class="shrink-0 flex items-center gap-2">
-                  <button
-                    type="button"
-                    data-action="open-plan-audit"
-                    class="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
-                  >
-                    <span aria-hidden="true">➕</span>
-                    <span>Planificar Nueva Auditoría</span>
-                  </button>
-                </div>
-              `
-              : ''
-          }
-        </div>
+  if (!state.facetSelections) {
+    if (state.selectedEstatus !== 'ALL') {
+      filtered = filtered.filter((a) => a.estatus === state.selectedEstatus);
+    }
+    if (state.selectedAuditorLider !== 'ALL') {
+      filtered = filtered.filter(
+        (a) =>
+          a.auditor_lider === state.selectedAuditorLider ||
+          a.equipo.some((m) => m.nombre === state.selectedAuditorLider)
+      );
+    }
+  }
 
-        <!-- Inline Audit Planning Form -->
-        ${
-          state.isPlanningModalOpen && canPlan
-            ? renderPlanAuditForm(auditors, certificates)
-            : ''
-        }
+  const sorted = sortItems(filtered, state.sortColumn, state.sortDirection, (a, col) => {
+    switch (col) {
+      case 'codigo':
+        return a.codigo_auditoria;
+      case 'organizacion':
+        return a.organizacion_nombre;
+      case 'tipo':
+        return a.tipo_auditoria;
+      case 'fecha':
+        return a.fecha_inicio;
+      case 'dias':
+        return a.dias_auditor;
+      case 'estatus':
+        return a.estatus;
+      default:
+        return '';
+    }
+  });
 
-        <!-- Controls Bar: Search + Match Count + View Mode Switcher -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
-          <div class="relative flex-1 max-w-xl">
-            <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-xs" aria-hidden="true">
-              🔍
-            </span>
-            <input
-              type="text"
-              id="programacionSearchInput"
-              placeholder="Buscar por código (AUD-2024-001), organización, certificado, norma o auditor... (/)"
-              value="${escapeHtml(state.query)}"
-              aria-label="Buscar auditorías programadas"
-              class="w-full text-xs rounded-lg border border-slate-300 bg-white pl-9 pr-14 py-2 shadow-2xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
-            />
-            <div class="absolute inset-y-0 right-0 pr-2 flex items-center gap-1">
-              ${
-                state.query
-                  ? `
-                    <button
-                      type="button"
-                      id="clearProgramacionSearchBtn"
-                      title="Limpiar búsqueda (Esc)"
-                      aria-label="Limpiar búsqueda"
-                      class="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-                    >
-                      ✕
-                    </button>
-                  `
-                  : `
-                    <kbd class="hidden md:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-200 rounded select-none">
-                      /
-                    </kbd>
-                  `
-              }
-            </div>
-          </div>
+  const facetGroups = computeReactiveFacetCounts(
+    allAudits,
+    state.query,
+    facetCategories,
+    effectiveSelections,
+    searchOptions
+  );
 
-          <div class="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-            <div class="text-xs text-slate-500 font-medium tabular-nums">
-              <span class="font-bold text-slate-800">${filtered.length}</span>
-              <span> de ${allAudits.length} eventos</span>
-            </div>
-
-            <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 shadow-2xs" role="group" aria-label="Modo de vista de programación">
-              <button
-                type="button"
-                data-prog-view-mode="grid"
-                aria-pressed="${state.viewMode === 'grid' ? 'true' : 'false'}"
-                class="px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer inline-flex items-center gap-1 ${
-                  state.viewMode === 'grid'
-                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }"
-              >
-                <span aria-hidden="true">⊞</span>
-                <span class="hidden sm:inline">Tarjetas</span>
-              </button>
-              <button
-                type="button"
-                data-prog-view-mode="list"
-                aria-pressed="${state.viewMode === 'list' ? 'true' : 'false'}"
-                class="px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer inline-flex items-center gap-1 ${
-                  state.viewMode === 'list'
-                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }"
-              >
-                <span aria-hidden="true">☰</span>
-                <span class="hidden sm:inline">Tabla</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <!-- Main Body: Sidebar Facets + Content Area -->
-      <div class="flex flex-col lg:flex-row gap-6 items-start">
-        <aside class="w-full lg:w-64 shrink-0 bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-5" aria-label="Filtros y Facetas de Programación">
-          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-              <span aria-hidden="true">⚡</span>
-              <span>Filtros y Facetas</span>
-            </h3>
-            ${
-              hasActiveFilter
-                ? `
-                  <button
-                    type="button"
-                    id="resetProgFiltersBtn"
-                    class="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 cursor-pointer"
-                  >
-                    Limpiar
-                  </button>
-                `
-                : ''
-            }
-          </div>
-
-          ${renderFacetSection('Tipo de Auditoría', 'tipo', state.selectedTipo, tipoCounts, allAudits.length)}
-          ${renderFacetSection('Metodología', 'metodologia', state.selectedMetodologia, metCounts, allAudits.length)}
-          ${renderFacetSection('Estatus Operativo', 'estatus', state.selectedEstatus, statusCounts, allAudits.length)}
-          ${renderFacetSection('Auditor Líder', 'auditor', state.selectedAuditorLider, leaderCounts, allAudits.length)}
-        </aside>
-
-        <section class="flex-1 min-w-0 space-y-4">
-          ${
-            loading
-              ? `<div class="bg-white border border-slate-200 rounded-xl p-10 text-center text-xs text-slate-500">Cargando programación de auditorías...</div>`
-              : filtered.length === 0
-              ? `
-                <div class="bg-white border border-slate-200 rounded-xl p-10 text-center space-y-3 shadow-2xs">
-                  <div class="text-3xl select-none" aria-hidden="true">🗓️</div>
-                  <h3 class="text-sm font-bold text-slate-900">No se encontraron auditorías programadas</h3>
-                  <p class="text-xs text-slate-500 max-w-md mx-auto">
-                    Ajuste los criterios de búsqueda o restablezca las facetas laterales para visualizar todos los eventos planificados.
-                  </p>
-                  ${
-                    hasActiveFilter
-                      ? `
-                        <button
-                          type="button"
-                          id="resetProgFiltersEmptyBtn"
-                          class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold cursor-pointer"
-                        >
-                          Restablecer Filtros
-                        </button>
-                      `
-                      : ''
-                  }
-                </div>
-              `
-              : state.viewMode === 'list'
-              ? renderProgramacionTable(filtered, renderSortArrow)
-              : renderProgramacionGrid(filtered)
-          }
-        </section>
-      </div>
-    </div>
-  `;
-}
-
-function renderFacetSection(
-  label: string,
-  groupKey: 'tipo' | 'metodologia' | 'estatus' | 'auditor',
-  selectedValue: string,
-  counts: Record<string, number>,
-  totalCount: number
-): string {
-  const entries = Object.entries(counts).sort((a, b) => a[0].localeCompare(b[0], 'es'));
-  return `
-    <div class="space-y-1.5 pt-1 border-t border-slate-100 first:border-t-0 first:pt-0">
-      <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">${escapeHtml(label)}</div>
-      <div class="space-y-1">
+  const columns: ColumnDefinition<ProgramacionAuditEntity>[] = [
+    {
+      id: 'codigo',
+      header: 'Código',
+      sortable: true,
+      renderCell: (a) => `
         <button
           type="button"
-          data-prog-facet="${groupKey}"
-          data-prog-facet-value="ALL"
-          class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-            selectedValue === 'ALL'
-              ? 'bg-indigo-50 font-semibold text-indigo-900 border border-indigo-200/80'
-              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-          }"
+          data-action="select-prog-audit"
+          data-audit-id="${escapeHtml(a.id)}"
+          class="text-indigo-700 hover:text-indigo-900 hover:underline font-mono font-bold cursor-pointer whitespace-nowrap"
         >
-          <span class="truncate">Todos</span>
-          <span class="text-[10px] px-1.5 py-0.2 rounded-full font-semibold tabular-nums ${
-            selectedValue === 'ALL' ? 'bg-indigo-200/70 text-indigo-900' : 'bg-slate-100 text-slate-500'
-          }">${totalCount}</span>
+          ${escapeHtml(a.codigo_auditoria)}
         </button>
-        ${entries
-          .map(([val, count]) => {
-            const active = selectedValue === val;
-            return `
-              <button
-                type="button"
-                data-prog-facet="${groupKey}"
-                data-prog-facet-value="${escapeHtml(val)}"
-                class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                  active
-                    ? 'bg-indigo-50 font-semibold text-indigo-900 border border-indigo-200/80'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }"
-              >
-                <span class="truncate">${escapeHtml(val)}</span>
-                <span class="text-[10px] px-1.5 py-0.2 rounded-full font-semibold tabular-nums ${
-                  active ? 'bg-indigo-200/70 text-indigo-900' : 'bg-slate-100 text-slate-500'
-                }">${count}</span>
-              </button>
-            `;
-          })
-          .join('')}
-      </div>
-    </div>
-  `;
+      `,
+    },
+    {
+      id: 'organizacion',
+      header: 'Organización & Certificado',
+      sortable: true,
+      renderCell: (a) => `
+        <div class="font-bold text-slate-900 leading-snug">${escapeHtml(a.organizacion_nombre)}</div>
+        <div class="text-[11px] font-mono text-slate-500 mt-0.5">
+          ${escapeHtml(a.numero_certificado)} · <span class="font-sans font-semibold text-slate-600">${escapeHtml(a.norma_codigo)}</span>
+        </div>
+      `,
+    },
+    {
+      id: 'tipo',
+      header: 'Modalidad',
+      sortable: true,
+      renderCell: (a) => {
+        const mod = getModalityVisualStyle(a.tipo_auditoria);
+        const met = getMethodologyVisualStyle(a.metodologia);
+        return `
+          <div class="flex flex-col items-start gap-1 whitespace-nowrap">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${mod.badgeClass}">
+              <span aria-hidden="true">${mod.symbol}</span>
+              <span>${escapeHtml(a.tipo_auditoria)}</span>
+            </span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${met.badgeClass}">
+              <span aria-hidden="true">${met.symbol}</span>
+              <span>${escapeHtml(a.metodologia)}</span>
+            </span>
+          </div>
+        `;
+      },
+    },
+    {
+      id: 'fecha',
+      header: 'Fechas / Días',
+      sortable: true,
+      renderCell: (a) => `
+        <div class="font-mono whitespace-nowrap">
+          <div class="text-slate-900 font-semibold text-[11px]">${escapeHtml(a.fecha_inicio)}</div>
+          <div class="text-slate-500 text-[11px]">→ ${escapeHtml(a.fecha_fin)}</div>
+          <div class="text-[10px] font-sans text-slate-500 mt-0.5">${a.dias_auditor} día(s)-auditor</div>
+        </div>
+      `,
+    },
+    {
+      id: 'auditor_lider',
+      header: 'Auditor Líder',
+      sortable: false,
+      renderCell: (a) => `
+        <span class="text-slate-800 font-medium">${escapeHtml(a.auditor_lider)}</span>
+      `,
+    },
+    {
+      id: 'estatus',
+      header: 'Estatus',
+      sortable: true,
+      renderCell: (a) => {
+        const st = getAuditStatusVisualStyle(a.estatus);
+        return `
+          <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap ${st.badgeClass}">
+            <span class="w-1.5 h-1.5 rounded-full ${st.dotClass}"></span>
+            <span>${escapeHtml(st.label)}</span>
+          </span>
+        `;
+      },
+    },
+    {
+      id: 'acciones',
+      header: 'Acciones',
+      sortable: false,
+      align: 'right',
+      renderCell: (a) => `
+        <button
+          type="button"
+          data-action="select-prog-audit"
+          data-audit-id="${escapeHtml(a.id)}"
+          class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-slate-800 hover:text-indigo-800 border border-slate-200 hover:border-indigo-200 font-semibold text-xs transition-colors cursor-pointer whitespace-nowrap"
+        >
+          Detalle →
+        </button>
+      `,
+    },
+  ];
+
+  const renderCard = (a: ProgramacionAuditEntity): string => {
+    const mod = getModalityVisualStyle(a.tipo_auditoria);
+    const met = getMethodologyVisualStyle(a.metodologia);
+    const st = getAuditStatusVisualStyle(a.estatus);
+    return `
+      <article class="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs hover:shadow-sm hover:border-slate-300 transition-all flex flex-col justify-between gap-4">
+        <div class="space-y-3">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <span class="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                ${escapeHtml(a.codigo_auditoria)}
+              </span>
+              <h3 class="text-sm font-bold text-slate-900 mt-1.5">
+                ${escapeHtml(a.organizacion_nombre)}
+              </h3>
+              <div class="text-xs text-slate-500 font-mono">
+                ${escapeHtml(a.numero_certificado)} · <span class="font-sans font-semibold text-slate-700">${escapeHtml(a.norma_codigo)}</span>
+              </div>
+            </div>
+
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border shrink-0 ${st.badgeClass}">
+              <span class="w-1.5 h-1.5 rounded-full ${st.dotClass}"></span>
+              <span>${escapeHtml(st.label)}</span>
+            </span>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${mod.badgeClass}">
+              <span aria-hidden="true">${mod.symbol}</span>
+              <span>${escapeHtml(a.tipo_auditoria)}</span>
+            </span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${met.badgeClass}">
+              <span aria-hidden="true">${met.symbol}</span>
+              <span>${escapeHtml(a.metodologia)}</span>
+            </span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+              <span aria-hidden="true">🏭</span>
+              <span>IAF ${a.sector_iaf}</span>
+            </span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
+            <div>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Fechas Planificadas</span>
+              <span class="font-mono font-semibold text-slate-800">${escapeHtml(a.fecha_inicio)} al ${escapeHtml(a.fecha_fin)}</span>
+              <span class="text-[11px] text-slate-500 block">${a.dias_auditor} día(s)-auditor</span>
+            </div>
+            <div>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Auditor Líder</span>
+              <span class="font-semibold text-slate-800 block truncate">${escapeHtml(a.auditor_lider)}</span>
+              <span class="text-[11px] text-slate-500 block">${a.equipo.length} miembro(s) · ${a.sitiosMuestreo.length} sede(s)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            data-action="open-changelog"
+            data-table-name="auditoria"
+            data-record-id="${escapeHtml(a.id)}"
+            data-entity-name="${escapeHtml(a.codigo_auditoria)} · ${escapeHtml(a.organizacion_nombre)}"
+            class="text-[11px] font-semibold text-slate-500 hover:text-slate-800 cursor-pointer inline-flex items-center gap-1"
+          >
+            <span aria-hidden="true">🕒</span>
+            <span>Historial</span>
+          </button>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              data-action="go-audit-results"
+              data-audit-id="${escapeHtml(a.id)}"
+              class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold cursor-pointer"
+            >
+              Resultados
+            </button>
+            <button
+              type="button"
+              data-action="select-prog-audit"
+              data-audit-id="${escapeHtml(a.id)}"
+              class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer"
+            >
+              Abrir Detalle →
+            </button>
+          </div>
+        </div>
+      </article>
+    `;
+  };
+
+  const actionsHtml = canPlan
+    ? `
+      <button
+        type="button"
+        data-action="open-plan-audit"
+        class="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+      >
+        <span aria-hidden="true">+</span>
+        <span>Programar Auditoría</span>
+      </button>
+    `
+    : '';
+
+  const inlineFormHtml =
+    state.isPlanningModalOpen && canPlan ? renderPlanAuditForm(auditors, certificates) : '';
+
+  return renderUniversalTemplate<ProgramacionAuditEntity>({
+    domainKey: 'programacion',
+    title: 'Programación de Auditorías',
+    subtitle:
+      'Planificación de eventos de evaluación, asignación de equipos auditores y muestreo multisitio conforme a ISO/IEC 17021-1:2015 e ISO 19011:2018',
+    entityLabel: 'auditorías programadas',
+    searchQuery: state.query,
+    searchPlaceholder: 'Buscar por código (AUD-2024-001), organización, certificado, norma o auditor... (Presione "/" para enfocar)',
+    searchInputId: 'programacionSearchInput',
+    clearSearchBtnId: 'clearProgramacionSearchBtn',
+    totalCount: allAudits.length,
+    filteredCount: sorted.length,
+    viewMode: state.viewMode,
+    isSidebarOpen: state.isSidebarOpen ?? true,
+    sortState: {
+      column: state.sortColumn,
+      direction: state.sortDirection,
+    },
+    facetGroups,
+    items: sorted,
+    columns,
+    renderCard,
+    emptyStateTitle: 'No se encontraron auditorías programadas',
+    emptyStateMessage:
+      'Ajuste los criterios de búsqueda o restablezca las facetas laterales para visualizar todos los eventos planificados.',
+    actionsHtml,
+    inlineFormHtml,
+    loading,
+    loadingMessage: 'Cargando programación de auditorías...',
+  });
 }
 
 function renderPlanAuditForm(
@@ -456,214 +537,6 @@ function renderPlanAuditForm(
           </button>
         </div>
       </form>
-    </div>
-  `;
-}
-
-function renderProgramacionTable(
-  audits: ProgramacionAuditEntity[],
-  renderSortArrow: (col: NonNullable<ProgramacionViewState['sortColumn']>) => string
-): string {
-  return `
-    <div class="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-xs text-slate-600 border-collapse">
-          <thead class="bg-slate-50/90 border-b border-slate-200 text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-            <tr>
-              <th scope="col" class="px-3 py-3">
-                <button type="button" data-prog-sort="codigo" class="inline-flex items-center font-bold hover:text-indigo-700 cursor-pointer">
-                  <span>Código</span>${renderSortArrow('codigo')}
-                </button>
-              </th>
-              <th scope="col" class="px-3 py-3">
-                <button type="button" data-prog-sort="organizacion" class="inline-flex items-center font-bold hover:text-indigo-700 cursor-pointer">
-                  <span>Organización & Certificado</span>${renderSortArrow('organizacion')}
-                </button>
-              </th>
-              <th scope="col" class="px-2.5 py-3">
-                <button type="button" data-prog-sort="tipo" class="inline-flex items-center font-bold hover:text-indigo-700 cursor-pointer">
-                  <span>Modalidad</span>${renderSortArrow('tipo')}
-                </button>
-              </th>
-              <th scope="col" class="px-2.5 py-3">
-                <button type="button" data-prog-sort="fecha" class="inline-flex items-center font-bold hover:text-indigo-700 cursor-pointer">
-                  <span>Fechas / Días</span>${renderSortArrow('fecha')}
-                </button>
-              </th>
-              <th scope="col" class="px-2.5 py-3">Auditor Líder</th>
-              <th scope="col" class="px-2.5 py-3">
-                <button type="button" data-prog-sort="estatus" class="inline-flex items-center font-bold hover:text-indigo-700 cursor-pointer">
-                  <span>Estatus</span>${renderSortArrow('estatus')}
-                </button>
-              </th>
-              <th scope="col" class="px-3 py-3 text-right">Acciones</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100 bg-white">
-            ${audits
-              .map((a) => {
-                const mod = getModalityVisualStyle(a.tipo_auditoria);
-                const met = getMethodologyVisualStyle(a.metodologia);
-                const st = getAuditStatusVisualStyle(a.estatus);
-                return `
-                  <tr class="hover:bg-slate-50/80 transition-colors">
-                    <td class="px-3 py-3 font-mono font-bold text-slate-900 whitespace-nowrap">
-                      <button
-                        type="button"
-                        data-action="select-prog-audit"
-                        data-audit-id="${escapeHtml(a.id)}"
-                        class="text-indigo-700 hover:text-indigo-900 hover:underline font-mono font-bold cursor-pointer"
-                      >
-                        ${escapeHtml(a.codigo_auditoria)}
-                      </button>
-                    </td>
-                    <td class="px-3 py-3 max-w-[200px]">
-                      <div class="font-bold text-slate-900 leading-snug">${escapeHtml(a.organizacion_nombre)}</div>
-                      <div class="text-[11px] font-mono text-slate-500 mt-0.5">
-                        ${escapeHtml(a.numero_certificado)} · <span class="font-sans font-semibold text-slate-600">${escapeHtml(a.norma_codigo)}</span>
-                      </div>
-                    </td>
-                    <td class="px-2.5 py-3 whitespace-nowrap">
-                      <div class="flex flex-col items-start gap-1">
-                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${mod.badgeClass}">
-                          <span aria-hidden="true">${mod.symbol}</span>
-                          <span>${escapeHtml(a.tipo_auditoria)}</span>
-                        </span>
-                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${met.badgeClass}">
-                          <span aria-hidden="true">${met.symbol}</span>
-                          <span>${escapeHtml(a.metodologia)}</span>
-                        </span>
-                      </div>
-                    </td>
-                    <td class="px-2.5 py-3 font-mono whitespace-nowrap">
-                      <div class="text-slate-900 font-semibold text-[11px]">${escapeHtml(a.fecha_inicio)}</div>
-                      <div class="text-slate-500 text-[11px]">→ ${escapeHtml(a.fecha_fin)}</div>
-                      <div class="text-[10px] font-sans text-slate-500 mt-0.5">${a.dias_auditor} día(s)-auditor</div>
-                    </td>
-                    <td class="px-2.5 py-3 text-slate-800 font-medium max-w-[130px] leading-snug">
-                      ${escapeHtml(a.auditor_lider)}
-                    </td>
-                    <td class="px-2.5 py-3 whitespace-nowrap">
-                      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${st.badgeClass}">
-                        <span class="w-1.5 h-1.5 rounded-full ${st.dotClass}"></span>
-                        <span>${escapeHtml(st.label)}</span>
-                      </span>
-                    </td>
-                    <td class="px-3 py-3 text-right whitespace-nowrap">
-                      <button
-                        type="button"
-                        data-action="select-prog-audit"
-                        data-audit-id="${escapeHtml(a.id)}"
-                        class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-slate-800 hover:text-indigo-800 border border-slate-200 hover:border-indigo-200 font-semibold text-xs transition-colors cursor-pointer"
-                      >
-                        Detalle →
-                      </button>
-                    </td>
-                  </tr>
-                `;
-              })
-              .join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
-}
-
-function renderProgramacionGrid(audits: ProgramacionAuditEntity[]): string {
-  return `
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      ${audits
-        .map((a) => {
-          const mod = getModalityVisualStyle(a.tipo_auditoria);
-          const met = getMethodologyVisualStyle(a.metodologia);
-          const st = getAuditStatusVisualStyle(a.estatus);
-          return `
-            <article class="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs hover:shadow-sm hover:border-slate-300 transition-all flex flex-col justify-between gap-4">
-              <div class="space-y-3">
-                <div class="flex items-start justify-between gap-2">
-                  <div>
-                    <span class="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                      ${escapeHtml(a.codigo_auditoria)}
-                    </span>
-                    <h3 class="text-sm font-bold text-slate-900 mt-1.5">
-                      ${escapeHtml(a.organizacion_nombre)}
-                    </h3>
-                    <div class="text-xs text-slate-500 font-mono">
-                      ${escapeHtml(a.numero_certificado)} · <span class="font-sans font-semibold text-slate-700">${escapeHtml(a.norma_codigo)}</span>
-                    </div>
-                  </div>
-
-                  <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border shrink-0 ${st.badgeClass}">
-                    <span class="w-1.5 h-1.5 rounded-full ${st.dotClass}"></span>
-                    <span>${escapeHtml(st.label)}</span>
-                  </span>
-                </div>
-
-                <div class="flex flex-wrap items-center gap-1.5">
-                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${mod.badgeClass}">
-                    <span aria-hidden="true">${mod.symbol}</span>
-                    <span>${escapeHtml(a.tipo_auditoria)}</span>
-                  </span>
-                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${met.badgeClass}">
-                    <span aria-hidden="true">${met.symbol}</span>
-                    <span>${escapeHtml(a.metodologia)}</span>
-                  </span>
-                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                    <span aria-hidden="true">🏭</span>
-                    <span>IAF ${a.sector_iaf}</span>
-                  </span>
-                </div>
-
-                <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
-                  <div>
-                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Fechas Planificadas</span>
-                    <span class="font-mono font-semibold text-slate-800">${escapeHtml(a.fecha_inicio)} al ${escapeHtml(a.fecha_fin)}</span>
-                    <span class="text-[11px] text-slate-500 block">${a.dias_auditor} día(s)-auditor</span>
-                  </div>
-                  <div>
-                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Auditor Líder</span>
-                    <span class="font-semibold text-slate-800 block truncate">${escapeHtml(a.auditor_lider)}</span>
-                    <span class="text-[11px] text-slate-500 block">${a.equipo.length} miembro(s) · ${a.sitiosMuestreo.length} sede(s)</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  data-action="open-changelog"
-                  data-table-name="auditoria"
-                  data-record-id="${escapeHtml(a.id)}"
-                  data-entity-name="${escapeHtml(a.codigo_auditoria)} · ${escapeHtml(a.organizacion_nombre)}"
-                  class="text-[11px] font-semibold text-slate-500 hover:text-slate-800 cursor-pointer inline-flex items-center gap-1"
-                >
-                  <span aria-hidden="true">🕒</span>
-                  <span>Historial</span>
-                </button>
-                <div class="flex items-center gap-2">
-                  <button
-                    type="button"
-                    data-action="go-audit-results"
-                    data-audit-id="${escapeHtml(a.id)}"
-                    class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold cursor-pointer"
-                  >
-                    Resultados
-                  </button>
-                  <button
-                    type="button"
-                    data-action="select-prog-audit"
-                    data-audit-id="${escapeHtml(a.id)}"
-                    class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer"
-                  >
-                    Abrir Detalle →
-                  </button>
-                </div>
-              </div>
-            </article>
-          `;
-        })
-        .join('')}
     </div>
   `;
 }

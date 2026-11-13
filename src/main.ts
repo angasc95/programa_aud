@@ -41,6 +41,7 @@ import {
   type ProcessRecord,
   type ShiftRecord,
 } from './views/certificacionView';
+import type { OrganizacionViewState } from './views/organizacionView';
 import {
   renderExtraView,
   type StandardRecord,
@@ -242,20 +243,7 @@ interface AppState {
   programacionDomain: ProgramacionViewState;
   calendarioDomain: CalendarioViewState;
   resultadoDomain: ResultadoViewState;
-  organizacionDomain: {
-    selectedOrganizacionId: string | null;
-    query: string;
-    hasActiveCertificates: 'ALL' | 'WITH_ACTIVE' | 'WITHOUT_ACTIVE';
-    selectedSectorIaf: string;
-    viewMode: 'grid' | 'list';
-    sortColumn: 'nombre' | 'rif' | 'certificados_activos' | 'sector' | null;
-    sortDirection: SortDirection;
-    isEditingAttributes: boolean;
-    activeChildTab: 'certificados';
-    editFormData?: Partial<OrganizacionEntity>;
-    editErrorMessage?: string | null;
-    saveSuccessMessage?: string | null;
-  };
+  organizacionDomain: OrganizacionViewState;
   certificadoDomain: CertificadoViewState;
   auditorDomain: AuditorViewState;
   extraDomain: {
@@ -267,6 +255,8 @@ interface AppState {
     normaViewMode: 'grid' | 'list';
     normaSortColumn: string | null;
     normaSortDirection: SortDirection;
+    normaIsSidebarOpen: boolean;
+    normaFacetSelections: MultiViewSelectionMap;
     isAddAccreditationModalOpen: boolean;
     inspectingClauseId: string | null;
 
@@ -277,6 +267,8 @@ interface AppState {
     iafViewMode: 'grid' | 'list';
     iafSortColumn: string | null;
     iafSortDirection: SortDirection;
+    iafIsSidebarOpen: boolean;
+    iafFacetSelections: MultiViewSelectionMap;
     isAddSubsectorModalOpen: boolean;
 
     selectedEstatusId: string | null;
@@ -284,22 +276,24 @@ interface AppState {
     estatusViewMode: 'grid' | 'list';
     estatusSortColumn: string | null;
     estatusSortDirection: SortDirection;
+    estatusIsSidebarOpen: boolean;
+    estatusFacetSelections: MultiViewSelectionMap;
 
     selectedTipoId: string | null;
     tipoSearchQuery: string;
     tipoViewMode: 'grid' | 'list';
     tipoSortColumn: string | null;
     tipoSortDirection: SortDirection;
+    tipoIsSidebarOpen: boolean;
+    tipoFacetSelections: MultiViewSelectionMap;
 
     selectedMetodologiaId: string | null;
     metodologiaSearchQuery: string;
     metodologiaViewMode: 'grid' | 'list';
     metodologiaSortColumn: string | null;
     metodologiaSortDirection: SortDirection;
-  };
-  multiViewUi: {
-    isSidebarOpen: boolean;
-    facetSelections: MultiViewSelectionMap;
+    metodologiaIsSidebarOpen: boolean;
+    metodologiaFacetSelections: MultiViewSelectionMap;
   };
 }
 
@@ -638,6 +632,8 @@ const state: AppState = {
     isAddingTeamMember: false,
     editErrorMessage: null,
     saveSuccessMessage: null,
+    isSidebarOpen: true,
+    facetSelections: {},
   },
   calendarioDomain: {
     displayMode: 'month',
@@ -674,6 +670,10 @@ const state: AppState = {
     editFormData: undefined,
     editErrorMessage: null,
     saveSuccessMessage: null,
+    isSidebarOpen: true,
+    facetSelections: {},
+    isCreating: false,
+    createErrorMessage: null,
   },
   certificadoDomain: {
     selectedCertId: null,
@@ -690,6 +690,10 @@ const state: AppState = {
     editErrorMessage: null,
     saveSuccessMessage: null,
     originatingOrganizacionId: null,
+    isSidebarOpen: true,
+    facetSelections: {},
+    isCreating: false,
+    createErrorMessage: null,
   },
   auditorDomain: {
     selectedAuditorId: null,
@@ -705,6 +709,10 @@ const state: AppState = {
     editFormData: undefined,
     editErrorMessage: null,
     saveSuccessMessage: null,
+    isSidebarOpen: true,
+    facetSelections: {},
+    isCreating: false,
+    createErrorMessage: null,
   },
   extraDomain: {
     selectedNormaId: null,
@@ -715,6 +723,8 @@ const state: AppState = {
     normaViewMode: 'grid',
     normaSortColumn: null,
     normaSortDirection: 'none',
+    normaIsSidebarOpen: true,
+    normaFacetSelections: {},
     isAddAccreditationModalOpen: false,
     inspectingClauseId: null,
 
@@ -725,6 +735,8 @@ const state: AppState = {
     iafViewMode: 'grid',
     iafSortColumn: null,
     iafSortDirection: 'none',
+    iafIsSidebarOpen: true,
+    iafFacetSelections: {},
     isAddSubsectorModalOpen: false,
 
     selectedEstatusId: null,
@@ -732,22 +744,24 @@ const state: AppState = {
     estatusViewMode: 'grid',
     estatusSortColumn: null,
     estatusSortDirection: 'none',
+    estatusIsSidebarOpen: true,
+    estatusFacetSelections: {},
 
     selectedTipoId: null,
     tipoSearchQuery: '',
     tipoViewMode: 'grid',
     tipoSortColumn: null,
     tipoSortDirection: 'none',
+    tipoIsSidebarOpen: true,
+    tipoFacetSelections: {},
 
     selectedMetodologiaId: null,
     metodologiaSearchQuery: '',
     metodologiaViewMode: 'grid',
     metodologiaSortColumn: null,
     metodologiaSortDirection: 'none',
-  },
-  multiViewUi: {
-    isSidebarOpen: true,
-    facetSelections: {},
+    metodologiaIsSidebarOpen: true,
+    metodologiaFacetSelections: {},
   },
 };
 
@@ -984,6 +998,8 @@ function render(): void {
         viewMode: state.extraDomain.normaViewMode,
         sortColumn: state.extraDomain.normaSortColumn,
         sortDirection: state.extraDomain.normaSortDirection,
+        isSidebarOpen: state.extraDomain.normaIsSidebarOpen,
+        facetSelections: state.extraDomain.normaFacetSelections,
         isAddAccreditationModalOpen: state.extraDomain.isAddAccreditationModalOpen,
         inspectingClauseId: state.extraDomain.inspectingClauseId,
       },
@@ -995,6 +1011,8 @@ function render(): void {
         viewMode: state.extraDomain.iafViewMode,
         sortColumn: state.extraDomain.iafSortColumn,
         sortDirection: state.extraDomain.iafSortDirection,
+        isSidebarOpen: state.extraDomain.iafIsSidebarOpen,
+        facetSelections: state.extraDomain.iafFacetSelections,
         isAddSubsectorModalOpen: state.extraDomain.isAddSubsectorModalOpen,
       },
       estatusState: {
@@ -1003,6 +1021,8 @@ function render(): void {
         viewMode: state.extraDomain.estatusViewMode,
         sortColumn: state.extraDomain.estatusSortColumn,
         sortDirection: state.extraDomain.estatusSortDirection,
+        isSidebarOpen: state.extraDomain.estatusIsSidebarOpen,
+        facetSelections: state.extraDomain.estatusFacetSelections,
       },
       tipoState: {
         selectedTipoId: state.extraDomain.selectedTipoId,
@@ -1010,6 +1030,8 @@ function render(): void {
         viewMode: state.extraDomain.tipoViewMode,
         sortColumn: state.extraDomain.tipoSortColumn,
         sortDirection: state.extraDomain.tipoSortDirection,
+        isSidebarOpen: state.extraDomain.tipoIsSidebarOpen,
+        facetSelections: state.extraDomain.tipoFacetSelections,
       },
       metodologiaState: {
         selectedMetodologiaId: state.extraDomain.selectedMetodologiaId,
@@ -1017,6 +1039,8 @@ function render(): void {
         viewMode: state.extraDomain.metodologiaViewMode,
         sortColumn: state.extraDomain.metodologiaSortColumn,
         sortDirection: state.extraDomain.metodologiaSortDirection,
+        isSidebarOpen: state.extraDomain.metodologiaIsSidebarOpen,
+        facetSelections: state.extraDomain.metodologiaFacetSelections,
       },
     });
   } else {
@@ -1058,7 +1082,7 @@ function render(): void {
     })}
     ${
       state.breadcrumbs && state.breadcrumbs.length > 1
-        ? `<div class="max-w-6xl w-full mx-auto px-4 sm:px-6 pt-3 pb-0">${breadcrumbBarHtml}</div>`
+        ? `<div class="max-w-7xl w-full mx-auto px-4 sm:px-6 pt-3 pb-0">${breadcrumbBarHtml}</div>`
         : ''
     }
     ${bodyHtml}
@@ -1186,20 +1210,27 @@ function clearAllEntitySelections(): void {
   state.organizacionDomain.isEditingAttributes = false;
   state.organizacionDomain.editErrorMessage = null;
   state.organizacionDomain.saveSuccessMessage = null;
+  state.organizacionDomain.isCreating = false;
+  state.organizacionDomain.createErrorMessage = null;
 
   state.certificadoDomain.selectedCertId = null;
   state.certificadoDomain.isEditingAttributes = false;
   state.certificadoDomain.editErrorMessage = null;
   state.certificadoDomain.saveSuccessMessage = null;
+  state.certificadoDomain.isCreating = false;
+  state.certificadoDomain.createErrorMessage = null;
 
   state.auditorDomain.selectedAuditorId = null;
   state.auditorDomain.isEditingAttributes = false;
   state.auditorDomain.editErrorMessage = null;
   state.auditorDomain.saveSuccessMessage = null;
+  state.auditorDomain.isCreating = false;
+  state.auditorDomain.createErrorMessage = null;
 
   state.programacionDomain.selectedAuditId = null;
   state.programacionDomain.isEditingAttributes = false;
   state.programacionDomain.isAddingTeamMember = false;
+  state.programacionDomain.isPlanningModalOpen = false;
   state.programacionDomain.editErrorMessage = null;
   state.programacionDomain.saveSuccessMessage = null;
 
@@ -1306,6 +1337,426 @@ function syncCurrentBreadcrumbTab(tab: string): void {
   );
 }
 
+interface MultiViewDomainAdapter {
+  getQuery: () => string;
+  setQuery: (q: string) => void;
+  getViewMode: () => 'grid' | 'list';
+  setViewMode: (m: 'grid' | 'list') => void;
+  getIsSidebarOpen: () => boolean;
+  setIsSidebarOpen: (open: boolean) => void;
+  getFacetSelections: () => MultiViewSelectionMap;
+  setFacetSelections: (next: MultiViewSelectionMap) => void;
+  cycleSort: (col: string) => void;
+  clearLegacyFilters?: () => void;
+}
+
+function getMultiViewDomainAdapter(domainKey: string): MultiViewDomainAdapter | null {
+  switch (domainKey) {
+    case 'organizaciones':
+      return {
+        getQuery: () => state.organizacionDomain.query,
+        setQuery: (q) => {
+          state.organizacionDomain.query = q;
+        },
+        getViewMode: () => state.organizacionDomain.viewMode,
+        setViewMode: (m) => {
+          state.organizacionDomain.viewMode = m;
+        },
+        getIsSidebarOpen: () => state.organizacionDomain.isSidebarOpen ?? true,
+        setIsSidebarOpen: (open) => {
+          state.organizacionDomain.isSidebarOpen = open;
+        },
+        getFacetSelections: () => state.organizacionDomain.facetSelections || {},
+        setFacetSelections: (next) => {
+          state.organizacionDomain.facetSelections = next;
+        },
+        cycleSort: (col) => {
+          if (
+            col === 'nombre' ||
+            col === 'rif' ||
+            col === 'certificados_activos' ||
+            col === 'sector'
+          ) {
+            if (state.organizacionDomain.sortColumn === col) {
+              state.organizacionDomain.sortDirection = cycleSortDirection(
+                state.organizacionDomain.sortDirection
+              );
+            } else {
+              state.organizacionDomain.sortColumn = col;
+              state.organizacionDomain.sortDirection = 'asc';
+            }
+          }
+        },
+        clearLegacyFilters: () => {
+          state.organizacionDomain.hasActiveCertificates = 'ALL';
+          state.organizacionDomain.selectedSectorIaf = 'ALL';
+        },
+      };
+    case 'certificados':
+      return {
+        getQuery: () => state.certificadoDomain.query,
+        setQuery: (q) => {
+          state.certificadoDomain.query = q;
+        },
+        getViewMode: () => state.certificadoDomain.viewMode,
+        setViewMode: (m) => {
+          state.certificadoDomain.viewMode = m;
+        },
+        getIsSidebarOpen: () => state.certificadoDomain.isSidebarOpen ?? true,
+        setIsSidebarOpen: (open) => {
+          state.certificadoDomain.isSidebarOpen = open;
+        },
+        getFacetSelections: () => state.certificadoDomain.facetSelections || {},
+        setFacetSelections: (next) => {
+          state.certificadoDomain.facetSelections = next;
+        },
+        cycleSort: (col) => {
+          if (
+            col === 'numero_certificado' ||
+            col === 'organizacion' ||
+            col === 'norma' ||
+            col === 'estatus' ||
+            col === 'vigencia' ||
+            col === 'sedes'
+          ) {
+            if (state.certificadoDomain.sortColumn === col) {
+              state.certificadoDomain.sortDirection = cycleSortDirection(
+                state.certificadoDomain.sortDirection
+              );
+            } else {
+              state.certificadoDomain.sortColumn = col;
+              state.certificadoDomain.sortDirection = 'asc';
+            }
+          }
+        },
+        clearLegacyFilters: () => {
+          state.certificadoDomain.selectedStandard = 'ALL';
+          state.certificadoDomain.selectedStatus = 'ALL';
+          state.certificadoDomain.selectedSectorIaf = 'ALL';
+        },
+      };
+    case 'auditores':
+      return {
+        getQuery: () => state.auditorDomain.query,
+        setQuery: (q) => {
+          state.auditorDomain.query = q;
+        },
+        getViewMode: () => state.auditorDomain.viewMode,
+        setViewMode: (m) => {
+          state.auditorDomain.viewMode = m;
+        },
+        getIsSidebarOpen: () => state.auditorDomain.isSidebarOpen ?? true,
+        setIsSidebarOpen: (open) => {
+          state.auditorDomain.isSidebarOpen = open;
+        },
+        getFacetSelections: () => state.auditorDomain.facetSelections || {},
+        setFacetSelections: (next) => {
+          state.auditorDomain.facetSelections = next;
+        },
+        cycleSort: (col) => {
+          if (
+            col === 'nombre' ||
+            col === 'codigo_credencial' ||
+            col === 'calificacion' ||
+            col === 'normas' ||
+            col === 'sectores'
+          ) {
+            if (state.auditorDomain.sortColumn === col) {
+              state.auditorDomain.sortDirection = cycleSortDirection(
+                state.auditorDomain.sortDirection
+              );
+            } else {
+              state.auditorDomain.sortColumn = col;
+              state.auditorDomain.sortDirection = 'asc';
+            }
+          }
+        },
+        clearLegacyFilters: () => {
+          state.auditorDomain.selectedCalificacion = 'ALL';
+          state.auditorDomain.selectedStandard = 'ALL';
+          state.auditorDomain.selectedSectorIaf = 'ALL';
+        },
+      };
+    case 'programacion':
+      return {
+        getQuery: () => state.programacionDomain.query,
+        setQuery: (q) => {
+          state.programacionDomain.query = q;
+        },
+        getViewMode: () => state.programacionDomain.viewMode,
+        setViewMode: (m) => {
+          state.programacionDomain.viewMode = m;
+        },
+        getIsSidebarOpen: () => state.programacionDomain.isSidebarOpen ?? true,
+        setIsSidebarOpen: (open) => {
+          state.programacionDomain.isSidebarOpen = open;
+        },
+        getFacetSelections: () => state.programacionDomain.facetSelections || {},
+        setFacetSelections: (next) => {
+          state.programacionDomain.facetSelections = next;
+        },
+        cycleSort: (col) => {
+          if (
+            col === 'codigo' ||
+            col === 'organizacion' ||
+            col === 'tipo' ||
+            col === 'fecha' ||
+            col === 'dias' ||
+            col === 'estatus'
+          ) {
+            if (state.programacionDomain.sortColumn === col) {
+              state.programacionDomain.sortDirection = cycleSortDirection(
+                state.programacionDomain.sortDirection
+              );
+            } else {
+              state.programacionDomain.sortColumn = col;
+              state.programacionDomain.sortDirection = 'asc';
+            }
+          }
+        },
+        clearLegacyFilters: () => {
+          state.programacionDomain.selectedTipo = 'ALL';
+          state.programacionDomain.selectedMetodologia = 'ALL';
+          state.programacionDomain.selectedEstatus = 'ALL';
+          state.programacionDomain.selectedAuditorLider = 'ALL';
+        },
+      };
+    case 'normas':
+      return {
+        getQuery: () => state.extraDomain.normaSearchQuery,
+        setQuery: (q) => {
+          state.extraDomain.normaSearchQuery = q;
+        },
+        getViewMode: () => state.extraDomain.normaViewMode,
+        setViewMode: (m) => {
+          state.extraDomain.normaViewMode = m;
+        },
+        getIsSidebarOpen: () => state.extraDomain.normaIsSidebarOpen,
+        setIsSidebarOpen: (open) => {
+          state.extraDomain.normaIsSidebarOpen = open;
+        },
+        getFacetSelections: () => state.extraDomain.normaFacetSelections,
+        setFacetSelections: (next) => {
+          state.extraDomain.normaFacetSelections = next;
+        },
+        cycleSort: (col) => {
+          if (state.extraDomain.normaSortColumn === col) {
+            state.extraDomain.normaSortDirection = cycleSortDirection(
+              state.extraDomain.normaSortDirection
+            );
+          } else {
+            state.extraDomain.normaSortColumn = col;
+            state.extraDomain.normaSortDirection = 'asc';
+          }
+        },
+        clearLegacyFilters: () => {
+          state.extraDomain.normaFilterStatus = 'ALL';
+          state.extraDomain.normaFilterScheme = 'ALL';
+        },
+      };
+    case 'iaf':
+      return {
+        getQuery: () => state.extraDomain.iafSearchQuery,
+        setQuery: (q) => {
+          state.extraDomain.iafSearchQuery = q;
+        },
+        getViewMode: () => state.extraDomain.iafViewMode,
+        setViewMode: (m) => {
+          state.extraDomain.iafViewMode = m;
+        },
+        getIsSidebarOpen: () => state.extraDomain.iafIsSidebarOpen,
+        setIsSidebarOpen: (open) => {
+          state.extraDomain.iafIsSidebarOpen = open;
+        },
+        getFacetSelections: () => state.extraDomain.iafFacetSelections,
+        setFacetSelections: (next) => {
+          state.extraDomain.iafFacetSelections = next;
+        },
+        cycleSort: (col) => {
+          if (state.extraDomain.iafSortColumn === col) {
+            state.extraDomain.iafSortDirection = cycleSortDirection(
+              state.extraDomain.iafSortDirection
+            );
+          } else {
+            state.extraDomain.iafSortColumn = col;
+            state.extraDomain.iafSortDirection = 'asc';
+          }
+        },
+        clearLegacyFilters: () => {
+          state.extraDomain.iafFilterRisk = 'ALL';
+        },
+      };
+    case 'estatus':
+      return {
+        getQuery: () => state.extraDomain.estatusSearchQuery,
+        setQuery: (q) => {
+          state.extraDomain.estatusSearchQuery = q;
+        },
+        getViewMode: () => state.extraDomain.estatusViewMode,
+        setViewMode: (m) => {
+          state.extraDomain.estatusViewMode = m;
+        },
+        getIsSidebarOpen: () => state.extraDomain.estatusIsSidebarOpen,
+        setIsSidebarOpen: (open) => {
+          state.extraDomain.estatusIsSidebarOpen = open;
+        },
+        getFacetSelections: () => state.extraDomain.estatusFacetSelections,
+        setFacetSelections: (next) => {
+          state.extraDomain.estatusFacetSelections = next;
+        },
+        cycleSort: (col) => {
+          if (state.extraDomain.estatusSortColumn === col) {
+            state.extraDomain.estatusSortDirection = cycleSortDirection(
+              state.extraDomain.estatusSortDirection
+            );
+          } else {
+            state.extraDomain.estatusSortColumn = col;
+            state.extraDomain.estatusSortDirection = 'asc';
+          }
+        },
+      };
+    case 'tipos':
+      return {
+        getQuery: () => state.extraDomain.tipoSearchQuery,
+        setQuery: (q) => {
+          state.extraDomain.tipoSearchQuery = q;
+        },
+        getViewMode: () => state.extraDomain.tipoViewMode,
+        setViewMode: (m) => {
+          state.extraDomain.tipoViewMode = m;
+        },
+        getIsSidebarOpen: () => state.extraDomain.tipoIsSidebarOpen,
+        setIsSidebarOpen: (open) => {
+          state.extraDomain.tipoIsSidebarOpen = open;
+        },
+        getFacetSelections: () => state.extraDomain.tipoFacetSelections,
+        setFacetSelections: (next) => {
+          state.extraDomain.tipoFacetSelections = next;
+        },
+        cycleSort: (col) => {
+          if (state.extraDomain.tipoSortColumn === col) {
+            state.extraDomain.tipoSortDirection = cycleSortDirection(
+              state.extraDomain.tipoSortDirection
+            );
+          } else {
+            state.extraDomain.tipoSortColumn = col;
+            state.extraDomain.tipoSortDirection = 'asc';
+          }
+        },
+      };
+    case 'metodologias':
+      return {
+        getQuery: () => state.extraDomain.metodologiaSearchQuery,
+        setQuery: (q) => {
+          state.extraDomain.metodologiaSearchQuery = q;
+        },
+        getViewMode: () => state.extraDomain.metodologiaViewMode,
+        setViewMode: (m) => {
+          state.extraDomain.metodologiaViewMode = m;
+        },
+        getIsSidebarOpen: () => state.extraDomain.metodologiaIsSidebarOpen,
+        setIsSidebarOpen: (open) => {
+          state.extraDomain.metodologiaIsSidebarOpen = open;
+        },
+        getFacetSelections: () => state.extraDomain.metodologiaFacetSelections,
+        setFacetSelections: (next) => {
+          state.extraDomain.metodologiaFacetSelections = next;
+        },
+        cycleSort: (col) => {
+          if (state.extraDomain.metodologiaSortColumn === col) {
+            state.extraDomain.metodologiaSortDirection = cycleSortDirection(
+              state.extraDomain.metodologiaSortDirection
+            );
+          } else {
+            state.extraDomain.metodologiaSortColumn = col;
+            state.extraDomain.metodologiaSortDirection = 'asc';
+          }
+        },
+      };
+    default:
+      return null;
+  }
+}
+
+function bindMultiViewDirectoryControls(): void {
+  document.querySelectorAll<HTMLElement>('[data-mv-domain]').forEach((container) => {
+    const domainKey = container.dataset.mvDomain || '';
+    const adapter = getMultiViewDomainAdapter(domainKey);
+    if (!adapter) return;
+
+    container.querySelectorAll<HTMLElement>('[data-toggle-sidebar="true"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        adapter.setIsSidebarOpen(!adapter.getIsSidebarOpen());
+        render();
+      });
+    });
+
+    container.querySelectorAll<HTMLInputElement>('input[data-facet-checkbox="true"]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        const groupId = cb.dataset.facetGroup;
+        const value = cb.dataset.facetValue;
+        if (!groupId || !value) return;
+        adapter.setFacetSelections(
+          toggleFacetSelection(adapter.getFacetSelections(), groupId, value)
+        );
+        render();
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-clear-filters="true"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        adapter.setFacetSelections(clearFacetSelections());
+        adapter.setQuery('');
+        adapter.clearLegacyFilters?.();
+        render();
+      });
+    });
+
+    container
+      .querySelectorAll<HTMLInputElement>('input[data-universal-search="true"]')
+      .forEach((input) => {
+        input.addEventListener('input', () => {
+          adapter.setQuery(input.value);
+          render();
+        });
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && input.value.length > 0) {
+            e.preventDefault();
+            e.stopPropagation();
+            adapter.setQuery('');
+            render();
+          }
+        });
+      });
+
+    container.querySelectorAll<HTMLElement>('[data-clear-search="true"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        adapter.setQuery('');
+        render();
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-view-mode]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.viewMode;
+        if (mode === 'grid' || mode === 'list') {
+          adapter.setViewMode(mode);
+          render();
+        }
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-sort-col]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const col = btn.dataset.sortCol;
+        if (!col) return;
+        adapter.cycleSort(col);
+        render();
+      });
+    });
+  });
+}
+
 function bindAuthenticatedEvents(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-menu-toggle]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -1409,34 +1860,8 @@ function bindAuthenticatedEvents(): void {
     });
   });
 
-  // Universal Multi View Sidebar & Multi-Select Facet Scaffolding (Phase 4.1.1)
-  document.querySelectorAll<HTMLElement>('[data-toggle-sidebar="true"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.multiViewUi.isSidebarOpen = !state.multiViewUi.isSidebarOpen;
-      render();
-    });
-  });
-
-  document.querySelectorAll<HTMLInputElement>('input[data-facet-checkbox="true"]').forEach((cb) => {
-    cb.addEventListener('change', () => {
-      const groupId = cb.dataset.facetGroup;
-      const value = cb.dataset.facetValue;
-      if (!groupId || !value) return;
-      state.multiViewUi.facetSelections = toggleFacetSelection(
-        state.multiViewUi.facetSelections,
-        groupId,
-        value
-      );
-      render();
-    });
-  });
-
-  document.querySelectorAll<HTMLElement>('[data-clear-filters="true"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.multiViewUi.facetSelections = clearFacetSelections();
-      render();
-    });
-  });
+  // Universal Multi View Directory Controls (Phase 4.1.2 — 9 Directories)
+  bindMultiViewDirectoryControls();
 
   // Self-service Profile handlers (Phase 2.2)
   const profileNombreInput = document.getElementById('profileNombreInput') as HTMLInputElement | null;
@@ -1858,67 +2283,6 @@ function bindAuthenticatedEvents(): void {
     });
   });
 
-  document.querySelectorAll<HTMLElement>('[data-norma-view-mode]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const mode = btn.dataset.normaViewMode;
-      if (mode === 'grid' || mode === 'list') {
-        state.extraDomain.normaViewMode = mode;
-        render();
-      }
-    });
-  });
-
-  document.querySelectorAll<HTMLElement>('[data-action="sort-norma"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const col = btn.dataset.sortCol;
-      if (col) {
-        if (state.extraDomain.normaSortColumn === col) {
-          state.extraDomain.normaSortDirection = cycleSortDirection(state.extraDomain.normaSortDirection);
-        } else {
-          state.extraDomain.normaSortColumn = col;
-          state.extraDomain.normaSortDirection = 'asc';
-        }
-        render();
-      }
-    });
-  });
-
-  document.querySelectorAll<HTMLElement>('[data-norma-filter-status]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.extraDomain.normaFilterStatus = btn.dataset.normaFilterStatus || 'ALL';
-      render();
-    });
-  });
-
-  document.querySelectorAll<HTMLElement>('[data-norma-filter-scheme]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.extraDomain.normaFilterScheme = btn.dataset.normaFilterScheme || 'ALL';
-      render();
-    });
-  });
-
-  const normaSearch = document.getElementById('normaSearchInput') as HTMLInputElement | null;
-  normaSearch?.addEventListener('input', (e) => {
-    state.extraDomain.normaSearchQuery = (e.target as HTMLInputElement).value;
-    render();
-  });
-  normaSearch?.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      state.extraDomain.normaSearchQuery = '';
-      render();
-    }
-  });
-  document.getElementById('clearNormaSearchBtn')?.addEventListener('click', () => {
-    state.extraDomain.normaSearchQuery = '';
-    render();
-  });
-  document.getElementById('resetNormaFiltersBtn')?.addEventListener('click', () => {
-    state.extraDomain.normaSearchQuery = '';
-    state.extraDomain.normaFilterStatus = 'ALL';
-    state.extraDomain.normaFilterScheme = 'ALL';
-    render();
-  });
-
   document.querySelectorAll<HTMLElement>('[data-action="inspect-clause"]').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.extraDomain.inspectingClauseId = btn.dataset.clauseId || null;
@@ -2017,59 +2381,6 @@ function bindAuthenticatedEvents(): void {
     });
   });
 
-  document.querySelectorAll<HTMLElement>('[data-iaf-view-mode]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const mode = btn.dataset.iafViewMode;
-      if (mode === 'grid' || mode === 'list') {
-        state.extraDomain.iafViewMode = mode;
-        render();
-      }
-    });
-  });
-
-  document.querySelectorAll<HTMLElement>('[data-action="sort-iaf"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const col = btn.dataset.sortCol;
-      if (col) {
-        if (state.extraDomain.iafSortColumn === col) {
-          state.extraDomain.iafSortDirection = cycleSortDirection(state.extraDomain.iafSortDirection);
-        } else {
-          state.extraDomain.iafSortColumn = col;
-          state.extraDomain.iafSortDirection = 'asc';
-        }
-        render();
-      }
-    });
-  });
-
-  document.querySelectorAll<HTMLElement>('[data-iaf-filter-risk]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.extraDomain.iafFilterRisk = btn.dataset.iafFilterRisk || 'ALL';
-      render();
-    });
-  });
-
-  const iafSearch = document.getElementById('iafSearchInput') as HTMLInputElement | null;
-  iafSearch?.addEventListener('input', (e) => {
-    state.extraDomain.iafSearchQuery = (e.target as HTMLInputElement).value;
-    render();
-  });
-  iafSearch?.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      state.extraDomain.iafSearchQuery = '';
-      render();
-    }
-  });
-  document.getElementById('clearIafSearchBtn')?.addEventListener('click', () => {
-    state.extraDomain.iafSearchQuery = '';
-    render();
-  });
-  document.getElementById('resetIafFiltersBtn')?.addEventListener('click', () => {
-    state.extraDomain.iafSearchQuery = '';
-    state.extraDomain.iafFilterRisk = 'ALL';
-    render();
-  });
-
   document.getElementById('openNewSubsectorModalBtn')?.addEventListener('click', () => {
     if (!isApprovedStaff()) return;
     state.extraDomain.isAddSubsectorModalOpen = true;
@@ -2136,39 +2447,6 @@ function bindAuthenticatedEvents(): void {
       render();
     });
   });
-  document.querySelectorAll<HTMLElement>('[data-estatus-view-mode]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const mode = btn.dataset.estatusViewMode;
-      if (mode === 'grid' || mode === 'list') {
-        state.extraDomain.estatusViewMode = mode;
-        render();
-      }
-    });
-  });
-  document.querySelectorAll<HTMLElement>('[data-action="sort-estatus"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const col = btn.dataset.sortCol;
-      if (col) {
-        if (state.extraDomain.estatusSortColumn === col) {
-          state.extraDomain.estatusSortDirection = cycleSortDirection(state.extraDomain.estatusSortDirection);
-        } else {
-          state.extraDomain.estatusSortColumn = col;
-          state.extraDomain.estatusSortDirection = 'asc';
-        }
-        render();
-      }
-    });
-  });
-  const estatusSearch = document.getElementById('estatusSearchInput') as HTMLInputElement | null;
-  estatusSearch?.addEventListener('input', (e) => {
-    state.extraDomain.estatusSearchQuery = (e.target as HTMLInputElement).value;
-    render();
-  });
-  document.getElementById('clearEstatusSearchBtn')?.addEventListener('click', () => {
-    state.extraDomain.estatusSearchQuery = '';
-    render();
-  });
-
   // --- 4. Tipos de Auditoría Events ---
   document.querySelectorAll<HTMLElement>('[data-action="select-tipo"]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -2194,39 +2472,6 @@ function bindAuthenticatedEvents(): void {
       render();
     });
   });
-  document.querySelectorAll<HTMLElement>('[data-tipo-view-mode]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const mode = btn.dataset.tipoViewMode;
-      if (mode === 'grid' || mode === 'list') {
-        state.extraDomain.tipoViewMode = mode;
-        render();
-      }
-    });
-  });
-  document.querySelectorAll<HTMLElement>('[data-action="sort-tipo"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const col = btn.dataset.sortCol;
-      if (col) {
-        if (state.extraDomain.tipoSortColumn === col) {
-          state.extraDomain.tipoSortDirection = cycleSortDirection(state.extraDomain.tipoSortDirection);
-        } else {
-          state.extraDomain.tipoSortColumn = col;
-          state.extraDomain.tipoSortDirection = 'asc';
-        }
-        render();
-      }
-    });
-  });
-  const tipoSearch = document.getElementById('tipoSearchInput') as HTMLInputElement | null;
-  tipoSearch?.addEventListener('input', (e) => {
-    state.extraDomain.tipoSearchQuery = (e.target as HTMLInputElement).value;
-    render();
-  });
-  document.getElementById('clearTipoSearchBtn')?.addEventListener('click', () => {
-    state.extraDomain.tipoSearchQuery = '';
-    render();
-  });
-
   // --- 5. Metodologías de Auditoría Events ---
   document.querySelectorAll<HTMLElement>('[data-action="select-metodologia"]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -2252,39 +2497,6 @@ function bindAuthenticatedEvents(): void {
       render();
     });
   });
-  document.querySelectorAll<HTMLElement>('[data-metodologia-view-mode]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const mode = btn.dataset.metodologiaViewMode;
-      if (mode === 'grid' || mode === 'list') {
-        state.extraDomain.metodologiaViewMode = mode;
-        render();
-      }
-    });
-  });
-  document.querySelectorAll<HTMLElement>('[data-action="sort-metodologia"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const col = btn.dataset.sortCol;
-      if (col) {
-        if (state.extraDomain.metodologiaSortColumn === col) {
-          state.extraDomain.metodologiaSortDirection = cycleSortDirection(state.extraDomain.metodologiaSortDirection);
-        } else {
-          state.extraDomain.metodologiaSortColumn = col;
-          state.extraDomain.metodologiaSortDirection = 'asc';
-        }
-        render();
-      }
-    });
-  });
-  const metSearch = document.getElementById('metodologiaSearchInput') as HTMLInputElement | null;
-  metSearch?.addEventListener('input', (e) => {
-    state.extraDomain.metodologiaSearchQuery = (e.target as HTMLInputElement).value;
-    render();
-  });
-  document.getElementById('clearMetodologiaSearchBtn')?.addEventListener('click', () => {
-    state.extraDomain.metodologiaSearchQuery = '';
-    render();
-  });
-
   // ===============================================
   // DOMAIN CERTIFICACIÓN (Phase 4.1: Organización)
   // ===============================================
@@ -2325,84 +2537,137 @@ function bindAuthenticatedEvents(): void {
     });
   });
 
-  // 3. View mode toggle (grid | list)
-  document.querySelectorAll<HTMLElement>('[data-org-view-mode]').forEach((btn) => {
+  // 3. Inline Creation Form: Organizaciones
+  document.querySelectorAll<HTMLElement>('[data-action="open-create-org"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const mode = btn.dataset.orgViewMode;
-      if (mode === 'grid' || mode === 'list') {
-        state.organizacionDomain.viewMode = mode;
-        render();
-      }
-    });
-  });
-
-  // 4. Column sorting (Excel-style loop)
-  document.querySelectorAll<HTMLElement>('[data-action="sort-org"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const col = btn.dataset.sortCol as
-        | 'nombre'
-        | 'rif'
-        | 'certificados_activos'
-        | 'sector'
-        | undefined;
-      if (col) {
-        if (state.organizacionDomain.sortColumn === col) {
-          state.organizacionDomain.sortDirection = cycleSortDirection(
-            state.organizacionDomain.sortDirection
-          );
-        } else {
-          state.organizacionDomain.sortColumn = col;
-          state.organizacionDomain.sortDirection = 'asc';
-        }
-        render();
-      }
-    });
-  });
-
-  // 5. Facet: Active certificate presence
-  document.querySelectorAll<HTMLElement>('[data-org-filter-active]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const val = btn.dataset.orgFilterActive as
-        | 'ALL'
-        | 'WITH_ACTIVE'
-        | 'WITHOUT_ACTIVE'
-        | undefined;
-      if (val) {
-        state.organizacionDomain.hasActiveCertificates = val;
-        render();
-      }
-    });
-  });
-
-  // 6. Facet: Primary Sector IAF
-  document.querySelectorAll<HTMLElement>('[data-org-filter-sector]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const sec = btn.dataset.orgFilterSector || 'ALL';
-      state.organizacionDomain.selectedSectorIaf = sec;
+      if (!isApprovedStaff()) return;
+      state.organizacionDomain.isCreating = true;
+      state.organizacionDomain.createErrorMessage = null;
       render();
     });
   });
 
-  // 7. Search input & clear/reset
-  const orgDirectorySearchInput = document.getElementById('orgSearchInput') as HTMLInputElement | null;
-  orgDirectorySearchInput?.addEventListener('input', (e) => {
-    state.organizacionDomain.query = (e.target as HTMLInputElement).value;
-    render();
-  });
-  orgDirectorySearchInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      state.organizacionDomain.query = '';
+  document.querySelectorAll<HTMLElement>('[data-action="close-create-org"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.organizacionDomain.isCreating = false;
+      state.organizacionDomain.createErrorMessage = null;
       render();
+    });
+  });
+
+  document.getElementById('createOrganizacionForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!isApprovedStaff()) return;
+    const nombre =
+      (document.getElementById('createOrgNombreInput') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const rif =
+      (document.getElementById('createOrgRifInput') as HTMLInputElement | null)?.value.trim() || '';
+    const sectorRaw =
+      (document.getElementById('createOrgSectorSelect') as HTMLSelectElement | null)?.value ||
+      '17|Metales básicos y productos metálicos';
+    const contacto =
+      (document.getElementById('createOrgContactoInput') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const correo =
+      (document.getElementById('createOrgCorreoInput') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const telefono =
+      (document.getElementById('createOrgTelefonoInput') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const direccion =
+      (document.getElementById('createOrgDireccionInput') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const grupo =
+      (document.getElementById('createOrgGrupoInput') as HTMLInputElement | null)?.value.trim() ||
+      'Independiente';
+
+    if (nombre.length < 2) {
+      state.organizacionDomain.createErrorMessage =
+        'La razón social debe contener al menos 2 caracteres.';
+      render();
+      return;
     }
-  });
-  document.getElementById('clearOrgSearchBtn')?.addEventListener('click', () => {
-    state.organizacionDomain.query = '';
-    render();
-  });
-  document.getElementById('resetOrgFiltersBtn')?.addEventListener('click', () => {
-    state.organizacionDomain.query = '';
-    state.organizacionDomain.hasActiveCertificates = 'ALL';
-    state.organizacionDomain.selectedSectorIaf = 'ALL';
+
+    const rifCheck = validateRifFormat(rif);
+    if (!rifCheck.valid) {
+      state.organizacionDomain.createErrorMessage =
+        rifCheck.message || 'Formato de RIF / NIF inválido.';
+      render();
+      return;
+    }
+
+    const duplicate = state.domainData.allOrganizaciones.some(
+      (o) => o.rif.trim().toUpperCase() === rif.toUpperCase()
+    );
+    if (duplicate) {
+      state.organizacionDomain.createErrorMessage =
+        'Ya existe una organización cliente registrada con ese RIF / NIF.';
+      render();
+      return;
+    }
+
+    if (direccion.length < 5) {
+      state.organizacionDomain.createErrorMessage =
+        'La dirección fiscal es obligatoria (mínimo 5 caracteres).';
+      render();
+      return;
+    }
+
+    const [sectorNumStr, sectorDesc] = sectorRaw.split('|');
+    const sectorNum = Number(sectorNumStr) || 17;
+    const matchedSector = INITIAL_SECTORES_IAF.find((s) => s.sector === sectorNum);
+    const newId = crypto.randomUUID();
+
+    const newOrg: OrganizacionEntity = {
+      id: newId,
+      nombre,
+      rif,
+      direccion_fiscal: direccion,
+      contacto_principal: contacto || 'Por asignar',
+      correo_contacto: correo || 'calidad@empresa.com',
+      telefono_contacto: telefono || '',
+      grupo_corporativo: grupo || 'Independiente',
+      sector_principal: sectorDesc || matchedSector?.descripcion || `Sector ${sectorNum}`,
+      id_sector_iaf: matchedSector?.id,
+      sector_iaf_numero: sectorNum,
+      estatus: 'Activo',
+      certificados_count: 0,
+    };
+
+    state.domainData.allOrganizaciones = [newOrg, ...state.domainData.allOrganizaciones];
+    state.domainData.organizations = [
+      {
+        id: newId,
+        nombre,
+        rif,
+        direccion_fiscal: direccion,
+        certificados_count: 0,
+      },
+      ...state.domainData.organizations,
+    ];
+    state.organizacionDomain.isCreating = false;
+    state.organizacionDomain.createErrorMessage = null;
+
+    recordPhase5SessionLog('organizacion', newId, 'INSERT', null, {
+      nombre,
+      rif,
+      sector_iaf_numero: sectorNum,
+    });
+
+    void (async () => {
+      try {
+        await supabase.from('organizacion').insert({
+          id: newId,
+          nombre,
+          rif,
+          direccion_fiscal: direccion,
+        });
+      } catch {
+        // Reactive state fallback
+      }
+    })();
+
     render();
   });
 
@@ -2604,90 +2869,160 @@ function bindAuthenticatedEvents(): void {
     });
   });
 
-  // 3. View mode toggle (grid | list)
-  document.querySelectorAll<HTMLElement>('[data-cert-view-mode]').forEach((btn) => {
+  // 3. Inline Creation Form: Certificados
+  document.querySelectorAll<HTMLElement>('[data-action="open-create-cert"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const mode = btn.dataset.certViewMode;
-      if (mode === 'grid' || mode === 'list') {
-        state.certificadoDomain.viewMode = mode;
-        render();
-      }
-    });
-  });
-
-  // 4. Excel-style column sorting
-  document.querySelectorAll<HTMLElement>('[data-action="sort-cert"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const col = btn.dataset.column as
-        | 'numero_certificado'
-        | 'organizacion'
-        | 'norma'
-        | 'estatus'
-        | 'vigencia'
-        | 'sedes'
-        | undefined;
-      if (col) {
-        if (state.certificadoDomain.sortColumn === col) {
-          state.certificadoDomain.sortDirection = cycleSortDirection(
-            state.certificadoDomain.sortDirection
-          );
-        } else {
-          state.certificadoDomain.sortColumn = col;
-          state.certificadoDomain.sortDirection = 'asc';
-        }
-        render();
-      }
-    });
-  });
-
-  // 5. Facet: Standard (Norma ISO)
-  document.querySelectorAll<HTMLElement>('[data-cert-filter-standard]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.certificadoDomain.selectedStandard = btn.dataset.certFilterStandard || 'ALL';
+      if (!isApprovedStaff()) return;
+      state.certificadoDomain.isCreating = true;
+      state.certificadoDomain.createErrorMessage = null;
       render();
     });
   });
 
-  // 6. Facet: Status (Estatus Operativo)
-  document.querySelectorAll<HTMLElement>('[data-cert-filter-status]').forEach((btn) => {
+  document.querySelectorAll<HTMLElement>('[data-action="close-create-cert"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.certificadoDomain.selectedStatus = btn.dataset.certFilterStatus || 'ALL';
+      state.certificadoDomain.isCreating = false;
+      state.certificadoDomain.createErrorMessage = null;
       render();
     });
   });
 
-  // 7. Facet: IAF Technical Sector
-  document.querySelectorAll<HTMLElement>('[data-cert-filter-iaf]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.certificadoDomain.selectedSectorIaf = btn.dataset.certFilterIaf || 'ALL';
-      render();
-    });
-  });
+  document.getElementById('createCertificadoForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!isApprovedStaff()) return;
+    const orgId =
+      (document.getElementById('createCertOrgSelect') as HTMLSelectElement | null)?.value || '';
+    const numeroCert =
+      (document.getElementById('createCertNumeroInput') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const normaCodigo =
+      (document.getElementById('createCertNormaSelect') as HTMLSelectElement | null)?.value ||
+      'ISO 9001:2015';
+    const estatus =
+      (document.getElementById('createCertEstatusSelect') as HTMLSelectElement | null)?.value ||
+      'Activo';
+    const sectorRaw =
+      (document.getElementById('createCertSectorSelect') as HTMLSelectElement | null)?.value ||
+      '17|Metales básicos y productos metálicos';
+    const fechaEmision =
+      (document.getElementById('createCertFechaEmisionInput') as HTMLInputElement | null)?.value ||
+      '';
+    const fechaVencimiento =
+      (document.getElementById('createCertFechaVencimientoInput') as HTMLInputElement | null)
+        ?.value || '';
+    const alcance =
+      (document.getElementById('createCertAlcanceInput') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const multisitio = Boolean(
+      (document.getElementById('createCertMultisitioCheckbox') as HTMLInputElement | null)?.checked
+    );
 
-  // 8. Search input & clear/reset
-  const certSearchInput = document.getElementById('certDirectorySearchInput') as HTMLInputElement | null;
-  certSearchInput?.addEventListener('input', (e) => {
-    state.certificadoDomain.query = (e.target as HTMLInputElement).value;
-    render();
-  });
-  certSearchInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      state.certificadoDomain.query = '';
+    if (numeroCert.length < 3) {
+      state.certificadoDomain.createErrorMessage =
+        'El número de certificado debe tener al menos 3 caracteres.';
       render();
+      return;
     }
-  });
-  document.getElementById('clearCertSearchBtn')?.addEventListener('click', () => {
-    state.certificadoDomain.query = '';
-    render();
-  });
-  document.querySelectorAll<HTMLElement>('#resetCertFiltersBtn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.certificadoDomain.query = '';
-      state.certificadoDomain.selectedStandard = 'ALL';
-      state.certificadoDomain.selectedStatus = 'ALL';
-      state.certificadoDomain.selectedSectorIaf = 'ALL';
+
+    const duplicateNum = state.domainData.allCertificadosDetailed.some(
+      (c) => c.numero_certificado.trim().toUpperCase() === numeroCert.toUpperCase()
+    );
+    if (duplicateNum) {
+      state.certificadoDomain.createErrorMessage =
+        'Ya existe un certificado registrado con ese número.';
       render();
+      return;
+    }
+
+    const alcanceCheck = validateAlcance(alcance);
+    if (!alcanceCheck.valid) {
+      state.certificadoDomain.createErrorMessage =
+        alcanceCheck.error || 'El alcance debe tener al menos 10 caracteres.';
+      render();
+      return;
+    }
+
+    if (!fechaEmision || !fechaVencimiento || fechaVencimiento < fechaEmision) {
+      state.certificadoDomain.createErrorMessage =
+        'La fecha de vencimiento debe ser posterior a la fecha de emisión.';
+      render();
+      return;
+    }
+
+    const matchedOrg = state.domainData.allOrganizaciones.find((o) => o.id === orgId);
+    const matchedNorma = INITIAL_NORMAS.find(
+      (n) => n.codigo === normaCodigo || n.norma === normaCodigo
+    );
+    const [sectorNumStr, sectorDesc] = sectorRaw.split('|');
+    const sectorNum = Number(sectorNumStr) || 17;
+    const matchedSector = INITIAL_SECTORES_IAF.find((s) => s.sector === sectorNum);
+    const matchedEstatus = INITIAL_ESTATUS_CATALOG.find(
+      (est) => est.estatus.toLowerCase() === estatus.toLowerCase()
+    );
+
+    const newId = crypto.randomUUID();
+    const newCert: CertificadoDetailEntity = {
+      id: newId,
+      numero_certificado: numeroCert,
+      id_organizacion: matchedOrg?.id || orgId,
+      organizacion_nombre: matchedOrg?.nombre || 'Organización Cliente',
+      organizacion_rif: matchedOrg?.rif || 'J-00000000-0',
+      direccion_fiscal: matchedOrg?.direccion_fiscal,
+      id_norma: matchedNorma?.id || INITIAL_NORMAS[0]?.id || newId,
+      norma_codigo: matchedNorma?.codigo || normaCodigo,
+      norma_titulo: matchedNorma?.titulo || normaCodigo,
+      esquema: matchedNorma?.esquema || 'SGC - Calidad',
+      id_estatus: matchedEstatus?.id || INITIAL_ESTATUS_CATALOG[0]?.id || newId,
+      estatus,
+      id_sector_iaf: matchedSector?.id || INITIAL_SECTORES_IAF[0]?.id || newId,
+      sector_iaf: sectorNum,
+      sector_iaf_descripcion: sectorDesc || matchedSector?.descripcion || `Sector ${sectorNum}`,
+      fecha_emision: fechaEmision,
+      fecha_vencimiento: fechaVencimiento,
+      alcance,
+      multisitio,
+      sitios: [],
+      procesos: [],
+      turnos: [],
+      noAplicables: [],
+      auditorias: [],
+    };
+
+    state.domainData.allCertificadosDetailed = [
+      newCert,
+      ...state.domainData.allCertificadosDetailed,
+    ];
+    state.exploration.records = [
+      {
+        id: newId,
+        numero_certificado: numeroCert,
+        organizacion_id: newCert.id_organizacion,
+        organizacion_nombre: newCert.organizacion_nombre,
+        organizacion_rif: newCert.organizacion_rif,
+        norma: newCert.norma_codigo,
+        esquema: newCert.esquema,
+        estatus: newCert.estatus,
+        sector_iaf: newCert.sector_iaf,
+        alcance: newCert.alcance,
+        fecha_emision: newCert.fecha_emision,
+        fecha_vencimiento: newCert.fecha_vencimiento,
+        multisitio: newCert.multisitio,
+        sitios_count: 0,
+        cobertura_porcentaje: 100,
+      },
+      ...state.exploration.records,
+    ];
+    state.certificadoDomain.isCreating = false;
+    state.certificadoDomain.createErrorMessage = null;
+
+    recordPhase5SessionLog('certificado', newId, 'INSERT', null, {
+      numero_certificado: numeroCert,
+      norma_codigo: newCert.norma_codigo,
+      estatus,
+      sector_iaf: sectorNum,
     });
+
+    render();
   });
 
   // 9. Child tab switching (5 specialized child modules)
@@ -2957,89 +3292,124 @@ function bindAuthenticatedEvents(): void {
     });
   });
 
-  // 3. View mode toggle (grid | list)
-  document.querySelectorAll<HTMLElement>('[data-auditor-view-mode]').forEach((btn) => {
+  // 3. Inline Creation Form: Auditores
+  document.querySelectorAll<HTMLElement>('[data-action="open-create-auditor"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const mode = btn.dataset.auditorViewMode;
-      if (mode === 'grid' || mode === 'list') {
-        state.auditorDomain.viewMode = mode;
-        render();
-      }
-    });
-  });
-
-  // 4. Excel-style column sorting
-  document.querySelectorAll<HTMLElement>('[data-action="sort-auditor"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const col = btn.dataset.column as
-        | 'nombre'
-        | 'codigo_credencial'
-        | 'calificacion'
-        | 'normas'
-        | 'sectores'
-        | undefined;
-      if (col) {
-        if (state.auditorDomain.sortColumn === col) {
-          state.auditorDomain.sortDirection = cycleSortDirection(
-            state.auditorDomain.sortDirection
-          );
-        } else {
-          state.auditorDomain.sortColumn = col;
-          state.auditorDomain.sortDirection = 'asc';
-        }
-        render();
-      }
-    });
-  });
-
-  // 5. Facet: Calificación status
-  document.querySelectorAll<HTMLElement>('[data-auditor-filter-calificacion]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.auditorDomain.selectedCalificacion = btn.dataset.auditorFilterCalificacion || 'ALL';
+      if (!isApprovedStaff()) return;
+      state.auditorDomain.isCreating = true;
+      state.auditorDomain.createErrorMessage = null;
       render();
     });
   });
 
-  // 6. Facet: Standard (Norma ISO)
-  document.querySelectorAll<HTMLElement>('[data-auditor-filter-standard]').forEach((btn) => {
+  document.querySelectorAll<HTMLElement>('[data-action="close-create-auditor"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.auditorDomain.selectedStandard = btn.dataset.auditorFilterStandard || 'ALL';
+      state.auditorDomain.isCreating = false;
+      state.auditorDomain.createErrorMessage = null;
       render();
     });
   });
 
-  // 7. Facet: IAF Sector
-  document.querySelectorAll<HTMLElement>('[data-auditor-filter-iaf]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.auditorDomain.selectedSectorIaf = btn.dataset.auditorFilterIaf || 'ALL';
-      render();
-    });
-  });
+  document.getElementById('createAuditorForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!isApprovedStaff()) return;
+    const nombre =
+      (document.getElementById('createAuditorNombreInput') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const titulo =
+      (document.getElementById('createAuditorTituloInput') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const credencial =
+      (
+        document.getElementById('createAuditorCredencialInput') as HTMLInputElement | null
+      )?.value.trim() || '';
+    const email =
+      (document.getElementById('createAuditorEmailInput') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const telefono =
+      (document.getElementById('createAuditorTelefonoInput') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const calificacionRaw =
+      (document.getElementById('createAuditorCalificacionSelect') as HTMLSelectElement | null)
+        ?.value || 'Calificado';
+    const normasRaw =
+      (document.getElementById('createAuditorNormasInput') as HTMLInputElement | null)?.value || '';
+    const sectoresRaw =
+      (document.getElementById('createAuditorSectoresInput') as HTMLInputElement | null)?.value ||
+      '';
 
-  // 8. Search input & clear/reset
-  const audSearchInput = document.getElementById('auditorDirectorySearchInput') as HTMLInputElement | null;
-  audSearchInput?.addEventListener('input', (e) => {
-    state.auditorDomain.query = (e.target as HTMLInputElement).value;
-    render();
-  });
-  audSearchInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      state.auditorDomain.query = '';
+    if (nombre.length < 2) {
+      state.auditorDomain.createErrorMessage =
+        'El nombre completo del auditor debe tener al menos 2 caracteres.';
       render();
+      return;
     }
-  });
-  document.getElementById('clearAuditorSearchBtn')?.addEventListener('click', () => {
-    state.auditorDomain.query = '';
-    render();
-  });
-  document.querySelectorAll<HTMLElement>('#resetAuditorFiltersBtn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.auditorDomain.query = '';
-      state.auditorDomain.selectedCalificacion = 'ALL';
-      state.auditorDomain.selectedStandard = 'ALL';
-      state.auditorDomain.selectedSectorIaf = 'ALL';
+    if (credencial.length < 3) {
+      state.auditorDomain.createErrorMessage =
+        'El código de credencial es obligatorio (mínimo 3 caracteres).';
       render();
+      return;
+    }
+    if (!email.includes('@')) {
+      state.auditorDomain.createErrorMessage = 'Ingrese un correo electrónico válido.';
+      render();
+      return;
+    }
+
+    const normas = normasRaw
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    const sectores = sectoresRaw
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0);
+
+    const calificacion: AuditorDetailEntity['calificacion'] =
+      calificacionRaw === 'En Entrenamiento' || calificacionRaw === 'Observador'
+        ? calificacionRaw
+        : 'Calificado';
+
+    const newId = crypto.randomUUID();
+    const newAuditor: AuditorDetailEntity = {
+      id: newId,
+      nombre,
+      titulo_profesional: titulo || 'Auditor de Sistemas de Gestión',
+      codigo_credencial: credencial,
+      email,
+      telefono,
+      biografia: '',
+      instituto_registro: 'FONDONORMA',
+      categoria_profesional:
+        calificacion === 'Calificado' ? 'Auditor Líder Certificado' : calificacion,
+      calificacion,
+      normas_acreditadas: normas.length > 0 ? normas : ['ISO 9001:2015'],
+      sectores_iaf: sectores.length > 0 ? sectores : [17],
+      competencias: [],
+      historialAuditorias: [],
+    };
+
+    state.domainData.allAuditorsDetailed = [newAuditor, ...state.domainData.allAuditorsDetailed];
+    state.domainData.auditors = [
+      {
+        id: newId,
+        nombre,
+        rol: newAuditor.categoria_profesional,
+        normas: newAuditor.normas_acreditadas,
+        sectores_iaf: newAuditor.sectores_iaf,
+      },
+      ...state.domainData.auditors,
+    ];
+    state.auditorDomain.isCreating = false;
+    state.auditorDomain.createErrorMessage = null;
+
+    recordPhase5SessionLog('auditor', newId, 'INSERT', null, {
+      nombre,
+      codigo_credencial: credencial,
+      calificacion,
     });
+
+    render();
   });
 
   // 9. Child tab switching (Matriz de Competencias | Historial de Auditorías)
@@ -3177,72 +3547,7 @@ function bindPhase5AuditoriasEvents(): void {
   const canPlan = canEditAuditScheduleOrTeam(state.profile);
   const canEditSchedule = canEditAuditScheduleOrTeam(state.profile);
 
-  // --- A. Programación de Auditorías ---
-  const progSearch = document.getElementById('programacionSearchInput') as HTMLInputElement | null;
-  progSearch?.addEventListener('input', (e) => {
-    state.programacionDomain.query = (e.target as HTMLInputElement).value;
-    render();
-  });
-  progSearch?.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      state.programacionDomain.query = '';
-      render();
-    }
-  });
-  document.getElementById('clearProgramacionSearchBtn')?.addEventListener('click', () => {
-    state.programacionDomain.query = '';
-    render();
-  });
-
-  const resetProgFilters = () => {
-    state.programacionDomain.query = '';
-    state.programacionDomain.selectedTipo = 'ALL';
-    state.programacionDomain.selectedMetodologia = 'ALL';
-    state.programacionDomain.selectedEstatus = 'ALL';
-    state.programacionDomain.selectedAuditorLider = 'ALL';
-    render();
-  };
-  document.getElementById('resetProgFiltersBtn')?.addEventListener('click', resetProgFilters);
-  document.getElementById('resetProgFiltersEmptyBtn')?.addEventListener('click', resetProgFilters);
-
-  document.querySelectorAll<HTMLElement>('[data-prog-view-mode]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const mode = btn.dataset.progViewMode;
-      if (mode === 'grid' || mode === 'list') {
-        state.programacionDomain.viewMode = mode;
-        render();
-      }
-    });
-  });
-
-  document.querySelectorAll<HTMLElement>('[data-prog-facet]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const group = btn.dataset.progFacet;
-      const val = btn.dataset.progFacetValue || 'ALL';
-      if (group === 'tipo') state.programacionDomain.selectedTipo = val;
-      else if (group === 'metodologia') state.programacionDomain.selectedMetodologia = val;
-      else if (group === 'estatus') state.programacionDomain.selectedEstatus = val;
-      else if (group === 'auditor') state.programacionDomain.selectedAuditorLider = val;
-      render();
-    });
-  });
-
-  document.querySelectorAll<HTMLElement>('[data-prog-sort]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const col = btn.dataset.progSort as ProgramacionViewState['sortColumn'] | undefined;
-      if (!col) return;
-      if (state.programacionDomain.sortColumn === col) {
-        state.programacionDomain.sortDirection = cycleSortDirection(
-          state.programacionDomain.sortDirection
-        );
-      } else {
-        state.programacionDomain.sortColumn = col;
-        state.programacionDomain.sortDirection = 'asc';
-      }
-      render();
-    });
-  });
+  // --- A. Programación de Auditorías --- (Directory controls handled by bindMultiViewDirectoryControls)
 
   document.querySelectorAll<HTMLElement>('[data-action="select-prog-audit"]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -4171,6 +4476,10 @@ function bindPhase5AuditoriasEvents(): void {
       state.resultadoDomain.searchQuery = '';
       render();
     }
+  });
+  document.getElementById('clearResultadoSearchBtn')?.addEventListener('click', () => {
+    state.resultadoDomain.searchQuery = '';
+    render();
   });
 
   document.getElementById('resultadoBoardAuditFilter')?.addEventListener('change', (e) => {
@@ -5184,6 +5493,8 @@ function resetClientSessionState(): void {
     isAddingTeamMember: false,
     editErrorMessage: null,
     saveSuccessMessage: null,
+    isSidebarOpen: true,
+    facetSelections: {},
   };
   state.calendarioDomain = {
     displayMode: 'month',
@@ -5207,6 +5518,24 @@ function resetClientSessionState(): void {
     recommendationSuccess: null,
     findingFormError: null,
   };
+  state.organizacionDomain = {
+    selectedOrganizacionId: null,
+    query: '',
+    hasActiveCertificates: 'ALL',
+    selectedSectorIaf: 'ALL',
+    viewMode: 'grid',
+    sortColumn: null,
+    sortDirection: 'none',
+    isEditingAttributes: false,
+    activeChildTab: 'certificados',
+    editFormData: undefined,
+    editErrorMessage: null,
+    saveSuccessMessage: null,
+    isSidebarOpen: true,
+    facetSelections: {},
+    isCreating: false,
+    createErrorMessage: null,
+  };
   state.certificadoDomain = {
     selectedCertId: null,
     activeChildTab: 'sitios',
@@ -5222,6 +5551,10 @@ function resetClientSessionState(): void {
     editErrorMessage: null,
     saveSuccessMessage: null,
     originatingOrganizacionId: null,
+    isSidebarOpen: true,
+    facetSelections: {},
+    isCreating: false,
+    createErrorMessage: null,
   };
   state.auditorDomain = {
     selectedAuditorId: null,
@@ -5237,6 +5570,59 @@ function resetClientSessionState(): void {
     editFormData: undefined,
     editErrorMessage: null,
     saveSuccessMessage: null,
+    isSidebarOpen: true,
+    facetSelections: {},
+    isCreating: false,
+    createErrorMessage: null,
+  };
+  state.extraDomain = {
+    selectedNormaId: null,
+    activeNormaTab: 'acreditacion',
+    normaSearchQuery: '',
+    normaFilterStatus: 'ALL',
+    normaFilterScheme: 'ALL',
+    normaViewMode: 'grid',
+    normaSortColumn: null,
+    normaSortDirection: 'none',
+    normaIsSidebarOpen: true,
+    normaFacetSelections: {},
+    isAddAccreditationModalOpen: false,
+    inspectingClauseId: null,
+
+    selectedSectorId: null,
+    activeSectorTab: 'subsectores',
+    iafSearchQuery: '',
+    iafFilterRisk: 'ALL',
+    iafViewMode: 'grid',
+    iafSortColumn: null,
+    iafSortDirection: 'none',
+    iafIsSidebarOpen: true,
+    iafFacetSelections: {},
+    isAddSubsectorModalOpen: false,
+
+    selectedEstatusId: null,
+    estatusSearchQuery: '',
+    estatusViewMode: 'grid',
+    estatusSortColumn: null,
+    estatusSortDirection: 'none',
+    estatusIsSidebarOpen: true,
+    estatusFacetSelections: {},
+
+    selectedTipoId: null,
+    tipoSearchQuery: '',
+    tipoViewMode: 'grid',
+    tipoSortColumn: null,
+    tipoSortDirection: 'none',
+    tipoIsSidebarOpen: true,
+    tipoFacetSelections: {},
+
+    selectedMetodologiaId: null,
+    metodologiaSearchQuery: '',
+    metodologiaViewMode: 'grid',
+    metodologiaSortColumn: null,
+    metodologiaSortDirection: 'none',
+    metodologiaIsSidebarOpen: true,
+    metodologiaFacetSelections: {},
   };
   state.auth = {
     ...state.auth,

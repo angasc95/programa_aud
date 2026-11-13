@@ -2,18 +2,21 @@ import { escapeHtml } from '../lib/html';
 import type { UserProfile } from '../lib/healthCheck';
 import {
   countActiveCertificates,
-  filterOrganizaciones,
   formatActiveCertificateBadge,
   getCertificatesByOrganizacion,
   type CertificadoSummary,
   type OrganizacionEntity,
-  type OrganizacionFilterOptions,
 } from '../lib/activeCertificates';
 import {
-  cycleSortDirection,
-  renderSortIndicator,
+  computeReactiveFacetCounts,
+  filterRecordsWithFacets,
+  sortItems,
+  type ColumnDefinition,
+  type MultiViewFacetCategory,
+  type MultiViewSelectionMap,
   type SortDirection,
 } from '../lib/universalTemplate';
+import { renderUniversalTemplate } from './universalTemplate';
 
 export interface OrganizacionViewState {
   selectedOrganizacionId: string | null;
@@ -28,6 +31,10 @@ export interface OrganizacionViewState {
   editFormData?: Partial<OrganizacionEntity>;
   editErrorMessage?: string | null;
   saveSuccessMessage?: string | null;
+  isSidebarOpen?: boolean;
+  facetSelections?: MultiViewSelectionMap;
+  isCreating?: boolean;
+  createErrorMessage?: string | null;
 }
 
 export interface OrganizacionViewProps {
@@ -40,7 +47,9 @@ export interface OrganizacionViewProps {
 
 export function renderOrganizacionView(props: OrganizacionViewProps): string {
   const { profile, state, organizaciones, certificados, loading } = props;
-  const isStaff = profile.role === 'ADMIN' || profile.role === 'WORKER';
+  const isStaff =
+    (profile.role === 'ADMIN' || profile.role === 'WORKER') &&
+    (!profile.status || profile.status === 'APPROVED');
 
   // If an organization is selected, render the Standardized 4-Zone Detail Page
   if (state.selectedOrganizacionId) {
@@ -58,7 +67,7 @@ export function renderOrganizacionView(props: OrganizacionViewProps): string {
     }
   }
 
-  // Otherwise render Universal List / Grid Directory View
+  // Otherwise render Universal Multi View Directory
   return renderOrganizacionDirectoryView({
     profile,
     state,
@@ -69,8 +78,104 @@ export function renderOrganizacionView(props: OrganizacionViewProps): string {
   });
 }
 
+function renderCreateOrganizacionForm(
+  organizaciones: OrganizacionEntity[],
+  errorMessage?: string | null
+): string {
+  const sectorMap = new Map<number, string>();
+  for (const org of organizaciones) {
+    if (org.sector_iaf_numero) {
+      sectorMap.set(org.sector_iaf_numero, org.sector_principal || `Sector ${org.sector_iaf_numero}`);
+    }
+  }
+  const sectorOptions = Array.from(sectorMap.entries())
+    .sort(([a], [b]) => a - b)
+    .map(
+      ([num, desc]) =>
+        `<option value="${num}|${escapeHtml(desc)}">Sector ${num} · ${escapeHtml(desc)}</option>`
+    )
+    .join('');
+
+  return `
+    <div class="bg-emerald-50/70 border border-emerald-200 rounded-xl p-4 sm:p-5 space-y-4">
+      <div class="flex items-center justify-between gap-2">
+        <h2 class="text-sm font-bold text-slate-900">Registrar Nueva Organización Cliente</h2>
+        <button
+          type="button"
+          data-action="close-create-org"
+          class="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+        >
+          ✕ Cancelar
+        </button>
+      </div>
+      ${
+        errorMessage
+          ? `<div class="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-medium text-rose-800">${escapeHtml(errorMessage)}</div>`
+          : ''
+      }
+      <form id="createOrganizacionForm" class="space-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label for="createOrgNombreInput" class="block text-xs font-semibold text-slate-700 mb-1">Razón Social *</label>
+            <input id="createOrgNombreInput" type="text" required placeholder="Ej. Industrias Alfa C.A." class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2" />
+          </div>
+          <div>
+            <label for="createOrgRifInput" class="block text-xs font-semibold text-slate-700 mb-1">RIF / NIF *</label>
+            <input id="createOrgRifInput" type="text" required placeholder="Ej. J-30998877-1" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2 font-mono" />
+          </div>
+          <div>
+            <label for="createOrgSectorSelect" class="block text-xs font-semibold text-slate-700 mb-1">Sector IAF Principal *</label>
+            <select id="createOrgSectorSelect" required class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2">
+              ${sectorOptions || '<option value="17|Metales básicos y productos metálicos">Sector 17 · Metales básicos y productos metálicos</option>'}
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label for="createOrgContactoInput" class="block text-xs font-semibold text-slate-700 mb-1">Contacto Principal</label>
+            <input id="createOrgContactoInput" type="text" placeholder="Nombre del representante" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2" />
+          </div>
+          <div>
+            <label for="createOrgCorreoInput" class="block text-xs font-semibold text-slate-700 mb-1">Correo Corporativo</label>
+            <input id="createOrgCorreoInput" type="email" placeholder="calidad@empresa.com" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2" />
+          </div>
+          <div>
+            <label for="createOrgTelefonoInput" class="block text-xs font-semibold text-slate-700 mb-1">Teléfono</label>
+            <input id="createOrgTelefonoInput" type="text" placeholder="+58 212 555 0100" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2" />
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="sm:col-span-2">
+            <label for="createOrgDireccionInput" class="block text-xs font-semibold text-slate-700 mb-1">Dirección Fiscal *</label>
+            <input id="createOrgDireccionInput" type="text" required placeholder="Zona Industrial, Parcela 14..." class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2" />
+          </div>
+          <div>
+            <label for="createOrgGrupoInput" class="block text-xs font-semibold text-slate-700 mb-1">Grupo Corporativo</label>
+            <input id="createOrgGrupoInput" type="text" placeholder="Independiente" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2" />
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button
+            type="button"
+            data-action="close-create-org"
+            class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold cursor-pointer"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer"
+          >
+            Guardar Organización
+          </button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
 /**
- * Renders the Universal List / Grid Directory View for Organizaciones
+ * Renders the Universal Multi View Directory for Organizaciones
  */
 function renderOrganizacionDirectoryView(props: {
   profile: UserProfile;
@@ -80,581 +185,308 @@ function renderOrganizacionDirectoryView(props: {
   isStaff: boolean;
   loading?: boolean;
 }): string {
-  const { state, organizaciones, certificados, loading } = props;
-
-  // Filter & sort organizations
-  const filteredOrgs = filterOrganizaciones(organizaciones, certificados, {
-    query: state.query,
-    hasActiveCertificates: state.hasActiveCertificates,
-    selectedSectorIaf: state.selectedSectorIaf,
-    sortColumn: state.sortColumn,
-    sortDirection: state.sortDirection,
-  });
-
-  const totalOrgs = organizaciones.length;
-  const matchCount = filteredOrgs.length;
+  const { state, organizaciones, certificados, isStaff, loading } = props;
 
   // Compute unique IAF sectors represented across organizations
   const sectorMap = new Map<number, string>();
-  organizaciones.forEach((o) => {
-    if (o.sector_iaf_numero) {
-      sectorMap.set(
-        o.sector_iaf_numero,
-        o.sector_principal || `Sector ${o.sector_iaf_numero}`
-      );
+  for (const org of organizaciones) {
+    if (org.sector_iaf_numero) {
+      sectorMap.set(org.sector_iaf_numero, org.sector_principal || `Sector ${org.sector_iaf_numero}`);
     }
-  });
+  }
+  const sectorEntries = Array.from(sectorMap.entries()).sort(([a], [b]) => a - b);
 
-  const sectorEntries = Array.from(sectorMap.entries()).sort(
-    ([a], [b]) => a - b
+  const facetCategories: MultiViewFacetCategory<OrganizacionEntity>[] = [
+    {
+      id: 'vigencia',
+      label: 'Vigencia de Certificados',
+      options: [
+        { value: 'WITH_ACTIVE', label: 'Con Certificados Activos' },
+        { value: 'WITHOUT_ACTIVE', label: 'Sin Certificados Activos' },
+      ],
+      extractValues: (org) =>
+        countActiveCertificates(certificados, org.id) > 0 ? 'WITH_ACTIVE' : 'WITHOUT_ACTIVE',
+    },
+    {
+      id: 'sector_iaf',
+      label: 'Sector IAF',
+      options: sectorEntries.map(([secNum, secDesc]) => ({
+        value: String(secNum),
+        label: `Sector ${secNum} · ${secDesc}`,
+      })),
+      extractValues: (org) => (org.sector_iaf_numero ? String(org.sector_iaf_numero) : null),
+    },
+  ];
+
+  // Backwards-compatible fallback when facetSelections is not yet initialized
+  const effectiveSelections: MultiViewSelectionMap = state.facetSelections
+    ? state.facetSelections
+    : {
+        vigencia:
+          state.hasActiveCertificates !== 'ALL'
+            ? new Set([state.hasActiveCertificates])
+            : new Set<string>(),
+        sector_iaf:
+          state.selectedSectorIaf !== 'ALL'
+            ? new Set([state.selectedSectorIaf])
+            : new Set<string>(),
+      };
+
+  const searchOptions = {
+    getSearchableText: (org: OrganizacionEntity) =>
+      [
+        org.nombre,
+        org.rif,
+        org.direccion_fiscal || '',
+        org.contacto_principal || '',
+        org.correo_contacto || '',
+        org.grupo_corporativo || '',
+        org.sector_principal || '',
+      ].join(' '),
+  };
+
+  const filteredOrgs = filterRecordsWithFacets(
+    organizaciones,
+    state.query,
+    facetCategories,
+    effectiveSelections,
+    searchOptions
   );
 
-  return `
-    <div class="space-y-6">
-      <!-- Header Banner & Operational Context -->
-      <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 mb-1.5">
-            <span>🏢</span>
-            <span>DOMINIO CERTIFICACIÓN · FASE 4.1</span>
+  const sortedOrgs = sortItems(
+    filteredOrgs,
+    state.sortColumn,
+    state.sortDirection,
+    (org, col) => {
+      switch (col) {
+        case 'nombre':
+          return org.nombre;
+        case 'rif':
+          return org.rif;
+        case 'sector':
+          return org.sector_iaf_numero || 0;
+        case 'certificados_activos':
+          return countActiveCertificates(certificados, org.id);
+        default:
+          return '';
+      }
+    }
+  );
+
+  const facetGroups = computeReactiveFacetCounts(
+    organizaciones,
+    state.query,
+    facetCategories,
+    effectiveSelections,
+    searchOptions
+  );
+
+  const columns: ColumnDefinition<OrganizacionEntity>[] = [
+    {
+      id: 'nombre',
+      header: 'Organización',
+      sortable: true,
+      renderCell: (org) => `
+        <button
+          type="button"
+          data-action="select-org"
+          data-org-id="${escapeHtml(org.id)}"
+          class="text-left group cursor-pointer"
+        >
+          <span class="block font-bold text-slate-900 group-hover:text-emerald-700 group-hover:underline transition-colors">
+            ${escapeHtml(org.nombre)}
+          </span>
+          <span class="block text-[10px] text-slate-400">
+            ${escapeHtml(org.grupo_corporativo || 'Independiente')}
+          </span>
+        </button>
+      `,
+    },
+    {
+      id: 'rif',
+      header: 'RIF / NIF',
+      sortable: true,
+      renderCell: (org) => `
+        <span class="font-mono font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 whitespace-nowrap">
+          ${escapeHtml(org.rif)}
+        </span>
+      `,
+    },
+    {
+      id: 'contacto',
+      header: 'Contacto Principal',
+      sortable: false,
+      renderCell: (org) => `
+        <div class="font-medium text-slate-800 max-w-[170px] truncate">${escapeHtml(org.contacto_principal || '—')}</div>
+        <div class="text-[11px] text-slate-500 font-mono max-w-[170px] truncate" title="${escapeHtml(org.correo_contacto || '')}">${escapeHtml(org.correo_contacto || '')}</div>
+      `,
+    },
+    {
+      id: 'sector',
+      header: 'Sector Principal',
+      sortable: true,
+      renderCell: (org) => `
+        <span class="inline-block max-w-[200px] leading-snug px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
+          Sector ${org.sector_iaf_numero || '—'}: ${escapeHtml(org.sector_principal || 'General')}
+        </span>
+      `,
+    },
+    {
+      id: 'certificados_activos',
+      header: 'Certificados Activos',
+      sortable: true,
+      align: 'center',
+      renderCell: (org) => {
+        const activeCount = countActiveCertificates(certificados, org.id);
+        const activeBadge = formatActiveCertificateBadge(activeCount);
+        const totalCerts = getCertificatesByOrganizacion(certificados, org.id).length;
+        return `
+          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap ${activeBadge.badgeClass}">
+            <span>${activeBadge.symbol}</span>
+            <span>${activeCount} de ${totalCerts}</span>
+          </span>
+        `;
+      },
+    },
+    {
+      id: 'acciones',
+      header: 'Acciones',
+      sortable: false,
+      align: 'right',
+      renderCell: (org) => `
+        <button
+          type="button"
+          data-action="select-org"
+          data-org-id="${escapeHtml(org.id)}"
+          class="text-xs font-bold text-emerald-700 hover:text-emerald-900 hover:underline cursor-pointer whitespace-nowrap"
+        >
+          Ver Ficha →
+        </button>
+      `,
+    },
+  ];
+
+  const renderCard = (org: OrganizacionEntity): string => {
+    const activeCount = countActiveCertificates(certificados, org.id);
+    const activeBadge = formatActiveCertificateBadge(activeCount);
+    const totalOrgCerts = getCertificatesByOrganizacion(certificados, org.id).length;
+
+    return `
+      <div
+        data-action="select-org"
+        data-org-id="${escapeHtml(org.id)}"
+        class="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs hover:shadow-md hover:border-emerald-300 transition-all cursor-pointer flex flex-col justify-between space-y-4 group"
+      >
+        <div class="space-y-2">
+          <div class="flex items-start justify-between gap-3">
+            <div class="space-y-1 flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-base" aria-hidden="true">🏢</span>
+                <h3 class="text-sm font-bold text-slate-900 group-hover:text-emerald-700 transition-colors truncate">
+                  ${escapeHtml(org.nombre)}
+                </h3>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                  RIF: ${escapeHtml(org.rif)}
+                </span>
+                <span class="text-[10px] text-slate-400">·</span>
+                <span class="text-[11px] font-medium text-slate-500 truncate">
+                  ${escapeHtml(org.grupo_corporativo || 'Independiente')}
+                </span>
+              </div>
+            </div>
+
+            <span class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full border shrink-0 ${activeBadge.badgeClass}">
+              <span>${activeBadge.symbol}</span>
+              <span>${activeCount} Activos</span>
+            </span>
           </div>
-          <h2 class="text-xl font-bold text-slate-900 tracking-tight">Directorio de Organizaciones Clientes</h2>
-          <p class="text-xs text-slate-500 mt-0.5">
-            Empresas titulares de sistemas de gestión certificados, RIF fiscal y métricas de certificados activos bajo ISO/IEC 17021-1:2015
-          </p>
+
+          <div class="pt-1">
+            <span class="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded">
+              <span aria-hidden="true">🏭</span>
+              <span>Sector ${org.sector_iaf_numero || '—'}: ${escapeHtml(org.sector_principal || 'No especificado')}</span>
+            </span>
+          </div>
         </div>
 
-        <div class="flex items-center gap-3">
-          <!-- Total organizations badge -->
-          <span class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-700 text-xs font-bold rounded-lg border border-slate-200 shadow-2xs">
-            <span class="text-slate-400">Total:</span>
-            <span class="font-mono text-slate-900">${totalOrgs}</span>
-            <span class="text-slate-400">empresas</span>
+        <div class="text-xs text-slate-600 space-y-1.5 pt-3 border-t border-slate-100">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-slate-400">Contacto:</span>
+            <span class="font-medium text-slate-800 truncate">${escapeHtml(org.contacto_principal || 'No registrado')}</span>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-slate-400">Correo:</span>
+            <span class="font-mono text-slate-700 truncate max-w-[180px]">${escapeHtml(org.correo_contacto || '—')}</span>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-slate-400">Teléfono:</span>
+            <span class="font-mono text-slate-700">${escapeHtml(org.telefono_contacto || '—')}</span>
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
+          <span class="text-[11px] text-slate-500">
+            Total Certificados: <strong class="text-slate-900 tabular-nums">${totalOrgCerts}</strong>
+          </span>
+          <span class="text-xs font-bold text-emerald-700 group-hover:underline flex items-center gap-1">
+            <span>Ver Ficha</span>
+            <span>→</span>
           </span>
         </div>
       </div>
+    `;
+  };
 
-      <!-- Main Directory Layout: Sidebar Facets + Content Area -->
-      <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-        <!-- Sidebar Facets Panel -->
-        <aside aria-label="Filtros y Facetas" class="lg:col-span-1 space-y-4">
-          <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-4">
-            <div class="flex items-center justify-between pb-2 border-b border-slate-200">
-              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                <span>⚡</span>
-                <span>Filtros y Facetas</span>
-              </h3>
-              ${
-                state.query ||
-                state.hasActiveCertificates !== 'ALL' ||
-                state.selectedSectorIaf !== 'ALL'
-                  ? `
-                <button
-                  type="button"
-                  id="resetOrgFiltersBtn"
-                  class="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
-                >
-                  Restablecer
-                </button>
-              `
-                  : ''
-              }
-            </div>
+  const actionsHtml = isStaff
+    ? `
+      <button
+        type="button"
+        data-action="open-create-org"
+        class="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+      >
+        <span aria-hidden="true">+</span>
+        <span>Nueva Organización</span>
+      </button>
+    `
+    : '';
 
-            <!-- Facet 1: Active Certificate Presence -->
-            <div class="space-y-2">
-              <label class="block text-xs font-bold text-slate-700">Certificados Activos</label>
-              <div class="space-y-1">
-                <button
-                  type="button"
-                  data-org-filter-active="ALL"
-                  class="w-full flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                    state.hasActiveCertificates === 'ALL'
-                      ? 'bg-slate-900 text-white font-bold'
-                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span>Todas las Empresas</span>
-                  <span class="text-[10px] font-mono px-1.5 py-0.2 rounded ${
-                    state.hasActiveCertificates === 'ALL'
-                      ? 'bg-slate-800 text-slate-200'
-                      : 'bg-slate-200 text-slate-700'
-                  }">
-                    ${totalOrgs}
-                  </span>
-                </button>
+  const inlineFormHtml =
+    isStaff && state.isCreating
+      ? renderCreateOrganizacionForm(organizaciones, state.createErrorMessage)
+      : '';
 
-                <button
-                  type="button"
-                  data-org-filter-active="WITH_ACTIVE"
-                  class="w-full flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                    state.hasActiveCertificates === 'WITH_ACTIVE'
-                      ? 'bg-emerald-700 text-white font-bold'
-                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span class="flex items-center gap-1.5">
-                    <span class="text-emerald-500 ${state.hasActiveCertificates === 'WITH_ACTIVE' ? 'text-white' : ''}">●</span>
-                    <span>Con Certificados Activos</span>
-                  </span>
-                  <span class="text-[10px] font-mono px-1.5 py-0.2 rounded ${
-                    state.hasActiveCertificates === 'WITH_ACTIVE'
-                      ? 'bg-emerald-800 text-emerald-100'
-                      : 'bg-slate-200 text-slate-700'
-                  }">
-                    ${
-                      organizaciones.filter(
-                        (o) => countActiveCertificates(certificados, o.id) > 0
-                      ).length
-                    }
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  data-org-filter-active="WITHOUT_ACTIVE"
-                  class="w-full flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                    state.hasActiveCertificates === 'WITHOUT_ACTIVE'
-                      ? 'bg-slate-800 text-white font-bold'
-                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span class="flex items-center gap-1.5">
-                    <span class="text-slate-400 ${state.hasActiveCertificates === 'WITHOUT_ACTIVE' ? 'text-white' : ''}">○</span>
-                    <span>Sin Certificados Activos</span>
-                  </span>
-                  <span class="text-[10px] font-mono px-1.5 py-0.2 rounded ${
-                    state.hasActiveCertificates === 'WITHOUT_ACTIVE'
-                      ? 'bg-slate-900 text-slate-100'
-                      : 'bg-slate-200 text-slate-700'
-                  }">
-                    ${
-                      organizaciones.filter(
-                        (o) => countActiveCertificates(certificados, o.id) === 0
-                      ).length
-                    }
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Facet 2: Primary Sector IAF -->
-            <div class="space-y-2 pt-2 border-t border-slate-100">
-              <label class="block text-xs font-bold text-slate-700">Sector Económico / IAF</label>
-              <div class="space-y-1">
-                <button
-                  type="button"
-                  data-org-filter-sector="ALL"
-                  class="w-full flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                    state.selectedSectorIaf === 'ALL'
-                      ? 'bg-slate-900 text-white font-bold'
-                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span>Todos los Sectores</span>
-                </button>
-
-                ${sectorEntries
-                  .map(([secNum, secDesc]) => {
-                    const isSelected =
-                      state.selectedSectorIaf === String(secNum);
-                    const count = organizaciones.filter(
-                      (o) => o.sector_iaf_numero === secNum
-                    ).length;
-                    return `
-                    <button
-                      type="button"
-                      data-org-filter-sector="${secNum}"
-                      class="w-full flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer text-left ${
-                        isSelected
-                          ? 'bg-indigo-600 text-white font-bold'
-                          : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
-                      }"
-                      title="${escapeHtml(secDesc)}"
-                    >
-                      <span class="truncate pr-2">Sector ${secNum} · ${escapeHtml(secDesc)}</span>
-                      <span class="text-[10px] font-mono px-1.5 py-0.2 rounded shrink-0 ${
-                        isSelected
-                          ? 'bg-indigo-700 text-indigo-100'
-                          : 'bg-slate-200 text-slate-700'
-                      }">
-                        ${count}
-                      </span>
-                    </button>
-                  `;
-                  })
-                  .join('')}
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <!-- Main Content Area: Search Bar + Layout Toggle + Records View -->
-        <main class="lg:col-span-3 space-y-4">
-          <!-- Controls Bar -->
-          <div class="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            <!-- Search Input with Keyboard Shortcut hints -->
-            <div class="relative flex-1">
-              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <span aria-hidden="true">🔍</span>
-              </div>
-              <input
-                type="text"
-                id="orgSearchInput"
-                value="${escapeHtml(state.query)}"
-                placeholder="Buscar por Razón Social, RIF, contacto o dirección... (/ para enfocar)"
-                class="w-full pl-9 pr-9 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-slate-50/50"
-              />
-              ${
-                state.query
-                  ? `
-                <button
-                  type="button"
-                  id="clearOrgSearchBtn"
-                  class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
-                  title="Limpiar búsqueda (Esc)"
-                >
-                  ✕
-                </button>
-              `
-                  : ''
-              }
-            </div>
-
-            <!-- View Mode Switcher -->
-            <div class="flex items-center gap-1.5 shrink-0 bg-slate-100 p-1 rounded-lg border border-slate-200">
-              <button
-                type="button"
-                data-org-view-mode="grid"
-                class="px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer ${
-                  state.viewMode === 'grid'
-                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }"
-                title="Vista en Tarjetas Cuadrícula"
-              >
-                <span>⊞</span>
-                <span class="hidden sm:inline">Tarjetas</span>
-              </button>
-              <button
-                type="button"
-                data-org-view-mode="list"
-                class="px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer ${
-                  state.viewMode === 'list'
-                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }"
-                title="Vista en Tabla Detallada"
-              >
-                <span>☰</span>
-                <span class="hidden sm:inline">Tabla</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Active Filter Pill Summary -->
-          <div class="flex items-center justify-between text-xs text-slate-500 px-1">
-            <span>
-              Mostrando <strong class="text-slate-900">${matchCount}</strong> de <strong class="text-slate-900">${totalOrgs}</strong> organizaciones clientes
-            </span>
-            ${
-              state.sortColumn && state.sortDirection !== 'none'
-                ? `
-              <span class="inline-flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded text-[11px] text-slate-700">
-                Orden: <strong>${escapeHtml(state.sortColumn)}</strong> (${state.sortDirection === 'asc' ? 'Ascendente' : 'Descendente'})
-              </span>
-            `
-                : ''
-            }
-          </div>
-
-          <!-- Records Area -->
-          ${
-            loading
-              ? `
-            <div class="p-12 text-center bg-white rounded-xl border border-slate-200">
-              <div class="inline-block animate-spin text-2xl mb-2">⌛</div>
-              <p class="text-xs text-slate-500 font-medium">Cargando directorio de organizaciones clientes...</p>
-            </div>
-          `
-              : matchCount === 0
-              ? renderEmptyState(state)
-              : state.viewMode === 'grid'
-              ? renderGridView(filteredOrgs, certificados)
-              : renderListView(filteredOrgs, certificados, state)
-          }
-        </main>
-      </div>
-    </div>
-  `;
-}
-
-/**
- * Empty search or filter state
- */
-function renderEmptyState(state: OrganizacionViewState): string {
-  return `
-    <div class="bg-white border border-slate-200 rounded-xl p-12 text-center space-y-3">
-      <div class="w-12 h-12 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-xl">
-        🏢
-      </div>
-      <h3 class="text-sm font-bold text-slate-900">No se encontraron organizaciones</h3>
-      <p class="text-xs text-slate-500 max-w-sm mx-auto">
-        No hay empresas clientes que coincidan con "${escapeHtml(state.query || 'los filtros aplicados')}".
-      </p>
-      <div>
-        <button
-          type="button"
-          id="resetOrgFiltersBtn"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition-colors cursor-pointer"
-        >
-          <span>Limpiar filtros de búsqueda</span>
-        </button>
-      </div>
-    </div>
-  `;
-}
-
-/**
- * Grid Presentation Mode for Organizaciones
- */
-function renderGridView(
-  orgs: OrganizacionEntity[],
-  certificados: CertificadoSummary[]
-): string {
-  return `
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      ${orgs
-        .map((org) => {
-          const activeCount = countActiveCertificates(certificados, org.id);
-          const activeBadge = formatActiveCertificateBadge(activeCount);
-          const totalOrgCerts = getCertificatesByOrganizacion(certificados, org.id).length;
-
-          return `
-          <div
-            data-action="select-org"
-            data-org-id="${escapeHtml(org.id)}"
-            class="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs hover:shadow-md hover:border-emerald-300 transition-all cursor-pointer flex flex-col justify-between space-y-4 group"
-          >
-            <!-- Card Header -->
-            <div class="space-y-2">
-              <div class="flex items-start justify-between gap-3">
-                <div class="space-y-1 flex-1 min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="text-base" aria-hidden="true">🏢</span>
-                    <h4 class="text-sm font-bold text-slate-900 group-hover:text-emerald-700 transition-colors truncate">
-                      ${escapeHtml(org.nombre)}
-                    </h4>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span class="font-mono text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                      RIF: ${escapeHtml(org.rif)}
-                    </span>
-                    <span class="text-[10px] text-slate-400">·</span>
-                    <span class="text-[11px] font-medium text-slate-500 truncate">
-                      ${escapeHtml(org.grupo_corporativo || 'Independiente')}
-                    </span>
-                  </div>
-                </div>
-
-                <!-- Active certificate badge -->
-                <span class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full border shrink-0 ${activeBadge.badgeClass}">
-                  <span>${activeBadge.symbol}</span>
-                  <span>${activeCount} Activos</span>
-                </span>
-              </div>
-
-              <!-- Sector IAF Badge -->
-              <div class="pt-1">
-                <span class="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded">
-                  <span>💻</span>
-                  <span>Sector ${org.sector_iaf_numero || '—'}: ${escapeHtml(org.sector_principal || 'No especificado')}</span>
-                </span>
-              </div>
-            </div>
-
-            <!-- Card Attributes -->
-            <div class="text-xs text-slate-600 space-y-1.5 pt-3 border-t border-slate-100">
-              <div class="flex items-center justify-between">
-                <span class="text-slate-400">Contacto:</span>
-                <span class="font-medium text-slate-800">${escapeHtml(org.contacto_principal || 'No registrado')}</span>
-              </div>
-              <div class="flex items-center justify-between">
-                <span class="text-slate-400">Correo:</span>
-                <span class="font-mono text-slate-700 truncate max-w-[180px]">${escapeHtml(org.correo_contacto || '—')}</span>
-              </div>
-              <div class="flex items-center justify-between">
-                <span class="text-slate-400">Teléfono:</span>
-                <span class="font-mono text-slate-700">${escapeHtml(org.telefono_contacto || '—')}</span>
-              </div>
-            </div>
-
-            <!-- Card Footer -->
-            <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
-              <span class="text-[11px] text-slate-500">
-                Total Certificados: <strong class="text-slate-900">${totalOrgCerts}</strong>
-              </span>
-              <span class="text-xs font-bold text-emerald-700 group-hover:underline flex items-center gap-1">
-                <span>Ver Ficha</span>
-                <span>→</span>
-              </span>
-            </div>
-          </div>
-        `;
-        })
-        .join('')}
-    </div>
-  `;
-}
-
-/**
- * Tabular List Presentation Mode with Excel-style Column Sorting
- */
-function renderListView(
-  orgs: OrganizacionEntity[],
-  certificados: CertificadoSummary[],
-  state: OrganizacionViewState
-): string {
-  return `
-    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-xs border-collapse">
-          <thead>
-            <tr class="bg-slate-50/80 text-slate-600 font-bold border-b border-slate-200">
-              <!-- Column 1: Organización (Sortable) -->
-              <th
-                scope="col"
-                data-action="sort-org"
-                data-sort-col="nombre"
-                class="py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none"
-              >
-                <div class="flex items-center gap-1.5">
-                  <span>Organización</span>
-                  ${renderSortIndicator(state.sortColumn === 'nombre' ? state.sortDirection : 'none')}
-                </div>
-              </th>
-
-              <!-- Column 2: RIF / NIF (Sortable) -->
-              <th
-                scope="col"
-                data-action="sort-org"
-                data-sort-col="rif"
-                class="py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none"
-              >
-                <div class="flex items-center gap-1.5">
-                  <span>RIF / NIF</span>
-                  ${renderSortIndicator(state.sortColumn === 'rif' ? state.sortDirection : 'none')}
-                </div>
-              </th>
-
-              <!-- Column 3: Contacto Principal -->
-              <th scope="col" class="py-3 px-4">
-                <span>Contacto Principal</span>
-              </th>
-
-              <!-- Column 4: Sector IAF (Sortable) -->
-              <th
-                scope="col"
-                data-action="sort-org"
-                data-sort-col="sector"
-                class="py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none"
-              >
-                <div class="flex items-center gap-1.5">
-                  <span>Sector Principal</span>
-                  ${renderSortIndicator(state.sortColumn === 'sector' ? state.sortDirection : 'none')}
-                </div>
-              </th>
-
-              <!-- Column 5: Certificados Activos (Sortable) -->
-              <th
-                scope="col"
-                data-action="sort-org"
-                data-sort-col="certificados_activos"
-                class="py-3 px-4 text-center cursor-pointer hover:bg-slate-100 transition-colors select-none"
-              >
-                <div class="flex items-center justify-center gap-1.5">
-                  <span>Certificados Activos</span>
-                  ${renderSortIndicator(state.sortColumn === 'certificados_activos' ? state.sortDirection : 'none')}
-                </div>
-              </th>
-
-              <!-- Column 6: Acciones -->
-              <th scope="col" class="py-3 px-4 text-right">
-                <span>Acciones</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100">
-            ${orgs
-              .map((org) => {
-                const activeCount = countActiveCertificates(certificados, org.id);
-                const activeBadge = formatActiveCertificateBadge(activeCount);
-                const totalCerts = getCertificatesByOrganizacion(certificados, org.id).length;
-
-                return `
-                <tr
-                  data-action="select-org"
-                  data-org-id="${escapeHtml(org.id)}"
-                  class="hover:bg-slate-50/80 transition-colors cursor-pointer group"
-                >
-                  <!-- Organización -->
-                  <td class="py-3 px-4">
-                    <div class="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">
-                      ${escapeHtml(org.nombre)}
-                    </div>
-                    <div class="text-[10px] text-slate-400">
-                      ${escapeHtml(org.grupo_corporativo || 'Independiente')}
-                    </div>
-                  </td>
-
-                  <!-- RIF -->
-                  <td class="py-3 px-4 font-mono font-semibold text-slate-700">
-                    <span class="bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                      ${escapeHtml(org.rif)}
-                    </span>
-                  </td>
-
-                  <!-- Contacto -->
-                  <td class="py-3 px-4">
-                    <div class="font-medium text-slate-800">${escapeHtml(org.contacto_principal || '—')}</div>
-                    <div class="text-[11px] text-slate-500 font-mono">${escapeHtml(org.correo_contacto || '')}</div>
-                  </td>
-
-                  <!-- Sector -->
-                  <td class="py-3 px-4">
-                    <span class="inline-flex px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
-                      Sector ${org.sector_iaf_numero || '—'}: ${escapeHtml(org.sector_principal || 'General')}
-                    </span>
-                  </td>
-
-                  <!-- Certificados Activos -->
-                  <td class="py-3 px-4 text-center">
-                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${activeBadge.badgeClass}">
-                      <span>${activeBadge.symbol}</span>
-                      <span>${activeCount} de ${totalCerts}</span>
-                    </span>
-                  </td>
-
-                  <!-- Acciones -->
-                  <td class="py-3 px-4 text-right">
-                    <button
-                      type="button"
-                      data-action="select-org"
-                      data-org-id="${escapeHtml(org.id)}"
-                      class="text-xs font-bold text-emerald-700 hover:text-emerald-900 hover:underline cursor-pointer"
-                    >
-                      Ver Ficha →
-                    </button>
-                  </td>
-                </tr>
-              `;
-              })
-              .join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
+  return renderUniversalTemplate<OrganizacionEntity>({
+    domainKey: 'organizaciones',
+    title: 'Organizaciones Clientes',
+    subtitle:
+      'Empresas titulares de sistemas de gestión certificados, RIF fiscal y métricas de certificados activos bajo ISO/IEC 17021-1:2015',
+    entityLabel: 'organizaciones clientes',
+    searchQuery: state.query,
+    searchPlaceholder: 'Buscar por Razón Social, RIF, dirección fiscal o contacto... (Presione "/" para enfocar)',
+    searchInputId: 'orgSearchInput',
+    clearSearchBtnId: 'clearOrgSearchBtn',
+    totalCount: organizaciones.length,
+    filteredCount: sortedOrgs.length,
+    viewMode: state.viewMode,
+    isSidebarOpen: state.isSidebarOpen ?? true,
+    sortState: {
+      column: state.sortColumn,
+      direction: state.sortDirection,
+    },
+    facetGroups,
+    items: sortedOrgs,
+    columns,
+    renderCard,
+    emptyStateTitle: 'No se encontraron organizaciones clientes',
+    emptyStateMessage:
+      'Intente ajustar el término de búsqueda o restablecer las facetas laterales para visualizar todas las empresas registradas.',
+    actionsHtml,
+    inlineFormHtml,
+    loading,
+    loadingMessage: 'Cargando directorio de organizaciones clientes...',
+  });
 }
 
 /**

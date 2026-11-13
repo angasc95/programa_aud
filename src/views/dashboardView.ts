@@ -143,7 +143,7 @@ export function renderDashboardView(
   }
 
   return `
-    <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 space-y-8">
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 space-y-8">
       <section class="bg-white border border-slate-200 rounded-xl p-6 sm:p-8 space-y-2">
         <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 text-balance">
           Bienvenido, ${escapeHtml(profile.nombre)}

@@ -11,11 +11,15 @@ import {
   type SectorIafEntity,
 } from '../lib/extraDomain';
 import {
-  cycleSortDirection,
-  renderSortIndicator,
+  computeReactiveFacetCounts,
+  filterRecordsWithFacets,
   sortItems,
+  type ColumnDefinition,
+  type MultiViewFacetCategory,
+  type MultiViewSelectionMap,
   type SortDirection,
 } from '../lib/universalTemplate';
+import { renderUniversalTemplate } from './universalTemplate';
 
 export interface NormaViewState {
   selectedNormaId: string | null;
@@ -28,6 +32,8 @@ export interface NormaViewState {
   sortDirection: SortDirection;
   isAddAccreditationModalOpen: boolean;
   inspectingClauseId: string | null;
+  isSidebarOpen?: boolean;
+  facetSelections?: MultiViewSelectionMap;
 }
 
 export interface NormaViewProps {
@@ -50,6 +56,7 @@ export function renderNormaView(props: NormaViewProps): string {
     organismos,
     requisitos,
     sectores,
+    loading,
   } = props;
 
   const isStaff = profile.role === 'ADMIN' || profile.role === 'WORKER';
@@ -73,48 +80,72 @@ export function renderNormaView(props: NormaViewProps): string {
     }
   }
 
-  // Otherwise, render the Universal List/Grid View
+  // Otherwise, render the Universal Multi View Directory
   return renderNormaDirectoryView({
     profile,
     state,
     normas,
     acreditaciones,
+    loading,
   });
 }
 
 /**
- * Universal List/Grid View for Normas
+ * Universal Multi View Directory for Normas
  */
 function renderNormaDirectoryView(params: {
   profile: UserProfile;
   state: NormaViewState;
   normas: NormaEntity[];
   acreditaciones: AcreditacionNormaIaf[];
+  loading?: boolean;
 }): string {
-  const { state, normas, acreditaciones } = params;
+  const { state, normas, acreditaciones, loading } = params;
 
-  // Filter normas by query and facets
-  const filtered = normas.filter((norma) => {
-    if (state.query) {
-      const q = state.query.toLowerCase();
-      const codeMatch = norma.codigo.toLowerCase().includes(q);
-      const titleMatch = norma.titulo.toLowerCase().includes(q);
-      const schemeMatch = norma.esquema.toLowerCase().includes(q);
-      if (!codeMatch && !titleMatch && !schemeMatch) return false;
-    }
+  const uniqueSchemes = Array.from(new Set(normas.map((n) => n.esquema))).sort();
+  const uniqueStatuses = ['Vigente', 'En Revisión', 'Obsoleta'];
 
-    if (state.selectedStatus && state.selectedStatus !== 'ALL') {
-      if (norma.estatus.toLowerCase() !== state.selectedStatus.toLowerCase()) return false;
-    }
+  const facetCategories: MultiViewFacetCategory<NormaEntity>[] = [
+    {
+      id: 'esquema',
+      label: 'Esquema',
+      options: uniqueSchemes.map((sc) => ({ value: sc, label: sc })),
+      extractValues: (norma) => norma.esquema,
+    },
+    {
+      id: 'estatus',
+      label: 'Estatus',
+      options: uniqueStatuses.map((st) => ({ value: st, label: st })),
+      extractValues: (norma) => norma.estatus,
+    },
+  ];
 
-    if (state.selectedScheme && state.selectedScheme !== 'ALL') {
-      if (norma.esquema.toLowerCase() !== state.selectedScheme.toLowerCase()) return false;
-    }
+  const effectiveSelections: MultiViewSelectionMap = state.facetSelections
+    ? state.facetSelections
+    : {
+        esquema:
+          state.selectedScheme && state.selectedScheme !== 'ALL'
+            ? new Set([state.selectedScheme])
+            : new Set<string>(),
+        estatus:
+          state.selectedStatus && state.selectedStatus !== 'ALL'
+            ? new Set([state.selectedStatus])
+            : new Set<string>(),
+      };
 
-    return true;
-  });
+  const searchOptions = {
+    getSearchableText: (norma: NormaEntity) =>
+      `${norma.codigo} ${norma.titulo} ${norma.esquema} ${norma.estatus}`,
+  };
 
-  // Sort items
+  const filtered = filterRecordsWithFacets(
+    normas,
+    state.query,
+    facetCategories,
+    effectiveSelections,
+    searchOptions
+  );
+
   const sorted = sortItems(
     filtered,
     state.sortColumn,
@@ -139,453 +170,213 @@ function renderNormaDirectoryView(params: {
     }
   );
 
-  const uniqueSchemes = Array.from(new Set(normas.map((n) => n.esquema))).sort();
-  const uniqueStatuses = ['Vigente', 'En Revisión', 'Obsoleta'];
+  const facetGroups = computeReactiveFacetCounts(
+    normas,
+    state.query,
+    facetCategories,
+    effectiveSelections,
+    searchOptions
+  );
 
-  // Table view HTML
-  const tableViewHtml = `
-    <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
-      <table class="w-full text-left text-xs border-collapse">
-        <thead>
-          <tr class="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200 select-none">
-            <th class="py-3 px-4">
-              <button
-                type="button"
-                data-action="sort-norma"
-                data-column="codigo"
-                class="hover:text-slate-900 inline-flex items-center gap-1 font-bold cursor-pointer"
-              >
-                <span>Código</span>
-                <span class="text-[10px] text-slate-400 font-mono">${state.sortColumn === 'codigo' ? renderSortIndicator(state.sortDirection) : '▲▼'}</span>
-              </button>
-            </th>
-            <th class="py-3 px-4">
-              <button
-                type="button"
-                data-action="sort-norma"
-                data-column="titulo"
-                class="hover:text-slate-900 inline-flex items-center gap-1 font-bold cursor-pointer"
-              >
-                <span>Título Oficial</span>
-                <span class="text-[10px] text-slate-400 font-mono">${state.sortColumn === 'titulo' ? renderSortIndicator(state.sortDirection) : '▲▼'}</span>
-              </button>
-            </th>
-            <th class="py-3 px-4">
-              <button
-                type="button"
-                data-action="sort-norma"
-                data-column="esquema"
-                class="hover:text-slate-900 inline-flex items-center gap-1 font-bold cursor-pointer"
-              >
-                <span>Esquema</span>
-                <span class="text-[10px] text-slate-400 font-mono">${state.sortColumn === 'esquema' ? renderSortIndicator(state.sortDirection) : '▲▼'}</span>
-              </button>
-            </th>
-            <th class="py-3 px-4 text-center">
-              <button
-                type="button"
-                data-action="sort-norma"
-                data-column="estatus"
-                class="hover:text-slate-900 inline-flex items-center gap-1 font-bold cursor-pointer"
-              >
-                <span>Estatus</span>
-                <span class="text-[10px] text-slate-400 font-mono">${state.sortColumn === 'estatus' ? renderSortIndicator(state.sortDirection) : '▲▼'}</span>
-              </button>
-            </th>
-            <th class="py-3 px-4 text-center">
-              <button
-                type="button"
-                data-action="sort-norma"
-                data-column="clausulas"
-                class="hover:text-slate-900 inline-flex items-center gap-1 font-bold cursor-pointer"
-              >
-                <span>Cláusulas</span>
-                <span class="text-[10px] text-slate-400 font-mono">${state.sortColumn === 'clausulas' ? renderSortIndicator(state.sortDirection) : '▲▼'}</span>
-              </button>
-            </th>
-            <th class="py-3 px-4 text-center">
-              <button
-                type="button"
-                data-action="sort-norma"
-                data-column="acreditaciones"
-                class="hover:text-slate-900 inline-flex items-center gap-1 font-bold cursor-pointer"
-              >
-                <span>Acreditaciones</span>
-                <span class="text-[10px] text-slate-400 font-mono">${state.sortColumn === 'acreditaciones' ? renderSortIndicator(state.sortDirection) : '▲▼'}</span>
-              </button>
-            </th>
-            <th class="py-3 px-4 text-right">Acciones</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          ${
-            sorted.length === 0
-              ? `
-                <tr>
-                  <td colspan="7" class="py-8 text-center text-slate-400 text-xs italic">
-                    No se encontraron normas que coincidan con los filtros aplicados.
-                  </td>
-                </tr>
-              `
-              : sorted
-                  .map((norma) => {
-                    const statusMeta = formatNormaStatusBadge(norma.estatus);
-                    const normaAccreds = acreditaciones.filter(
-                      (a) => a.id_norma === norma.id || a.norma_codigo === norma.codigo
-                    );
-                    const orgBadges = normaAccreds
-                      .map(
-                        (a) => `
-                        <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                          ${escapeHtml(a.organismo_codigo)}
-                        </span>
-                      `
-                      )
-                      .join('');
-
-                    return `
-                      <tr class="hover:bg-slate-50/70 transition-colors">
-                        <td class="py-3 px-4 font-mono font-bold text-slate-900">
-                          <button
-                            type="button"
-                            data-action="select-norma"
-                            data-norma-id="${escapeHtml(norma.id)}"
-                            class="text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer inline-flex items-center gap-1.5"
-                          >
-                            <span>📘</span>
-                            <span>${escapeHtml(norma.codigo)}</span>
-                          </button>
-                        </td>
-                        <td class="py-3 px-4 text-slate-700 font-medium max-w-xs truncate" title="${escapeHtml(norma.titulo)}">
-                          ${escapeHtml(norma.titulo)}
-                        </td>
-                        <td class="py-3 px-4 text-slate-600">
-                          <span class="inline-flex px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700">
-                            ${escapeHtml(norma.esquema)}
-                          </span>
-                        </td>
-                        <td class="py-3 px-4 text-center">
-                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${statusMeta.badgeClass}">
-                            <span>${statusMeta.symbol}</span>
-                            <span>${escapeHtml(statusMeta.label)}</span>
-                          </span>
-                        </td>
-                        <td class="py-3 px-4 text-center font-mono font-semibold text-slate-700">
-                          ${norma.clausulas_count}
-                        </td>
-                        <td class="py-3 px-4 text-center">
-                          <div class="flex items-center justify-center gap-1">
-                            ${orgBadges || `<span class="text-slate-400 text-[10px]">Sin acreditar</span>`}
-                          </div>
-                        </td>
-                        <td class="py-3 px-4 text-right">
-                          <button
-                            type="button"
-                            data-action="select-norma"
-                            data-norma-id="${escapeHtml(norma.id)}"
-                            class="px-2.5 py-1 rounded-md text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors cursor-pointer"
-                          >
-                            Ver Detalle →
-                          </button>
-                        </td>
-                      </tr>
-                    `;
-                  })
-                  .join('')
-          }
-        </tbody>
-      </table>
-    </div>
-  `;
-
-  // Grid view HTML
-  const gridViewHtml = `
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      ${
-        sorted.length === 0
-          ? `
-            <div class="col-span-full py-12 text-center text-slate-400 text-xs italic bg-white border border-slate-200 rounded-xl">
-              No se encontraron normas que coincidan con los filtros aplicados.
-            </div>
+  const columns: ColumnDefinition<NormaEntity>[] = [
+    {
+      id: 'codigo',
+      header: 'Código',
+      sortable: true,
+      renderCell: (norma) => `
+        <button
+          type="button"
+          data-action="select-norma"
+          data-norma-id="${escapeHtml(norma.id)}"
+          class="text-indigo-600 hover:text-indigo-800 hover:underline font-mono font-bold cursor-pointer inline-flex items-center gap-1.5"
+        >
+          <span aria-hidden="true">📘</span>
+          <span>${escapeHtml(norma.codigo)}</span>
+        </button>
+      `,
+    },
+    {
+      id: 'titulo',
+      header: 'Título Oficial',
+      sortable: true,
+      renderCell: (norma) => `
+        <span class="text-slate-700 font-medium block max-w-xs truncate" title="${escapeHtml(norma.titulo)}">
+          ${escapeHtml(norma.titulo)}
+        </span>
+      `,
+    },
+    {
+      id: 'esquema',
+      header: 'Esquema',
+      sortable: true,
+      renderCell: (norma) => `
+        <span class="inline-flex px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700">
+          ${escapeHtml(norma.esquema)}
+        </span>
+      `,
+    },
+    {
+      id: 'estatus',
+      header: 'Estatus',
+      sortable: true,
+      align: 'center',
+      renderCell: (norma) => {
+        const statusMeta = formatNormaStatusBadge(norma.estatus);
+        return `
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${statusMeta.badgeClass}">
+            <span>${statusMeta.symbol}</span>
+            <span>${escapeHtml(statusMeta.label)}</span>
+          </span>
+        `;
+      },
+    },
+    {
+      id: 'clausulas',
+      header: 'Cláusulas',
+      sortable: true,
+      align: 'center',
+      renderCell: (norma) => `
+        <span class="font-mono font-semibold text-slate-700 tabular-nums">${norma.clausulas_count}</span>
+      `,
+    },
+    {
+      id: 'acreditaciones',
+      header: 'Acreditaciones',
+      sortable: true,
+      align: 'center',
+      renderCell: (norma) => {
+        const normaAccreds = acreditaciones.filter(
+          (a) => a.id_norma === norma.id || a.norma_codigo === norma.codigo
+        );
+        const orgBadges = normaAccreds
+          .map(
+            (a) => `
+            <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+              ${escapeHtml(a.organismo_codigo)}
+            </span>
           `
-          : sorted
-              .map((norma) => {
-                const statusMeta = formatNormaStatusBadge(norma.estatus);
-                const normaAccreds = acreditaciones.filter(
-                  (a) => a.id_norma === norma.id || a.norma_codigo === norma.codigo
-                );
-
-                return `
-                  <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs hover:shadow-xs transition-shadow space-y-3 flex flex-col justify-between">
-                    <div class="space-y-2">
-                      <div class="flex items-start justify-between gap-2">
-                        <div class="space-y-1">
-                          <span class="inline-flex px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 text-xs font-bold border border-indigo-200 font-mono">
-                            ${escapeHtml(norma.codigo)}
-                          </span>
-                          <h3 class="text-sm font-bold text-slate-900 leading-snug">
-                            ${escapeHtml(norma.titulo)}
-                          </h3>
-                        </div>
-                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${statusMeta.badgeClass} shrink-0">
-                          <span>${statusMeta.symbol}</span>
-                          <span>${escapeHtml(statusMeta.label)}</span>
-                        </span>
-                      </div>
-
-                      <div class="text-xs text-slate-500 font-medium">
-                        <span class="text-slate-400">Esquema:</span> ${escapeHtml(norma.esquema)}
-                      </div>
-
-                      <div class="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-600">
-                        <span class="inline-flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200">
-                          <span>🌳</span>
-                          <span><strong>${norma.clausulas_count}</strong> Cláusulas ltree</span>
-                        </span>
-                        <span class="inline-flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200">
-                          <span>🏛️</span>
-                          <span><strong>${normaAccreds.length}</strong> Acreditación(es)</span>
-                        </span>
-                        <span class="inline-flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200">
-                          <span>📅</span>
-                          <span>Publicada: ${escapeHtml(norma.fecha_publicacion)}</span>
-                        </span>
-                      </div>
-                    </div>
-
-                    <div class="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                      <div class="flex items-center gap-1">
-                        ${normaAccreds
-                          .map(
-                            (a) => `
-                            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200" title="Acreditado por ${escapeHtml(a.organismo_nombre)}">
-                              ${escapeHtml(a.organismo_codigo)}
-                            </span>
-                          `
-                          )
-                          .join('')}
-                      </div>
-                      <button
-                        type="button"
-                        data-action="select-norma"
-                        data-norma-id="${escapeHtml(norma.id)}"
-                        class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 transition-colors cursor-pointer inline-flex items-center gap-1"
-                      >
-                        <span>Explorar Norma</span>
-                        <span>→</span>
-                      </button>
-                    </div>
-                  </div>
-                `;
-              })
-              .join('')
-      }
-    </div>
-  `;
-
-  return `
-    <div class="space-y-6">
-      <!-- Universal Header Section -->
-      <header class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs space-y-4">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div class="space-y-1">
-            <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-800 text-xs font-bold border border-indigo-200">
-              <span>📘</span>
-              <span>CATÁLOGO DE NORMAS Y ESQUEMAS ISO</span>
-            </div>
-            <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-              Normas de Sistemas de Gestión
-            </h1>
-            <p class="text-xs text-slate-600 max-w-2xl">
-              Estándares internacionales certificables, acreditaciones vigentes ante organismos oficiales (ENAC, UKAS, ANAB) y árbol jerárquico de cláusulas normativas ltree.
-            </p>
+          )
+          .join('');
+        return `
+          <div class="flex items-center justify-center gap-1">
+            ${orgBadges || '<span class="text-slate-400 text-[10px]">Sin acreditar</span>'}
           </div>
-          <div class="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 self-start sm:self-auto">
-            ${normas.length} Normas Registradas
+        `;
+      },
+    },
+    {
+      id: 'acciones',
+      header: 'Acciones',
+      align: 'right',
+      renderCell: (norma) => `
+        <button
+          type="button"
+          data-action="select-norma"
+          data-norma-id="${escapeHtml(norma.id)}"
+          class="px-2.5 py-1 rounded-md text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors cursor-pointer"
+        >
+          Ver Detalle →
+        </button>
+      `,
+    },
+  ];
+
+  const renderCard = (norma: NormaEntity): string => {
+    const statusMeta = formatNormaStatusBadge(norma.estatus);
+    const normaAccreds = acreditaciones.filter(
+      (a) => a.id_norma === norma.id || a.norma_codigo === norma.codigo
+    );
+
+    return `
+      <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs hover:shadow-xs transition-shadow space-y-3 flex flex-col justify-between">
+        <div class="space-y-2">
+          <div class="flex items-start justify-between gap-2">
+            <div class="space-y-1">
+              <span class="inline-flex px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 text-xs font-bold border border-indigo-200 font-mono">
+                ${escapeHtml(norma.codigo)}
+              </span>
+              <h3 class="text-sm font-bold text-slate-900 leading-snug">
+                ${escapeHtml(norma.titulo)}
+              </h3>
+            </div>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${statusMeta.badgeClass} shrink-0">
+              <span>${statusMeta.symbol}</span>
+              <span>${escapeHtml(statusMeta.label)}</span>
+            </span>
+          </div>
+
+          <div class="text-xs text-slate-500 font-medium">
+            <span class="text-slate-400">Esquema:</span> ${escapeHtml(norma.esquema)}
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-600">
+            <span class="inline-flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200">
+              <span aria-hidden="true">🌳</span>
+              <span><strong>${norma.clausulas_count}</strong> Cláusulas ltree</span>
+            </span>
+            <span class="inline-flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200">
+              <span aria-hidden="true">🏛️</span>
+              <span><strong>${normaAccreds.length}</strong> Acreditación(es)</span>
+            </span>
+            <span class="inline-flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200">
+              <span aria-hidden="true">📅</span>
+              <span>Publicada: ${escapeHtml(norma.fecha_publicacion)}</span>
+            </span>
           </div>
         </div>
 
-        <!-- Search Bar and Presentation Switcher -->
-        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
-          <div class="relative flex-1 min-w-0">
-            <label for="normaSearchInput" class="sr-only">Buscar normas por código, título o esquema</label>
-            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
-            <input
-              id="normaSearchInput"
-              type="text"
-              value="${escapeHtml(state.query)}"
-              placeholder="Buscar por código (ISO 9001, 14001...), título o esquema..."
-              autocomplete="off"
-              class="w-full pl-10 pr-12 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-colors"
-            />
-            ${
-              state.query
-                ? `
-                  <button
-                    type="button"
-                    id="clearNormaSearchBtn"
-                    title="Limpiar búsqueda"
-                    class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-700 cursor-pointer"
-                  >
-                    ✕
-                  </button>
-                `
-                : `
-                  <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                    <kbd class="hidden md:inline-flex text-[10px] font-mono text-slate-400 bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-2xs">/</kbd>
-                  </div>
-                `
-            }
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+          <div class="flex items-center gap-1">
+            ${normaAccreds
+              .map(
+                (a) => `
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200" title="Acreditado por ${escapeHtml(a.organismo_nombre)}">
+                  ${escapeHtml(a.organismo_codigo)}
+                </span>
+              `
+              )
+              .join('')}
           </div>
-
-          <!-- Presentation Switcher Toggle (Grid vs. List) -->
-          <div class="inline-flex items-center p-1 bg-slate-100 rounded-lg border border-slate-200 shrink-0">
-            <button
-              type="button"
-              data-action="set-norma-view-mode"
-              data-mode="grid"
-              aria-pressed="${state.viewMode === 'grid' ? 'true' : 'false'}"
-              title="Vista en cuadrícula de tarjetas"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                state.viewMode === 'grid'
-                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }"
-            >
-              <span>⊞</span>
-              <span>Cuadrícula</span>
-            </button>
-            <button
-              type="button"
-              data-action="set-norma-view-mode"
-              data-mode="list"
-              aria-pressed="${state.viewMode === 'list' ? 'true' : 'false'}"
-              title="Vista en tabla de datos (Lista)"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                state.viewMode === 'list'
-                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }"
-            >
-              <span>☰</span>
-              <span>Lista</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <!-- Main Content Layout with Sidebar Facets -->
-      <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <!-- Sidebar Facets Pane -->
-        <aside class="space-y-4">
-          <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-4">
-            <div class="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700">Filtros Facetados</h3>
-              <button
-                type="button"
-                id="resetNormaFiltersBtn"
-                class="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
-              >
-                Limpiar Todo
-              </button>
-            </div>
-
-            <!-- Estatus Facet -->
-            <div class="space-y-2">
-              <label class="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Estatus Normativo</label>
-              <div class="space-y-1">
-                <button
-                  type="button"
-                  data-norma-filter-status="ALL"
-                  class="w-full text-left px-2.5 py-1.5 rounded-md text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                    state.selectedStatus === 'ALL'
-                      ? 'bg-slate-900 text-white font-bold'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span>Todos</span>
-                  <span class="text-[10px] opacity-80">${normas.length}</span>
-                </button>
-                ${uniqueStatuses
-                  .map((st) => {
-                    const count = normas.filter((n) => n.estatus.toLowerCase() === st.toLowerCase()).length;
-                    const isSelected = state.selectedStatus.toLowerCase() === st.toLowerCase();
-                    return `
-                      <button
-                        type="button"
-                        data-norma-filter-status="${escapeHtml(st)}"
-                        class="w-full text-left px-2.5 py-1.5 rounded-md text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                          isSelected
-                            ? 'bg-slate-900 text-white font-bold'
-                            : 'text-slate-700 hover:bg-slate-100'
-                        }"
-                      >
-                        <span>${escapeHtml(st)}</span>
-                        <span class="text-[10px] opacity-80">${count}</span>
-                      </button>
-                    `;
-                  })
-                  .join('')}
-              </div>
-            </div>
-
-            <!-- Esquema Facet -->
-            <div class="space-y-2 pt-2 border-t border-slate-100">
-              <label class="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Esquema de Gestión</label>
-              <div class="space-y-1">
-                <button
-                  type="button"
-                  data-norma-filter-scheme="ALL"
-                  class="w-full text-left px-2.5 py-1.5 rounded-md text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                    state.selectedScheme === 'ALL'
-                      ? 'bg-slate-900 text-white font-bold'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span>Todos</span>
-                  <span class="text-[10px] opacity-80">${normas.length}</span>
-                </button>
-                ${uniqueSchemes
-                  .map((sc) => {
-                    const count = normas.filter((n) => n.esquema.toLowerCase() === sc.toLowerCase()).length;
-                    const isSelected = state.selectedScheme.toLowerCase() === sc.toLowerCase();
-                    return `
-                      <button
-                        type="button"
-                        data-norma-filter-scheme="${escapeHtml(sc)}"
-                        class="w-full text-left px-2.5 py-1.5 rounded-md text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                          isSelected
-                            ? 'bg-slate-900 text-white font-bold'
-                            : 'text-slate-700 hover:bg-slate-100'
-                        }"
-                      >
-                        <span class="truncate pr-1">${escapeHtml(sc)}</span>
-                        <span class="text-[10px] opacity-80">${count}</span>
-                      </button>
-                    `;
-                  })
-                  .join('')}
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <!-- Main Items Pane -->
-        <div class="lg:col-span-3 space-y-4">
-          <div class="flex items-center justify-between text-xs text-slate-500 font-medium px-1">
-            <span>Mostrando <strong>${sorted.length}</strong> de ${normas.length} norma(s)</span>
-            <span>Vista: <strong>${state.viewMode === 'grid' ? 'Cuadrícula' : 'Tabla (Lista)'}</strong></span>
-          </div>
-
-          ${state.viewMode === 'grid' ? gridViewHtml : tableViewHtml}
+          <button
+            type="button"
+            data-action="select-norma"
+            data-norma-id="${escapeHtml(norma.id)}"
+            class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 transition-colors cursor-pointer inline-flex items-center gap-1"
+          >
+            <span>Explorar Norma</span>
+            <span>→</span>
+          </button>
         </div>
       </div>
-    </div>
-  `;
+    `;
+  };
+
+  return renderUniversalTemplate({
+    domainKey: 'normas',
+    title: 'Normas de Sistemas de Gestión',
+    subtitle:
+      'Estándares internacionales certificables, acreditaciones vigentes ante organismos oficiales (ENAC, UKAS, ANAB) y árbol jerárquico de cláusulas normativas ltree.',
+    entityLabel: 'normas certificables',
+    searchQuery: state.query,
+    searchPlaceholder: 'Buscar por código (ISO 9001, 14001...), título o esquema...',
+    searchInputId: 'normaSearchInput',
+    clearSearchBtnId: 'clearNormaSearchBtn',
+    totalCount: normas.length,
+    filteredCount: sorted.length,
+    viewMode: state.viewMode,
+    isSidebarOpen: state.isSidebarOpen ?? true,
+    sortState: {
+      column: state.sortColumn,
+      direction: state.sortDirection,
+    },
+    facetGroups,
+    items: sorted,
+    columns,
+    renderCard,
+    emptyStateTitle: 'No se encontraron normas',
+    emptyStateMessage: 'No se encontraron normas que coincidan con los filtros aplicados.',
+    loading,
+  });
 }
 
 /**

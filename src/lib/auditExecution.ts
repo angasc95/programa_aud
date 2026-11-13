@@ -5,7 +5,7 @@
 
 import type { FindingRecord, FindingType } from './drillDown';
 import type { AuditLogEntry } from './auditLog';
-import type { SortDirection } from './universalTemplate';
+import type { MultiViewSelectionMap, SortDirection } from './universalTemplate';
 
 export type AuditTeamRole = 'Auditor Líder' | 'Auditor de Equipo' | 'Experto Técnico';
 
@@ -140,6 +140,8 @@ export interface ProgramacionViewState {
   isAddingTeamMember: boolean;
   editErrorMessage?: string | null;
   saveSuccessMessage?: string | null;
+  isSidebarOpen?: boolean;
+  facetSelections?: MultiViewSelectionMap;
 }
 
 export interface CalendarioViewState {

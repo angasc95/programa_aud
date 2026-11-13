@@ -3,6 +3,7 @@
  * Aligned with ISO/IEC 17021-1:2015 (clause 7.2 on competence of personnel and audit teams),
  * ISO 19011:2018 (competency evaluation), and IAF MD 1:2018.
  */
+import type { MultiViewSelectionMap } from './universalTemplate';
 
 export type AuditorCalificacion = 'Calificado' | 'En Entrenamiento' | 'Observador';
 
@@ -80,6 +81,10 @@ export interface AuditorViewState {
   editErrorMessage?: string | null;
   saveSuccessMessage?: string | null;
   isAddCompetencyModalOpen?: boolean;
+  isSidebarOpen?: boolean;
+  facetSelections?: MultiViewSelectionMap;
+  isCreating?: boolean;
+  createErrorMessage?: string | null;
 }
 
 export interface AuditorFilterCriteria {

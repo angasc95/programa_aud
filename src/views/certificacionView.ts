@@ -103,6 +103,10 @@ export function renderCertificacionView(
       editFormData: state.organizacionState?.editFormData,
       editErrorMessage: state.organizacionState?.editErrorMessage,
       saveSuccessMessage: state.organizacionState?.saveSuccessMessage,
+      isSidebarOpen: state.organizacionState?.isSidebarOpen ?? true,
+      facetSelections: state.organizacionState?.facetSelections,
+      isCreating: Boolean(state.organizacionState?.isCreating),
+      createErrorMessage: state.organizacionState?.createErrorMessage,
     };
 
     const orgList: OrganizacionEntity[] =
@@ -149,6 +153,11 @@ export function renderCertificacionView(
       editFormData: state.auditorState?.editFormData,
       editErrorMessage: state.auditorState?.editErrorMessage,
       saveSuccessMessage: state.auditorState?.saveSuccessMessage,
+      isAddCompetencyModalOpen: Boolean(state.auditorState?.isAddCompetencyModalOpen),
+      isSidebarOpen: state.auditorState?.isSidebarOpen ?? true,
+      facetSelections: state.auditorState?.facetSelections,
+      isCreating: Boolean(state.auditorState?.isCreating),
+      createErrorMessage: state.auditorState?.createErrorMessage,
     };
 
     const audList: AuditorDetailEntity[] =
@@ -179,6 +188,10 @@ export function renderCertificacionView(
       editErrorMessage: state.certificadoState?.editErrorMessage,
       saveSuccessMessage: state.certificadoState?.saveSuccessMessage,
       originatingOrganizacionId: state.certificadoState?.originatingOrganizacionId || null,
+      isSidebarOpen: state.certificadoState?.isSidebarOpen ?? true,
+      facetSelections: state.certificadoState?.facetSelections,
+      isCreating: Boolean(state.certificadoState?.isCreating),
+      createErrorMessage: state.certificadoState?.createErrorMessage,
     };
 
     const certList: CertificadoDetailEntity[] =
@@ -186,16 +199,22 @@ export function renderCertificacionView(
         ? state.allCertificadosDetailed
         : INITIAL_CERTIFICADOS_DETAILED;
 
+    const orgList: OrganizacionEntity[] =
+      state.allOrganizaciones !== undefined
+        ? state.allOrganizaciones
+        : INITIAL_ORGANIZACIONES;
+
     contentHtml = renderCertificadoView({
       profile,
       state: certState,
       certificates: certList,
+      organizaciones: orgList,
       loading: state.loading,
     });
   }
 
   return `
-    <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-3 pb-8 space-y-5">
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 pt-3 pb-8 space-y-5">
       ${contentHtml}
     </main>
   `;

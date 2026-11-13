@@ -2,6 +2,7 @@
  * Phase 4.2: Multisite Sampling, Clean Layout Rules, and Certificado Relational Engine
  * Aligned with ISO/IEC 17021-1:2015 (clause 8.2.2), IAF MD 1:2018 (Multisite Audit), and ISO 19011:2018.
  */
+import type { MultiViewSelectionMap } from './universalTemplate';
 
 export interface SiteEntity {
   id: string;
@@ -122,6 +123,10 @@ export interface CertificadoViewState {
   editErrorMessage?: string | null;
   saveSuccessMessage?: string | null;
   originatingOrganizacionId?: string | null;
+  isSidebarOpen?: boolean;
+  facetSelections?: MultiViewSelectionMap;
+  isCreating?: boolean;
+  createErrorMessage?: string | null;
 }
 
 export interface CertificadoFilterCriteria {

@@ -1,11 +1,11 @@
 import { escapeHtml } from '../lib/html';
 import type { UserProfile } from '../lib/healthCheck';
+import type { OrganizacionEntity } from '../lib/activeCertificates';
 import {
   countMultisiteBranches,
   formatMultisiteBranchCountText,
   sortSitesWithPrincipalFirst,
   getProcessTypeVisual,
-  filterCertificates,
   type CertificadoDetailEntity,
   type CertificadoViewState,
   type CertificadoChildTab,
@@ -15,6 +15,15 @@ import {
   type NonApplicableRequirementEntity,
   type AuditEntity,
 } from '../lib/multisiteSampling';
+import {
+  computeReactiveFacetCounts,
+  filterRecordsWithFacets,
+  sortItems,
+  type ColumnDefinition,
+  type MultiViewFacetCategory,
+  type MultiViewSelectionMap,
+} from '../lib/universalTemplate';
+import { renderUniversalTemplate } from './universalTemplate';
 
 export type { CertificadoViewState, CertificadoChildTab };
 
@@ -22,6 +31,7 @@ export interface CertificadoViewProps {
   profile: UserProfile;
   state: CertificadoViewState;
   certificates: CertificadoDetailEntity[];
+  organizaciones?: OrganizacionEntity[];
   loading?: boolean;
 }
 
@@ -85,7 +95,7 @@ function getStatusBadge(status: string): { label: string; badgeClass: string; do
  * Primary view entry point: Renders either the universal directory or the 4-zone detail page.
  */
 export function renderCertificadoView(props: CertificadoViewProps): string {
-  const { profile, state, certificates, loading = false } = props;
+  const { profile, state, certificates, organizaciones = [], loading = false } = props;
 
   if (state.selectedCertId) {
     const selectedCert = certificates.find((c) => c.id === state.selectedCertId);
@@ -94,538 +104,466 @@ export function renderCertificadoView(props: CertificadoViewProps): string {
     }
   }
 
-  return renderCertificadoDirectory(profile, state, certificates, loading);
+  return renderCertificadoDirectory(profile, state, certificates, organizaciones, loading);
+}
+
+function renderCreateCertificadoForm(
+  certificates: CertificadoDetailEntity[],
+  organizaciones: OrganizacionEntity[],
+  errorMessage?: string | null
+): string {
+  const orgOptionEntries =
+    organizaciones.length > 0
+      ? organizaciones.map((o) => ({ id: o.id, label: `${o.nombre} (${o.rif})` }))
+      : Array.from(
+          new Map(
+            certificates.map((c) => [
+              c.id_organizacion,
+              `${c.organizacion_nombre} (${c.organizacion_rif})`,
+            ])
+          ).entries()
+        ).map(([id, label]) => ({ id, label }));
+
+  const sectorMap = new Map<number, string>();
+  for (const cert of certificates) {
+    if (cert.sector_iaf) {
+      sectorMap.set(cert.sector_iaf, cert.sector_iaf_descripcion);
+    }
+  }
+  const sectorOptions = Array.from(sectorMap.entries())
+    .sort(([a], [b]) => a - b)
+    .map(
+      ([num, desc]) =>
+        `<option value="${num}|${escapeHtml(desc)}">Sector ${num} · ${escapeHtml(desc)}</option>`
+    )
+    .join('');
+
+  return `
+    <div class="bg-sky-50/70 border border-sky-200 rounded-xl p-4 sm:p-5 space-y-4">
+      <div class="flex items-center justify-between gap-2">
+        <h2 class="text-sm font-bold text-slate-900">Emitir / Registrar Certificado de Conformidad</h2>
+        <button
+          type="button"
+          data-action="close-create-cert"
+          class="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+        >
+          ✕ Cancelar
+        </button>
+      </div>
+      ${
+        errorMessage
+          ? `<div class="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-medium text-rose-800">${escapeHtml(errorMessage)}</div>`
+          : ''
+      }
+      <form id="createCertificadoForm" class="space-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label for="createCertOrgSelect" class="block text-xs font-semibold text-slate-700 mb-1">Organización Titular *</label>
+            <select id="createCertOrgSelect" required class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2">
+              ${orgOptionEntries
+                .map((o) => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.label)}</option>`)
+                .join('')}
+            </select>
+          </div>
+          <div>
+            <label for="createCertNumeroInput" class="block text-xs font-semibold text-slate-700 mb-1">N° de Certificado *</label>
+            <input id="createCertNumeroInput" type="text" required placeholder="Ej. FN-QMS-2025-001" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2 font-mono" />
+          </div>
+          <div>
+            <label for="createCertNormaSelect" class="block text-xs font-semibold text-slate-700 mb-1">Norma de Gestión *</label>
+            <select id="createCertNormaSelect" required class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2">
+              <option value="ISO 9001:2015">ISO 9001:2015</option>
+              <option value="ISO 14001:2015">ISO 14001:2015</option>
+              <option value="ISO 45001:2018">ISO 45001:2018</option>
+              <option value="ISO/IEC 27001:2022">ISO/IEC 27001:2022</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div>
+            <label for="createCertEstatusSelect" class="block text-xs font-semibold text-slate-700 mb-1">Estatus Inicial *</label>
+            <select id="createCertEstatusSelect" required class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2">
+              <option value="Activo">Activo</option>
+              <option value="Estudio">Estudio</option>
+              <option value="Suspendido">Suspendido</option>
+            </select>
+          </div>
+          <div>
+            <label for="createCertSectorSelect" class="block text-xs font-semibold text-slate-700 mb-1">Sector IAF *</label>
+            <select id="createCertSectorSelect" required class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2">
+              ${sectorOptions || '<option value="17|Metales básicos y productos metálicos">Sector 17 · Metales básicos y productos metálicos</option>'}
+            </select>
+          </div>
+          <div>
+            <label for="createCertFechaEmisionInput" class="block text-xs font-semibold text-slate-700 mb-1">Fecha de Emisión *</label>
+            <input id="createCertFechaEmisionInput" type="date" required value="2025-01-15" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2" />
+          </div>
+          <div>
+            <label for="createCertFechaVencimientoInput" class="block text-xs font-semibold text-slate-700 mb-1">Fecha de Vencimiento *</label>
+            <input id="createCertFechaVencimientoInput" type="date" required value="2028-01-14" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2" />
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+          <div class="sm:col-span-3">
+            <label for="createCertAlcanceInput" class="block text-xs font-semibold text-slate-700 mb-1">Alcance de Certificación (mín. 10 caracteres) *</label>
+            <input id="createCertAlcanceInput" type="text" required minlength="10" placeholder="Diseño, fabricación y comercialización de..." class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2" />
+          </div>
+          <label class="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 cursor-pointer">
+            <input id="createCertMultisitioCheckbox" type="checkbox" class="h-3.5 w-3.5 rounded border-slate-300 text-sky-600" />
+            <span>Esquema Multisitio</span>
+          </label>
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button
+            type="button"
+            data-action="close-create-cert"
+            class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold cursor-pointer"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            class="px-4 py-1.5 rounded-lg bg-sky-700 hover:bg-sky-800 text-white text-xs font-bold transition-colors cursor-pointer"
+          >
+            Guardar Certificado
+          </button>
+        </div>
+      </form>
+    </div>
+  `;
 }
 
 /**
- * Renders the Universal List / Grid Directory View (Decluttered Clean Layout).
+ * Renders the Universal Multi View Directory for Certificados (Decluttered Clean Layout).
  * NOTE: The "Cobertura Normativa" column is strictly excluded from the list view.
  */
 function renderCertificadoDirectory(
   profile: UserProfile,
   state: CertificadoViewState,
   allCertificates: CertificadoDetailEntity[],
+  organizaciones: OrganizacionEntity[],
   loading: boolean
 ): string {
-  const filtered = filterCertificates(allCertificates, {
-    query: state.query,
-    selectedStandard: state.selectedStandard,
-    selectedStatus: state.selectedStatus,
-    selectedSectorIaf: state.selectedSectorIaf,
-  });
+  const isStaff =
+    (profile.role === 'ADMIN' || profile.role === 'WORKER') &&
+    (!profile.status || profile.status === 'APPROVED');
 
-  // Excel-style column sorting
-  if (state.sortColumn && state.sortDirection !== 'none') {
-    const factor = state.sortDirection === 'asc' ? 1 : -1;
-    filtered.sort((a, b) => {
-      switch (state.sortColumn) {
-        case 'numero_certificado':
-          return factor * a.numero_certificado.localeCompare(b.numero_certificado);
-        case 'organizacion':
-          return factor * a.organizacion_nombre.localeCompare(b.organizacion_nombre);
-        case 'norma':
-          return factor * a.norma_codigo.localeCompare(b.norma_codigo);
-        case 'estatus':
-          return factor * a.estatus.localeCompare(b.estatus);
-        case 'vigencia':
-          return factor * (a.fecha_vencimiento || '').localeCompare(b.fecha_vencimiento || '');
-        case 'sedes':
-          return factor * (countMultisiteBranches(a.sitios) - countMultisiteBranches(b.sitios));
-        default:
-          return 0;
-      }
-    });
-  }
-
-  // Aggregate standard & status counts for sidebar facets
-  const standardCounts: Record<string, number> = {};
-  const statusCounts: Record<string, number> = {};
-  const sectorCounts: Record<string, number> = {};
-
+  const sectorMap = new Map<number, string>();
   for (const cert of allCertificates) {
-    standardCounts[cert.norma_codigo] = (standardCounts[cert.norma_codigo] || 0) + 1;
-    statusCounts[cert.estatus] = (statusCounts[cert.estatus] || 0) + 1;
-    const secKey = String(cert.sector_iaf);
-    sectorCounts[secKey] = (sectorCounts[secKey] || 0) + 1;
-  }
-
-  const renderSortArrow = (col: string) => {
-    if (state.sortColumn !== col || state.sortDirection === 'none') {
-      return '<span class="text-slate-300 ml-1">⇅</span>';
+    if (cert.sector_iaf) {
+      sectorMap.set(cert.sector_iaf, cert.sector_iaf_descripcion || `Sector ${cert.sector_iaf}`);
     }
-    return state.sortDirection === 'asc'
-      ? '<span class="text-slate-900 ml-1 font-bold">↑</span>'
-      : '<span class="text-slate-900 ml-1 font-bold">↓</span>';
+  }
+  const sectorEntries = Array.from(sectorMap.entries()).sort(([a], [b]) => a - b);
+
+  const facetCategories: MultiViewFacetCategory<CertificadoDetailEntity>[] = [
+    {
+      id: 'estatus',
+      label: 'Estatus',
+      extractValues: (c) => c.estatus,
+    },
+    {
+      id: 'norma',
+      label: 'Norma ISO',
+      extractValues: (c) => c.norma_codigo,
+    },
+    {
+      id: 'sector_iaf',
+      label: 'Sector IAF',
+      options: sectorEntries.map(([num, desc]) => ({
+        value: String(num),
+        label: `Sector ${num} · ${desc}`,
+      })),
+      extractValues: (c) => String(c.sector_iaf),
+    },
+    {
+      id: 'modalidad',
+      label: 'Modalidad',
+      options: [
+        { value: 'MULTISITIO', label: 'Multisitio' },
+        { value: 'SEDE_UNICA', label: 'Sede Única' },
+      ],
+      extractValues: (c) =>
+        c.multisitio || countMultisiteBranches(c.sitios) > 0 ? 'MULTISITIO' : 'SEDE_UNICA',
+    },
+  ];
+
+  const effectiveSelections: MultiViewSelectionMap = state.facetSelections
+    ? state.facetSelections
+    : {
+        estatus:
+          state.selectedStatus !== 'ALL' ? new Set([state.selectedStatus]) : new Set<string>(),
+        norma:
+          state.selectedStandard !== 'ALL' ? new Set([state.selectedStandard]) : new Set<string>(),
+        sector_iaf:
+          state.selectedSectorIaf !== 'ALL' ? new Set([state.selectedSectorIaf]) : new Set<string>(),
+        modalidad: new Set<string>(),
+      };
+
+  const searchOptions = {
+    getSearchableText: (cert: CertificadoDetailEntity) =>
+      [
+        cert.numero_certificado,
+        cert.organizacion_nombre,
+        cert.organizacion_rif,
+        cert.norma_codigo,
+        cert.esquema,
+        cert.alcance,
+        cert.sector_iaf_descripcion,
+      ].join(' '),
   };
 
-  return `
-    <div class="space-y-6">
-      <!-- Header Banner -->
-      <div class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div class="space-y-1">
-          <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-sky-50 text-sky-800 text-xs font-bold border border-sky-200">
-            <span>📜</span>
-            <span>DOMINIO CERTIFICACIÓN · FASE 4.2</span>
-          </div>
-          <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-            Directorio de Certificados de Conformidad
-          </h2>
-          <p class="text-xs text-slate-600">
-            Gestión de certificados emitidos bajo ISO/IEC 17021-1:2015, alcance técnico, sedes multisitio y trazabilidad
-          </p>
+  const filtered = filterRecordsWithFacets(
+    allCertificates,
+    state.query,
+    facetCategories,
+    effectiveSelections,
+    searchOptions
+  );
+
+  const sorted = sortItems(filtered, state.sortColumn, state.sortDirection, (cert, col) => {
+    switch (col) {
+      case 'numero_certificado':
+        return cert.numero_certificado;
+      case 'organizacion':
+        return cert.organizacion_nombre;
+      case 'norma':
+        return cert.norma_codigo;
+      case 'estatus':
+        return cert.estatus;
+      case 'vigencia':
+        return cert.fecha_vencimiento || '';
+      case 'sedes':
+        return countMultisiteBranches(cert.sitios);
+      default:
+        return '';
+    }
+  });
+
+  const facetGroups = computeReactiveFacetCounts(
+    allCertificates,
+    state.query,
+    facetCategories,
+    effectiveSelections,
+    searchOptions
+  );
+
+  // MANDATORY CLEAN LIST RULE:
+  // Columns: Organización, Código de Certificado, Norma, Sedes Multisitio, Estatus, Vigencia, Acciones.
+  const columns: ColumnDefinition<CertificadoDetailEntity>[] = [
+    {
+      id: 'organizacion',
+      header: 'Organización',
+      sortable: true,
+      renderCell: (cert) => `
+        <button
+          type="button"
+          data-action="view-org-from-cert"
+          data-org-id="${escapeHtml(cert.id_organizacion)}"
+          class="text-left font-bold text-slate-900 hover:text-sky-700 transition-colors cursor-pointer group"
+        >
+          <span class="group-hover:underline">${escapeHtml(cert.organizacion_nombre)}</span>
+          <span class="block text-[11px] font-mono text-slate-500 font-normal">RIF: ${escapeHtml(cert.organizacion_rif)}</span>
+        </button>
+      `,
+    },
+    {
+      id: 'numero_certificado',
+      header: 'Código de Certificado',
+      sortable: true,
+      renderCell: (cert) => `
+        <button
+          type="button"
+          data-action="select-cert"
+          data-cert-id="${escapeHtml(cert.id)}"
+          class="font-mono text-xs font-bold text-slate-900 bg-slate-100 hover:bg-sky-50 hover:text-sky-900 px-2 py-0.5 rounded border border-slate-200 transition-colors cursor-pointer whitespace-nowrap"
+        >
+          📜 ${escapeHtml(cert.numero_certificado)}
+        </button>
+      `,
+    },
+    {
+      id: 'norma',
+      header: 'Norma',
+      sortable: true,
+      renderCell: (cert) => `
+        <div class="font-semibold text-slate-800 whitespace-nowrap">${escapeHtml(cert.norma_codigo)}</div>
+        <div class="text-[11px] text-slate-500">${escapeHtml(cert.esquema)}</div>
+      `,
+    },
+    {
+      id: 'sedes',
+      header: 'Sedes Multisitio',
+      sortable: true,
+      align: 'center',
+      renderCell: (cert) => {
+        const branchCount = countMultisiteBranches(cert.sitios);
+        const branchText = formatMultisiteBranchCountText(branchCount);
+        return `
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${
+            branchCount > 0 ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-slate-100 text-slate-600'
+          }">
+            <span>${branchCount > 0 ? '🏢' : '📍'}</span>
+            <span>${branchText}</span>
+          </span>
+        `;
+      },
+    },
+    {
+      id: 'estatus',
+      header: 'Estatus',
+      sortable: true,
+      align: 'center',
+      renderCell: (cert) => {
+        const statusVisual = getStatusBadge(cert.estatus);
+        return `
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap ${statusVisual.badgeClass}">
+            <span class="w-1.5 h-1.5 rounded-full ${statusVisual.dotClass}"></span>
+            <span>${escapeHtml(statusVisual.label)}</span>
+          </span>
+        `;
+      },
+    },
+    {
+      id: 'vigencia',
+      header: 'Vigencia',
+      sortable: true,
+      align: 'right',
+      renderCell: (cert) => `
+        <div class="font-mono text-[11px] text-slate-700 tabular-nums whitespace-nowrap leading-tight">
+          <div>${escapeHtml(cert.fecha_emision)}</div>
+          <div class="text-slate-400">→ ${escapeHtml(cert.fecha_vencimiento)}</div>
         </div>
-        <div class="flex items-center gap-2 self-start sm:self-auto">
-          <span class="text-xs font-semibold px-3 py-1 bg-slate-100 text-slate-700 rounded-full border border-slate-200 tabular-nums">
-            Total: <strong>${allCertificates.length}</strong> certificados
+      `,
+    },
+    {
+      id: 'acciones',
+      header: 'Acciones',
+      sortable: false,
+      align: 'center',
+      renderCell: (cert) => `
+        <button
+          type="button"
+          data-action="select-cert"
+          data-cert-id="${escapeHtml(cert.id)}"
+          class="text-xs font-semibold text-sky-700 hover:text-sky-900 inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+        >
+          <span>Inspeccionar</span>
+          <span>→</span>
+        </button>
+      `,
+    },
+  ];
+
+  const renderCard = (cert: CertificadoDetailEntity): string => {
+    const branchCount = countMultisiteBranches(cert.sitios);
+    const branchText = formatMultisiteBranchCountText(branchCount);
+    const statusVisual = getStatusBadge(cert.estatus);
+
+    return `
+      <div
+        data-action="select-cert"
+        data-cert-id="${escapeHtml(cert.id)}"
+        class="bg-white border border-slate-200 hover:border-slate-300 rounded-xl p-5 shadow-xs hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between space-y-4 group"
+      >
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+              📜 ${escapeHtml(cert.numero_certificado)}
+            </span>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${statusVisual.badgeClass}">
+              <span class="w-1.5 h-1.5 rounded-full ${statusVisual.dotClass}"></span>
+              <span>${escapeHtml(statusVisual.label)}</span>
+            </span>
+          </div>
+
+          <div>
+            <h3 class="text-base font-bold text-slate-900 group-hover:text-sky-700 transition-colors">
+              ${escapeHtml(cert.organizacion_nombre)}
+            </h3>
+            <div class="flex items-center gap-2 text-xs text-slate-500 pt-0.5">
+              <span class="font-mono">RIF: ${escapeHtml(cert.organizacion_rif)}</span>
+              <span>·</span>
+              <span>${escapeHtml(cert.norma_codigo)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="text-xs text-slate-600 bg-slate-50/75 p-3 rounded-lg border border-slate-100 space-y-1.5">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-slate-500 text-[11px]">Sector IAF ${cert.sector_iaf}:</span>
+            <span class="font-medium text-slate-800 truncate max-w-[200px]" title="${escapeHtml(cert.sector_iaf_descripcion)}">
+              ${escapeHtml(cert.sector_iaf_descripcion)}
+            </span>
+          </div>
+          <div class="flex items-center justify-between pt-1 border-t border-slate-200/50">
+            <span class="text-slate-500 text-[11px]">Esquema Multisitio:</span>
+            <span class="font-medium text-slate-800 inline-flex items-center gap-1">
+              <span>${branchCount > 0 ? '🏢' : '📍'}</span>
+              <span>${branchText}</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+          <span class="font-mono text-[11px] tabular-nums">Vigencia: ${escapeHtml(cert.fecha_vencimiento)}</span>
+          <span class="font-semibold text-sky-700 group-hover:text-sky-900 inline-flex items-center gap-1">
+            <span>Ver Ficha</span>
+            <span>→</span>
           </span>
         </div>
       </div>
+    `;
+  };
 
-      <!-- Main Layout: Sidebar Facets + Content Viewport -->
-      <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-        <!-- Sidebar Facets -->
-        <aside class="lg:col-span-1 bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-5" aria-label="Filtros y Facetas">
-          <div class="space-y-4">
-            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                <span>⚡</span>
-                <span>Filtros y Facetas</span>
-              </h3>
-              ${
-                state.query || state.selectedStandard !== 'ALL' || state.selectedStatus !== 'ALL' || state.selectedSectorIaf !== 'ALL'
-                  ? `
-                <button
-                  type="button"
-                  id="resetCertFiltersBtn"
-                  class="text-[11px] font-semibold text-sky-700 hover:text-sky-900 cursor-pointer"
-                >
-                  Restablecer
-                </button>
-              `
-                  : ''
-              }
-            </div>
+  const actionsHtml = isStaff
+    ? `
+      <button
+        type="button"
+        data-action="open-create-cert"
+        class="px-3.5 py-2 rounded-lg bg-sky-700 hover:bg-sky-800 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+      >
+        <span aria-hidden="true">+</span>
+        <span>Nuevo Certificado</span>
+      </button>
+    `
+    : '';
 
-            <!-- Facet 1: Normas ISO -->
-            <div class="space-y-2">
-              <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Norma de Gestión</span>
-              <div class="space-y-1">
-                <button
-                  type="button"
-                  data-cert-filter-standard="ALL"
-                  class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-between ${
-                    state.selectedStandard === 'ALL'
-                      ? 'bg-slate-900 text-white font-semibold'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span>Todas las Normas</span>
-                  <span class="text-[10px] tabular-nums ${state.selectedStandard === 'ALL' ? 'text-slate-300' : 'text-slate-500'}">
-                    ${allCertificates.length}
-                  </span>
-                </button>
-                ${Object.entries(standardCounts)
-                  .map(([std, count]) => `
-                    <button
-                      type="button"
-                      data-cert-filter-standard="${escapeHtml(std)}"
-                      class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-between ${
-                        state.selectedStandard === std
-                          ? 'bg-slate-900 text-white font-semibold'
-                          : 'text-slate-700 hover:bg-slate-100'
-                      }"
-                    >
-                      <span class="truncate">${escapeHtml(std)}</span>
-                      <span class="text-[10px] tabular-nums ${state.selectedStandard === std ? 'text-slate-300' : 'text-slate-500'}">
-                        ${count}
-                      </span>
-                    </button>
-                  `)
-                  .join('')}
-              </div>
-            </div>
+  const inlineFormHtml =
+    isStaff && state.isCreating
+      ? renderCreateCertificadoForm(allCertificates, organizaciones, state.createErrorMessage)
+      : '';
 
-            <!-- Facet 2: Estatus del Certificado -->
-            <div class="space-y-2 pt-2 border-t border-slate-100">
-              <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Estatus Operativo</span>
-              <div class="space-y-1">
-                <button
-                  type="button"
-                  data-cert-filter-status="ALL"
-                  class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-between ${
-                    state.selectedStatus === 'ALL'
-                      ? 'bg-slate-900 text-white font-semibold'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span>Todos los Estatus</span>
-                  <span class="text-[10px] tabular-nums ${state.selectedStatus === 'ALL' ? 'text-slate-300' : 'text-slate-500'}">
-                    ${allCertificates.length}
-                  </span>
-                </button>
-                ${Object.entries(statusCounts)
-                  .map(([st, count]) => {
-                    const statusVisual = getStatusBadge(st);
-                    return `
-                    <button
-                      type="button"
-                      data-cert-filter-status="${escapeHtml(st)}"
-                      class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-between ${
-                        state.selectedStatus.toUpperCase() === st.toUpperCase()
-                          ? 'bg-slate-900 text-white font-semibold'
-                          : 'text-slate-700 hover:bg-slate-100'
-                      }"
-                    >
-                      <span class="inline-flex items-center gap-1.5 truncate">
-                        <span class="w-1.5 h-1.5 rounded-full ${statusVisual.dotClass}"></span>
-                        <span>${escapeHtml(st)}</span>
-                      </span>
-                      <span class="text-[10px] tabular-nums ${state.selectedStatus.toUpperCase() === st.toUpperCase() ? 'text-slate-300' : 'text-slate-500'}">
-                        ${count}
-                      </span>
-                    </button>
-                  `;
-                  })
-                  .join('')}
-              </div>
-            </div>
-
-            <!-- Facet 3: Sector IAF -->
-            <div class="space-y-2 pt-2 border-t border-slate-100">
-              <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Sector Técnico IAF</span>
-              <div class="space-y-1">
-                <button
-                  type="button"
-                  data-cert-filter-iaf="ALL"
-                  class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-between ${
-                    state.selectedSectorIaf === 'ALL'
-                      ? 'bg-slate-900 text-white font-semibold'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span>Todos los Sectores</span>
-                </button>
-                ${Object.entries(sectorCounts)
-                  .map(([sec, count]) => `
-                    <button
-                      type="button"
-                      data-cert-filter-iaf="${escapeHtml(sec)}"
-                      class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-between ${
-                        state.selectedSectorIaf === sec
-                          ? 'bg-slate-900 text-white font-semibold'
-                          : 'text-slate-700 hover:bg-slate-100'
-                      }"
-                    >
-                      <span>Sector IAF ${sec}</span>
-                      <span class="text-[10px] tabular-nums ${state.selectedSectorIaf === sec ? 'text-slate-300' : 'text-slate-500'}">
-                        ${count}
-                      </span>
-                    </button>
-                  `)
-                  .join('')}
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <!-- Main Directory: Search, Switcher & Data Grid/Table -->
-        <div class="lg:col-span-3 space-y-4">
-          <!-- Search Bar & View Switcher -->
-          <div class="bg-white border border-slate-200 rounded-xl p-3 sm:p-4 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            <div class="relative flex-1 min-w-0">
-              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <span aria-hidden="true">🔍</span>
-              </div>
-              <input
-                id="certDirectorySearchInput"
-                type="text"
-                autocomplete="off"
-                value="${escapeHtml(state.query)}"
-                placeholder="Buscar por N° Certificado, Empresa, RIF, alcance o norma... (/ para enfocar)"
-                class="w-full pl-9 pr-10 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900"
-              />
-              ${
-                state.query
-                  ? `
-                <button
-                  type="button"
-                  id="clearCertSearchBtn"
-                  class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-700 cursor-pointer"
-                  title="Limpiar búsqueda (Esc)"
-                >
-                  ✕
-                </button>
-              `
-                  : ''
-              }
-            </div>
-
-            <!-- View Mode Switcher -->
-            <div class="inline-flex items-center p-1 bg-slate-100 rounded-lg border border-slate-200 shrink-0 self-start sm:self-auto">
-              <button
-                type="button"
-                data-cert-view-mode="grid"
-                class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs transition-colors cursor-pointer ${
-                  state.viewMode === 'grid'
-                    ? 'bg-white text-slate-900 font-bold shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }"
-              >
-                <span>⊞</span>
-                <span>Tarjetas</span>
-              </button>
-              <button
-                type="button"
-                data-cert-view-mode="list"
-                class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs transition-colors cursor-pointer ${
-                  state.viewMode === 'list'
-                    ? 'bg-white text-slate-900 font-bold shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }"
-              >
-                <span>☰</span>
-                <span>Tabla</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Results Summary -->
-          <div class="text-xs text-slate-500 px-1">
-            Mostrando <strong>${filtered.length}</strong> de <strong>${allCertificates.length}</strong> certificados registrados
-          </div>
-
-          <!-- Dynamic Presentation View -->
-          ${
-            loading
-              ? `
-            <div class="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-500 text-sm font-medium">
-              <div class="inline-block animate-spin w-6 h-6 border-2 border-slate-900 border-t-transparent rounded-full mb-3"></div>
-              <p>Cargando certificados emitidos...</p>
-            </div>
-          `
-              : filtered.length === 0
-              ? `
-            <div class="bg-white border border-slate-200 rounded-xl p-12 text-center space-y-3">
-              <span class="text-4xl block">🔍</span>
-              <h4 class="text-base font-bold text-slate-900">No se encontraron certificados</h4>
-              <p class="text-xs text-slate-500 max-w-md mx-auto">
-                No hay registros que coincidan con la búsqueda "${escapeHtml(state.query)}" o los filtros aplicados.
-              </p>
-              <button
-                type="button"
-                id="resetCertFiltersBtn"
-                class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                Restablecer Filtros
-              </button>
-            </div>
-          `
-              : state.viewMode === 'list'
-              ? renderCleanCertificateListTable(filtered, renderSortArrow)
-              : renderCertificateCardGrid(filtered)
-          }
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-/**
- * Renders the decluttered clean List View.
- * MANDATORY RULE: The "Cobertura Normativa" column is STRICTLY EXCLUDED.
- * Columns: Organización, Código de Certificado, Norma, Sedes Multisitio (branch count), Estatus, Vigencia, Acciones.
- */
-function renderCleanCertificateListTable(
-  certificates: CertificadoDetailEntity[],
-  renderSortArrow: (col: string) => string
-): string {
-  return `
-    <div class="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-xs border-collapse">
-          <thead>
-            <tr class="bg-slate-50/90 border-b border-slate-200 text-slate-700 font-semibold select-none">
-              <th scope="col" class="py-3 px-4 cursor-pointer hover:bg-slate-100/70" data-action="sort-cert" data-column="organizacion">
-                Organización ${renderSortArrow('organizacion')}
-              </th>
-              <th scope="col" class="py-3 px-4 cursor-pointer hover:bg-slate-100/70" data-action="sort-cert" data-column="numero_certificado">
-                Código de Certificado ${renderSortArrow('numero_certificado')}
-              </th>
-              <th scope="col" class="py-3 px-4 cursor-pointer hover:bg-slate-100/70" data-action="sort-cert" data-column="norma">
-                Norma ${renderSortArrow('norma')}
-              </th>
-              <th scope="col" class="py-3 px-4 text-center cursor-pointer hover:bg-slate-100/70" data-action="sort-cert" data-column="sedes">
-                Sedes Multisitio ${renderSortArrow('sedes')}
-              </th>
-              <th scope="col" class="py-3 px-4 text-center cursor-pointer hover:bg-slate-100/70" data-action="sort-cert" data-column="estatus">
-                Estatus ${renderSortArrow('estatus')}
-              </th>
-              <th scope="col" class="py-3 px-4 text-right cursor-pointer hover:bg-slate-100/70" data-action="sort-cert" data-column="vigencia">
-                Vigencia ${renderSortArrow('vigencia')}
-              </th>
-              <th scope="col" class="py-3 px-4 text-center">Acciones</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100">
-            ${certificates
-              .map((cert) => {
-                const branchCount = countMultisiteBranches(cert.sitios);
-                const branchText = formatMultisiteBranchCountText(branchCount);
-                const statusVisual = getStatusBadge(cert.estatus);
-
-                return `
-                <tr class="hover:bg-slate-50/80 transition-colors">
-                  <!-- Organización Link (Zero-UUID) -->
-                  <td class="py-3 px-4">
-                    <button
-                      type="button"
-                      data-action="view-org-from-cert"
-                      data-org-id="${cert.id_organizacion}"
-                      class="text-left font-bold text-slate-900 hover:text-sky-700 transition-colors cursor-pointer group"
-                    >
-                      <span class="group-hover:underline">${escapeHtml(cert.organizacion_nombre)}</span>
-                      <span class="block text-[11px] font-mono text-slate-500 font-normal">RIF: ${escapeHtml(cert.organizacion_rif)}</span>
-                    </button>
-                  </td>
-
-                  <!-- Código de Certificado -->
-                  <td class="py-3 px-4 whitespace-nowrap">
-                    <button
-                      type="button"
-                      data-action="select-cert"
-                      data-cert-id="${cert.id}"
-                      class="font-mono text-xs font-bold text-slate-900 bg-slate-100 hover:bg-sky-50 hover:text-sky-900 px-2 py-0.5 rounded border border-slate-200 transition-colors cursor-pointer"
-                    >
-                      📜 ${escapeHtml(cert.numero_certificado)}
-                    </button>
-                  </td>
-
-                  <!-- Norma -->
-                  <td class="py-3 px-4 whitespace-nowrap">
-                    <div class="font-semibold text-slate-800">${escapeHtml(cert.norma_codigo)}</div>
-                    <div class="text-[11px] text-slate-500">${escapeHtml(cert.esquema)}</div>
-                  </td>
-
-                  <!-- Sedes Multisitio (Principal Site 0 Excluded) -->
-                  <td class="py-3 px-4 text-center whitespace-nowrap">
-                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
-                      branchCount > 0 ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-slate-100 text-slate-600'
-                    }">
-                      <span>${branchCount > 0 ? '🏢' : '📍'}</span>
-                      <span>${branchText}</span>
-                    </span>
-                  </td>
-
-                  <!-- Estatus -->
-                  <td class="py-3 px-4 text-center whitespace-nowrap">
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${statusVisual.badgeClass}">
-                      <span class="w-1.5 h-1.5 rounded-full ${statusVisual.dotClass}"></span>
-                      <span>${escapeHtml(statusVisual.label)}</span>
-                    </span>
-                  </td>
-
-                  <!-- Vigencia -->
-                  <td class="py-3 px-4 text-right whitespace-nowrap font-mono text-[11px] text-slate-600 tabular-nums">
-                    ${escapeHtml(cert.fecha_emision)} — ${escapeHtml(cert.fecha_vencimiento)}
-                  </td>
-
-                  <!-- Acciones -->
-                  <td class="py-3 px-4 text-center whitespace-nowrap">
-                    <button
-                      type="button"
-                      data-action="select-cert"
-                      data-cert-id="${cert.id}"
-                      class="text-xs font-semibold text-sky-700 hover:text-sky-900 inline-flex items-center gap-1 cursor-pointer"
-                    >
-                      <span>Inspeccionar</span>
-                      <span>→</span>
-                    </button>
-                  </td>
-                </tr>
-              `;
-              })
-              .join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
-}
-
-/**
- * Renders the High-Density Cards Grid View.
- * NOTE: No Cobertura Normativa progress bar in the main list/grid view.
- */
-function renderCertificateCardGrid(certificates: CertificadoDetailEntity[]): string {
-  return `
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      ${certificates
-        .map((cert) => {
-          const branchCount = countMultisiteBranches(cert.sitios);
-          const branchText = formatMultisiteBranchCountText(branchCount);
-          const statusVisual = getStatusBadge(cert.estatus);
-
-          return `
-          <div
-            data-action="select-cert"
-            data-cert-id="${cert.id}"
-            class="bg-white border border-slate-200 hover:border-slate-300 rounded-xl p-5 shadow-xs hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between space-y-4 group"
-          >
-            <!-- Card Header: Code & Status -->
-            <div class="space-y-2">
-              <div class="flex items-center justify-between gap-2">
-                <span class="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                  📜 ${escapeHtml(cert.numero_certificado)}
-                </span>
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${statusVisual.badgeClass}">
-                  <span class="w-1.5 h-1.5 rounded-full ${statusVisual.dotClass}"></span>
-                  <span>${escapeHtml(statusVisual.label)}</span>
-                </span>
-              </div>
-
-              <div>
-                <h4 class="text-base font-bold text-slate-900 group-hover:text-sky-700 transition-colors">
-                  ${escapeHtml(cert.organizacion_nombre)}
-                </h4>
-                <div class="flex items-center gap-2 text-xs text-slate-500 pt-0.5">
-                  <span class="font-mono">RIF: ${escapeHtml(cert.organizacion_rif)}</span>
-                  <span>·</span>
-                  <span>${escapeHtml(cert.norma_codigo)}</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Card Body: Sector & Multisite Branch Count -->
-            <div class="text-xs text-slate-600 bg-slate-50/75 p-3 rounded-lg border border-slate-100 space-y-1.5">
-              <div class="flex items-center justify-between">
-                <span class="text-slate-500 text-[11px]">Sector IAF ${cert.sector_iaf}:</span>
-                <span class="font-medium text-slate-800 truncate max-w-[200px]" title="${escapeHtml(cert.sector_iaf_descripcion)}">
-                  ${escapeHtml(cert.sector_iaf_descripcion)}
-                </span>
-              </div>
-              <div class="flex items-center justify-between pt-1 border-t border-slate-200/50">
-                <span class="text-slate-500 text-[11px]">Esquema Multisitio:</span>
-                <span class="font-medium text-slate-800 inline-flex items-center gap-1">
-                  <span>${branchCount > 0 ? '🏢' : '📍'}</span>
-                  <span>${branchText}</span>
-                </span>
-              </div>
-            </div>
-
-            <!-- Card Footer: Validity & Details Link -->
-            <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-              <span class="font-mono text-[11px] tabular-nums">Vigencia: ${escapeHtml(cert.fecha_vencimiento)}</span>
-              <span class="font-semibold text-sky-700 group-hover:text-sky-900 inline-flex items-center gap-1">
-                <span>Ver Ficha</span>
-                <span>→</span>
-              </span>
-            </div>
-          </div>
-        `;
-        })
-        .join('')}
-    </div>
-  `;
+  return renderUniversalTemplate<CertificadoDetailEntity>({
+    domainKey: 'certificados',
+    title: 'Certificados de Conformidad',
+    subtitle:
+      'Gestión de certificados emitidos bajo ISO/IEC 17021-1:2015, alcance técnico, sedes multisitio y trazabilidad',
+    entityLabel: 'certificados registrados',
+    searchQuery: state.query,
+    searchPlaceholder: 'Buscar por N° Certificado, organización, RIF, norma o alcance... (Presione "/" para enfocar)',
+    searchInputId: 'certDirectorySearchInput',
+    clearSearchBtnId: 'clearCertSearchBtn',
+    totalCount: allCertificates.length,
+    filteredCount: sorted.length,
+    viewMode: state.viewMode,
+    isSidebarOpen: state.isSidebarOpen ?? true,
+    sortState: {
+      column: state.sortColumn,
+      direction: state.sortDirection,
+    },
+    facetGroups,
+    items: sorted,
+    columns,
+    renderCard,
+    emptyStateTitle: 'No se encontraron certificados',
+    emptyStateMessage:
+      'No hay registros que coincidan con el término de búsqueda o las facetas seleccionadas.',
+    actionsHtml,
+    inlineFormHtml,
+    loading,
+    loadingMessage: 'Cargando certificados emitidos...',
+  });
 }
 
 /**

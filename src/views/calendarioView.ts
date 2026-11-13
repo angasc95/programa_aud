@@ -158,10 +158,6 @@ export function renderCalendarioView(props: CalendarioViewProps): string {
       <header class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs space-y-4">
         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div class="space-y-1">
-            <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-800 text-[11px] font-bold border border-indigo-200">
-              <span aria-hidden="true">📆</span>
-              <span>DOMINIO AUDITORÍAS · CALENDARIO OPERATIVO</span>
-            </div>
             <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
               Calendario Operativo y Línea de Tiempo de Evaluaciones
             </h2>
@@ -170,8 +166,11 @@ export function renderCalendarioView(props: CalendarioViewProps): string {
             </p>
           </div>
 
-          <!-- View Switcher: Mensual | Trimestral | Timeline / Gantt -->
-          <div class="flex flex-wrap items-center gap-2">
+          <!-- View Switcher + Totalizer -->
+          <div class="flex flex-wrap items-center gap-3">
+            <div class="text-xs text-slate-500 font-medium tabular-nums">
+              Mostrando <span class="font-bold text-slate-900 tabular-nums">${filteredAudits.length}</span> de <span class="font-semibold text-slate-700 tabular-nums">${audits.length}</span> auditorías programadas
+            </div>
             <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 shadow-2xs" role="group" aria-label="Modo de presentación del calendario">
               <button
                 type="button"

@@ -6,10 +6,15 @@ import {
   type SubsectorIafEntity,
 } from '../lib/extraDomain';
 import {
-  renderSortIndicator,
+  computeReactiveFacetCounts,
+  filterRecordsWithFacets,
   sortItems,
+  type ColumnDefinition,
+  type MultiViewFacetCategory,
+  type MultiViewSelectionMap,
   type SortDirection,
 } from '../lib/universalTemplate';
+import { renderUniversalTemplate } from './universalTemplate';
 
 export interface SectorIafViewState {
   selectedSectorId: string | null;
@@ -20,6 +25,8 @@ export interface SectorIafViewState {
   sortColumn: string | null;
   sortDirection: SortDirection;
   isAddSubsectorModalOpen: boolean;
+  isSidebarOpen?: boolean;
+  facetSelections?: MultiViewSelectionMap;
 }
 
 export interface SectorIafViewProps {
@@ -31,7 +38,7 @@ export interface SectorIafViewProps {
 }
 
 export function renderSectorIafView(props: SectorIafViewProps): string {
-  const { profile, state, sectores, subsectores } = props;
+  const { profile, state, sectores, subsectores, loading } = props;
   const isStaff = profile.role === 'ADMIN' || profile.role === 'WORKER';
 
   // If a specific Sector is selected, render the Standardized 4-Zone Detail Page
@@ -54,12 +61,13 @@ export function renderSectorIafView(props: SectorIafViewProps): string {
     }
   }
 
-  // Otherwise, render the Universal List/Grid View
+  // Otherwise, render the Universal Multi View Directory
   return renderSectorDirectoryView({
     profile,
     state,
     sectores,
     subsectores,
+    loading,
   });
 }
 
@@ -68,32 +76,70 @@ function renderSectorDirectoryView(params: {
   state: SectorIafViewState;
   sectores: SectorIafEntity[];
   subsectores: SubsectorIafEntity[];
+  loading?: boolean;
 }): string {
-  const { state, sectores, subsectores } = params;
+  const { state, sectores, subsectores, loading } = params;
 
-  // Filter sectores by search query and risk category
-  const filtered = sectores.filter((sec) => {
-    if (state.query) {
-      const q = state.query.toLowerCase();
-      const numMatch = String(sec.sector).includes(q);
-      const descMatch = sec.descripcion.toLowerCase().includes(q);
-      if (!numMatch && !descMatch) return false;
-    }
+  const getRelatedSubs = (sec: SectorIafEntity): SubsectorIafEntity[] =>
+    subsectores.filter(
+      (sub) => sub.id_sector_iaf === sec.id || sub.sector_numero === sec.sector
+    );
 
-    if (state.selectedRisk && state.selectedRisk !== 'ALL') {
-      const relatedSubs = subsectores.filter(
-        (sub) => sub.id_sector_iaf === sec.id || sub.sector_numero === sec.sector
-      );
-      const hasRisk = relatedSubs.some(
-        (s) => s.categoria_riesgo.toUpperCase() === state.selectedRisk.toUpperCase()
-      );
-      if (!hasRisk) return false;
-    }
+  const facetCategories: MultiViewFacetCategory<SectorIafEntity>[] = [
+    {
+      id: 'riesgo',
+      label: 'Nivel de Riesgo Sub-Sector',
+      options: [
+        { value: 'ALTO', label: 'Alto Riesgo (ALTO)' },
+        { value: 'MEDIO', label: 'Riesgo Medio (MEDIO)' },
+        { value: 'BAJO', label: 'Bajo Riesgo (BAJO)' },
+      ],
+      extractValues: (sec) => {
+        const risks = new Set<string>();
+        for (const sub of getRelatedSubs(sec)) {
+          risks.add(sub.categoria_riesgo.toUpperCase());
+        }
+        return Array.from(risks);
+      },
+    },
+    {
+      id: 'auditores',
+      label: 'Con Auditores Calificados',
+      options: [
+        { value: 'CON_AUDITORES', label: 'Con Auditores Calificados' },
+        { value: 'SIN_AUDITORES', label: 'Sin Auditores Calificados' },
+      ],
+      extractValues: (sec) => (sec.auditores_count > 0 ? 'CON_AUDITORES' : 'SIN_AUDITORES'),
+    },
+  ];
 
-    return true;
-  });
+  const effectiveSelections: MultiViewSelectionMap = state.facetSelections
+    ? state.facetSelections
+    : {
+        riesgo:
+          state.selectedRisk && state.selectedRisk !== 'ALL'
+            ? new Set([state.selectedRisk.toUpperCase()])
+            : new Set<string>(),
+        auditores: new Set<string>(),
+      };
 
-  // Sort
+  const searchOptions = {
+    getSearchableText: (sec: SectorIafEntity) => {
+      const subText = getRelatedSubs(sec)
+        .map((sub) => `${sub.codigo} ${sub.descripcion}`)
+        .join(' ');
+      return `IAF ${sec.sector} ${sec.descripcion} ${subText}`;
+    },
+  };
+
+  const filtered = filterRecordsWithFacets(
+    sectores,
+    state.query,
+    facetCategories,
+    effectiveSelections,
+    searchOptions
+  );
+
   const sorted = sortItems(
     filtered,
     state.sortColumn,
@@ -114,385 +160,174 @@ function renderSectorDirectoryView(params: {
     }
   );
 
-  // Table view HTML
-  const tableViewHtml = `
-    <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
-      <table class="w-full text-left text-xs border-collapse">
-        <thead>
-          <tr class="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200 select-none">
-            <th class="py-3 px-4">
-              <button
-                type="button"
-                data-action="sort-iaf"
-                data-column="sector"
-                class="hover:text-slate-900 inline-flex items-center gap-1 font-bold cursor-pointer"
-              >
-                <span>Sector IAF</span>
-                <span class="text-[10px] text-slate-400 font-mono">${state.sortColumn === 'sector' ? renderSortIndicator(state.sortDirection) : '▲▼'}</span>
-              </button>
-            </th>
-            <th class="py-3 px-4">
-              <button
-                type="button"
-                data-action="sort-iaf"
-                data-column="descripcion"
-                class="hover:text-slate-900 inline-flex items-center gap-1 font-bold cursor-pointer"
-              >
-                <span>Descripción Técnica Oficial</span>
-                <span class="text-[10px] text-slate-400 font-mono">${state.sortColumn === 'descripcion' ? renderSortIndicator(state.sortDirection) : '▲▼'}</span>
-              </button>
-            </th>
-            <th class="py-3 px-4 text-center">
-              <button
-                type="button"
-                data-action="sort-iaf"
-                data-column="subsectores"
-                class="hover:text-slate-900 inline-flex items-center gap-1 font-bold cursor-pointer"
-              >
-                <span>Sub-Sectores</span>
-                <span class="text-[10px] text-slate-400 font-mono">${state.sortColumn === 'subsectores' ? renderSortIndicator(state.sortDirection) : '▲▼'}</span>
-              </button>
-            </th>
-            <th class="py-3 px-4 text-center">
-              <button
-                type="button"
-                data-action="sort-iaf"
-                data-column="auditores"
-                class="hover:text-slate-900 inline-flex items-center gap-1 font-bold cursor-pointer"
-              >
-                <span>Auditores Calificados</span>
-                <span class="text-[10px] text-slate-400 font-mono">${state.sortColumn === 'auditores' ? renderSortIndicator(state.sortDirection) : '▲▼'}</span>
-              </button>
-            </th>
-            <th class="py-3 px-4 text-right">Acciones</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
+  const facetGroups = computeReactiveFacetCounts(
+    sectores,
+    state.query,
+    facetCategories,
+    effectiveSelections,
+    searchOptions
+  );
+
+  const columns: ColumnDefinition<SectorIafEntity>[] = [
+    {
+      id: 'sector',
+      header: 'Sector IAF',
+      sortable: true,
+      renderCell: (sec) => `
+        <button
+          type="button"
+          data-action="select-iaf"
+          data-sector-id="${escapeHtml(sec.id)}"
+          class="text-indigo-600 hover:text-indigo-800 hover:underline font-mono font-bold cursor-pointer inline-flex items-center gap-1.5"
+        >
+          <span aria-hidden="true">🏭</span>
+          <span>IAF ${sec.sector}</span>
+        </button>
+      `,
+    },
+    {
+      id: 'descripcion',
+      header: 'Descripción Técnica Oficial',
+      sortable: true,
+      renderCell: (sec) => `
+        <span class="text-slate-700 font-medium">${escapeHtml(sec.descripcion)}</span>
+      `,
+    },
+    {
+      id: 'subsectores',
+      header: 'Sub-Sectores',
+      sortable: true,
+      align: 'center',
+      renderCell: (sec) => {
+        const relatedSubs = getRelatedSubs(sec);
+        return `
+          <span class="inline-flex items-center gap-1 font-mono font-bold px-2 py-0.5 rounded text-[11px] bg-slate-100 text-slate-700 border border-slate-200 tabular-nums">
+            ${relatedSubs.length} sub-sector(es)
+          </span>
+        `;
+      },
+    },
+    {
+      id: 'auditores',
+      header: 'Auditores Calificados',
+      sortable: true,
+      align: 'center',
+      renderCell: (sec) => `
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 tabular-nums">
+          <span aria-hidden="true">👥</span>
+          <span>${sec.auditores_count}</span>
+        </span>
+      `,
+    },
+    {
+      id: 'acciones',
+      header: 'Acciones',
+      align: 'right',
+      renderCell: (sec) => `
+        <button
+          type="button"
+          data-action="select-iaf"
+          data-sector-id="${escapeHtml(sec.id)}"
+          class="px-2.5 py-1 rounded-md text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors cursor-pointer"
+        >
+          Ver Detalle →
+        </button>
+      `,
+    },
+  ];
+
+  const renderCard = (sec: SectorIafEntity): string => {
+    const relatedSubs = getRelatedSubs(sec);
+
+    return `
+      <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs hover:shadow-xs transition-shadow space-y-3 flex flex-col justify-between">
+        <div class="space-y-2">
+          <div class="flex items-start justify-between gap-2">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-800 text-xs font-bold border border-indigo-200 font-mono">
+              <span aria-hidden="true">🏭</span>
+              <span>Sector IAF ${sec.sector}</span>
+            </span>
+            <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+              Acreditado
+            </span>
+          </div>
+
+          <h3 class="text-sm font-bold text-slate-900 leading-snug">
+            ${escapeHtml(sec.descripcion)}
+          </h3>
+
+          <div class="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-600">
+            <span class="inline-flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200 font-mono">
+              <span aria-hidden="true">🏷️</span>
+              <span><strong>${relatedSubs.length}</strong> Sub-sectores</span>
+            </span>
+            <span class="inline-flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200">
+              <span aria-hidden="true">👥</span>
+              <span><strong>${sec.auditores_count}</strong> Evaluadores</span>
+            </span>
+          </div>
+
           ${
-            sorted.length === 0
+            relatedSubs.length > 0
               ? `
-                <tr>
-                  <td colspan="5" class="py-8 text-center text-slate-400 text-xs italic">
-                    No se encontraron sectores que coincidan con los filtros aplicados.
-                  </td>
-                </tr>
+                <div class="pt-1 flex flex-wrap gap-1">
+                  ${relatedSubs
+                    .map((s) => {
+                      const rMeta = formatRiskCategoryBadge(s.categoria_riesgo);
+                      return `
+                        <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-50 text-slate-700 border border-slate-200" title="${escapeHtml(s.descripcion)} (${rMeta.label})">
+                          ${escapeHtml(s.codigo)}
+                        </span>
+                      `;
+                    })
+                    .join('')}
+                </div>
               `
-              : sorted
-                  .map((sec) => {
-                    const relatedSubs = subsectores.filter(
-                      (sub) => sub.id_sector_iaf === sec.id || sub.sector_numero === sec.sector
-                    );
-
-                    return `
-                      <tr class="hover:bg-slate-50/70 transition-colors">
-                        <td class="py-3 px-4 font-mono font-bold text-slate-900">
-                          <button
-                            type="button"
-                            data-action="select-iaf"
-                            data-sector-id="${escapeHtml(sec.id)}"
-                            class="text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer inline-flex items-center gap-1.5"
-                          >
-                            <span>🏭</span>
-                            <span>IAF ${sec.sector}</span>
-                          </button>
-                        </td>
-                        <td class="py-3 px-4 text-slate-700 font-medium">
-                          ${escapeHtml(sec.descripcion)}
-                        </td>
-                        <td class="py-3 px-4 text-center">
-                          <span class="inline-flex items-center gap-1 font-mono font-bold px-2 py-0.5 rounded text-[11px] bg-slate-100 text-slate-700 border border-slate-200">
-                            ${relatedSubs.length} sub-sector(es)
-                          </span>
-                        </td>
-                        <td class="py-3 px-4 text-center">
-                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                            <span>👥</span>
-                            <span>${sec.auditores_count}</span>
-                          </span>
-                        </td>
-                        <td class="py-3 px-4 text-right">
-                          <button
-                            type="button"
-                            data-action="select-iaf"
-                            data-sector-id="${escapeHtml(sec.id)}"
-                            class="px-2.5 py-1 rounded-md text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors cursor-pointer"
-                          >
-                            Ver Detalle →
-                          </button>
-                        </td>
-                      </tr>
-                    `;
-                  })
-                  .join('')
+              : ''
           }
-        </tbody>
-      </table>
-    </div>
-  `;
-
-  // Grid view HTML
-  const gridViewHtml = `
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      ${
-        sorted.length === 0
-          ? `
-            <div class="col-span-full py-12 text-center text-slate-400 text-xs italic bg-white border border-slate-200 rounded-xl">
-              No se encontraron sectores que coincidan con los filtros aplicados.
-            </div>
-          `
-          : sorted
-              .map((sec) => {
-                const relatedSubs = subsectores.filter(
-                  (sub) => sub.id_sector_iaf === sec.id || sub.sector_numero === sec.sector
-                );
-
-                return `
-                  <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs hover:shadow-xs transition-shadow space-y-3 flex flex-col justify-between">
-                    <div class="space-y-2">
-                      <div class="flex items-start justify-between gap-2">
-                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-800 text-xs font-bold border border-indigo-200 font-mono">
-                          <span>🏭</span>
-                          <span>Sector IAF ${sec.sector}</span>
-                        </span>
-                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                          Acreditado
-                        </span>
-                      </div>
-
-                      <h3 class="text-sm font-bold text-slate-900 leading-snug">
-                        ${escapeHtml(sec.descripcion)}
-                      </h3>
-
-                      <div class="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-600">
-                        <span class="inline-flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200 font-mono">
-                          <span>🏷️</span>
-                          <span><strong>${relatedSubs.length}</strong> Sub-sectores</span>
-                        </span>
-                        <span class="inline-flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200">
-                          <span>👥</span>
-                          <span><strong>${sec.auditores_count}</strong> Evaluadores</span>
-                        </span>
-                      </div>
-
-                      ${
-                        relatedSubs.length > 0
-                          ? `
-                            <div class="pt-1 flex flex-wrap gap-1">
-                              ${relatedSubs
-                                .map((s) => {
-                                  const rMeta = formatRiskCategoryBadge(s.categoria_riesgo);
-                                  return `
-                                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-50 text-slate-700 border border-slate-200" title="${escapeHtml(s.descripcion)} (${rMeta.label})">
-                                      ${escapeHtml(s.codigo)}
-                                    </span>
-                                  `;
-                                })
-                                .join('')}
-                            </div>
-                          `
-                          : ''
-                      }
-                    </div>
-
-                    <div class="pt-3 border-t border-slate-100 flex items-center justify-end">
-                      <button
-                        type="button"
-                        data-action="select-iaf"
-                        data-sector-id="${escapeHtml(sec.id)}"
-                        class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 transition-colors cursor-pointer inline-flex items-center gap-1"
-                      >
-                        <span>Explorar Sub-Sectores</span>
-                        <span>→</span>
-                      </button>
-                    </div>
-                  </div>
-                `;
-              })
-              .join('')
-      }
-    </div>
-  `;
-
-  return `
-    <div class="space-y-6">
-      <!-- Universal Header Section -->
-      <header class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs space-y-4">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div class="space-y-1">
-            <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-800 text-xs font-bold border border-indigo-200">
-              <span>🏭</span>
-              <span>DIRECTORIO DE SECTORES Y SUB-SECTORES IAF</span>
-            </div>
-            <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-              Sectores Técnicos de Acreditación IAF
-            </h1>
-            <p class="text-xs text-slate-600 max-w-2xl">
-              Taxonomía técnica internacional de sectores económicos, códigos de sub-sectores jerárquicos (17.1, 17.2...) y categorización de riesgo para la cualificación de auditores.
-            </p>
-          </div>
-          <div class="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 self-start sm:self-auto">
-            ${sectores.length} Sectores Registrados
-          </div>
         </div>
 
-        <!-- Search Bar and Presentation Switcher -->
-        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
-          <div class="relative flex-1 min-w-0">
-            <label for="iafSearchInput" class="sr-only">Buscar sectores IAF por número o descripción</label>
-            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
-            <input
-              id="iafSearchInput"
-              type="text"
-              value="${escapeHtml(state.query)}"
-              placeholder="Buscar por número (14, 17, 28...) o actividad industrial..."
-              autocomplete="off"
-              class="w-full pl-10 pr-12 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-colors"
-            />
-            ${
-              state.query
-                ? `
-                  <button
-                    type="button"
-                    id="clearIafSearchBtn"
-                    title="Limpiar búsqueda"
-                    class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-700 cursor-pointer"
-                  >
-                    ✕
-                  </button>
-                `
-                : ''
-            }
-          </div>
-
-          <!-- Switcher -->
-          <div class="inline-flex items-center p-1 bg-slate-100 rounded-lg border border-slate-200 shrink-0">
-            <button
-              type="button"
-              data-action="set-iaf-view-mode"
-              data-mode="grid"
-              aria-pressed="${state.viewMode === 'grid' ? 'true' : 'false'}"
-              title="Vista en cuadrícula de tarjetas"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                state.viewMode === 'grid'
-                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }"
-            >
-              <span>⊞</span>
-              <span>Cuadrícula</span>
-            </button>
-            <button
-              type="button"
-              data-action="set-iaf-view-mode"
-              data-mode="list"
-              aria-pressed="${state.viewMode === 'list' ? 'true' : 'false'}"
-              title="Vista en tabla de datos (Lista)"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                state.viewMode === 'list'
-                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }"
-            >
-              <span>☰</span>
-              <span>Lista</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <!-- Main Layout with Sidebar Facets -->
-      <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <aside class="space-y-4">
-          <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-4">
-            <div class="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700">Filtros de Riesgo</h3>
-              <button
-                type="button"
-                id="resetIafFiltersBtn"
-                class="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
-              >
-                Limpiar Todo
-              </button>
-            </div>
-
-            <div class="space-y-2">
-              <label class="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Categoría de Riesgo ISO</label>
-              <div class="space-y-1">
-                <button
-                  type="button"
-                  data-iaf-filter-risk="ALL"
-                  class="w-full text-left px-2.5 py-1.5 rounded-md text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                    state.selectedRisk === 'ALL'
-                      ? 'bg-slate-900 text-white font-bold'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span>Todos los Riesgos</span>
-                  <span class="text-[10px] opacity-80">${sectores.length}</span>
-                </button>
-                <button
-                  type="button"
-                  data-iaf-filter-risk="ALTO"
-                  class="w-full text-left px-2.5 py-1.5 rounded-md text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                    state.selectedRisk === 'ALTO'
-                      ? 'bg-rose-900 text-white font-bold'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span class="inline-flex items-center gap-1.5">
-                    <span>🔴</span>
-                    <span>Alto Riesgo</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  data-iaf-filter-risk="MEDIO"
-                  class="w-full text-left px-2.5 py-1.5 rounded-md text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                    state.selectedRisk === 'MEDIO'
-                      ? 'bg-amber-900 text-white font-bold'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span class="inline-flex items-center gap-1.5">
-                    <span>🟡</span>
-                    <span>Riesgo Medio</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  data-iaf-filter-risk="BAJO"
-                  class="w-full text-left px-2.5 py-1.5 rounded-md text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                    state.selectedRisk === 'BAJO'
-                      ? 'bg-emerald-900 text-white font-bold'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span class="inline-flex items-center gap-1.5">
-                    <span>🟢</span>
-                    <span>Bajo Riesgo</span>
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <!-- Main Items Pane -->
-        <div class="lg:col-span-3 space-y-4">
-          <div class="flex items-center justify-between text-xs text-slate-500 font-medium px-1">
-            <span>Mostrando <strong>${sorted.length}</strong> de ${sectores.length} sector(es)</span>
-            <span>Vista: <strong>${state.viewMode === 'grid' ? 'Cuadrícula' : 'Tabla (Lista)'}</strong></span>
-          </div>
-
-          ${state.viewMode === 'grid' ? gridViewHtml : tableViewHtml}
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-end">
+          <button
+            type="button"
+            data-action="select-iaf"
+            data-sector-id="${escapeHtml(sec.id)}"
+            class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 transition-colors cursor-pointer inline-flex items-center gap-1"
+          >
+            <span>Explorar Sub-Sectores</span>
+            <span>→</span>
+          </button>
         </div>
       </div>
-    </div>
-  `;
+    `;
+  };
+
+  return renderUniversalTemplate({
+    domainKey: 'iaf',
+    title: 'Sectores Técnicos de Acreditación IAF',
+    subtitle:
+      'Taxonomía técnica internacional de sectores económicos, códigos de sub-sectores jerárquicos (17.1, 17.2...) y categorización de riesgo para la cualificación de auditores.',
+    entityLabel: 'sectores IAF',
+    searchQuery: state.query,
+    searchPlaceholder: 'Buscar por número (14, 17, 28...) o actividad industrial...',
+    searchInputId: 'iafSearchInput',
+    clearSearchBtnId: 'clearIafSearchBtn',
+    totalCount: sectores.length,
+    filteredCount: sorted.length,
+    viewMode: state.viewMode,
+    isSidebarOpen: state.isSidebarOpen ?? true,
+    sortState: {
+      column: state.sortColumn,
+      direction: state.sortDirection,
+    },
+    facetGroups,
+    items: sorted,
+    columns,
+    renderCard,
+    emptyStateTitle: 'No se encontraron sectores IAF',
+    emptyStateMessage: 'No se encontraron sectores que coincidan con los filtros aplicados.',
+    loading,
+  });
 }
 
 /**

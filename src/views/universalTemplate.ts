@@ -8,6 +8,7 @@ import {
 import type { ViewMode } from '../lib/searchControls';
 
 export interface UniversalTemplateProps<T> {
+  domainKey?: string;
   title: string;
   subtitle?: string;
   entityLabel?: string;
@@ -27,12 +28,14 @@ export interface UniversalTemplateProps<T> {
   emptyStateTitle?: string;
   emptyStateMessage?: string;
   actionsHtml?: string;
+  inlineFormHtml?: string;
   loading?: boolean;
   loadingMessage?: string;
 }
 
 export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): string {
   const {
+    domainKey,
     title,
     subtitle,
     entityLabel = 'registros',
@@ -52,6 +55,7 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
     emptyStateTitle = 'No se encontraron registros',
     emptyStateMessage = 'Intente ajustar el término de búsqueda o restablecer los filtros de la barra lateral.',
     actionsHtml = '',
+    inlineFormHtml = '',
     loading = false,
     loadingMessage = 'Cargando registros...',
   } = props;
@@ -71,7 +75,7 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
       aria-hidden="${isSidebarOpen ? 'false' : 'true'}"
       class="${
         isSidebarOpen
-          ? 'w-full lg:w-64 shrink-0 bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-5 h-fit'
+          ? 'w-full lg:w-64 shrink-0 min-w-0 overflow-hidden bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-5 h-fit'
           : 'hidden'
       }"
     >
@@ -106,11 +110,11 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
         ${facetGroups
           .map((group) => {
             return `
-              <fieldset class="space-y-2 border-t border-slate-100 pt-3 first:border-t-0 first:pt-0">
+              <fieldset class="min-w-0 space-y-2 border-t border-slate-100 pt-3 first:border-t-0 first:pt-0">
                 <legend class="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   ${escapeHtml(group.label)}
                 </legend>
-                <div class="space-y-1">
+                <div class="space-y-1 min-w-0">
                   ${group.options
                     .map((opt) => {
                       const isSelected = opt.selected;
@@ -128,13 +132,14 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
 
                       return `
                         <label
-                          class="w-full px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer select-none ${
+                          title="${escapeHtml(opt.label)}"
+                          class="w-full max-w-full overflow-hidden px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer select-none ${
                             isSelected
                               ? 'bg-indigo-50/90 border border-indigo-200/80'
                               : 'border border-transparent hover:bg-slate-50'
                           }"
                         >
-                          <span class="flex items-center gap-2 min-w-0">
+                          <span class="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
                             <input
                               type="checkbox"
                               data-facet-checkbox="true"
@@ -143,7 +148,7 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
                               ${isSelected ? 'checked' : ''}
                               class="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 shrink-0 cursor-pointer"
                             />
-                            <span class="truncate ${textToneClass}">${escapeHtml(opt.label)}</span>
+                            <span class="block truncate ${textToneClass}">${escapeHtml(opt.label)}</span>
                           </span>
                           <span class="text-[10px] px-1.5 py-0.5 rounded-full font-semibold tabular-nums shrink-0 ${countToneClass}">
                             ${opt.count}
@@ -229,10 +234,16 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
                     const sortClass = isSorted
                       ? 'text-indigo-600 font-extrabold'
                       : 'text-slate-400 group-hover:text-slate-700';
+                    const alignClass =
+                      col.align === 'center'
+                        ? 'text-center'
+                        : col.align === 'right'
+                        ? 'text-right'
+                        : 'text-left';
 
                     if (col.sortable) {
                       return `
-                        <th scope="col" class="px-4 py-3 select-none ${col.className || ''}">
+                        <th scope="col" class="px-3 py-2.5 select-none ${alignClass} ${col.className || ''}">
                           <button
                             type="button"
                             data-action="sort-column"
@@ -249,7 +260,7 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
                     }
 
                     return `
-                      <th scope="col" class="px-4 py-3 ${col.className || ''}">
+                      <th scope="col" class="px-3 py-2.5 ${alignClass} ${col.className || ''}">
                         ${escapeHtml(col.header)}
                       </th>
                     `;
@@ -271,7 +282,7 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
                               ? 'text-right'
                               : 'text-left';
                           return `
-                            <td class="px-4 py-3 align-middle ${alignClass} ${col.className || ''}">
+                            <td class="px-3 py-2.5 align-middle ${alignClass} ${col.className || ''}">
                               ${col.renderCell(item)}
                             </td>
                           `;
@@ -296,7 +307,7 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
 
   // 3. Unified Header + Controls Card + Collapsible Body Layout
   return `
-    <div class="space-y-5">
+    <div class="space-y-5"${domainKey ? ` data-mv-domain="${escapeHtml(domainKey)}"` : ''}>
       <header class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs space-y-4">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div class="space-y-1 min-w-0">
@@ -312,6 +323,8 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
 
           ${actionsHtml ? `<div class="shrink-0 flex items-center gap-2">${actionsHtml}</div>` : ''}
         </div>
+
+        ${inlineFormHtml ? `<div class="pt-3 border-t border-slate-100">${inlineFormHtml}</div>` : ''}
 
         <!-- Unified Controls Row: Sidebar Toggle + Single Search Input + Totalizer + [Tarjetas | Tabla] -->
         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-3 border-t border-slate-100">

@@ -1,10 +1,8 @@
 import { escapeHtml } from '../lib/html';
 import type { UserProfile } from '../lib/healthCheck';
 import {
-  countDistinctAccreditedStandards,
   countDistinctQualifiedSectors,
   countDistinctQualifiedSubsectors,
-  filterAuditors,
   getAuditRoleVisual,
   getCredentialValidityState,
   getQualificationStatusVisual,
@@ -14,6 +12,15 @@ import {
   type CompetenciaAuditorEntity,
   type AuditoriaRealizadaEntity,
 } from '../lib/competencyMatrix';
+import {
+  computeReactiveFacetCounts,
+  filterRecordsWithFacets,
+  sortItems,
+  type ColumnDefinition,
+  type MultiViewFacetCategory,
+  type MultiViewSelectionMap,
+} from '../lib/universalTemplate';
+import { renderUniversalTemplate } from './universalTemplate';
 
 export type { AuditorViewState, AuditorChildTab };
 
@@ -37,8 +44,100 @@ export function renderAuditorView(props: AuditorViewProps): string {
   return renderAuditorDirectory(profile, state, auditors, loading);
 }
 
+function renderCreateAuditorForm(errorMessage?: string | null): string {
+  return `
+    <div class="bg-indigo-50/70 border border-indigo-200 rounded-xl p-4 sm:p-5 space-y-4">
+      <div class="flex items-center justify-between gap-2">
+        <h2 class="text-sm font-bold text-slate-900">Registrar Nuevo Auditor en el Cuerpo Evaluador</h2>
+        <button
+          type="button"
+          data-action="close-create-auditor"
+          class="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+        >
+          ✕ Cancelar
+        </button>
+      </div>
+      ${
+        errorMessage
+          ? `<div class="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-medium text-rose-800">${escapeHtml(errorMessage)}</div>`
+          : ''
+      }
+      <form id="createAuditorForm" class="space-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label for="createAuditorNombreInput" class="block text-xs font-semibold text-slate-700 mb-1">Nombre Completo *</label>
+            <input id="createAuditorNombreInput" type="text" required placeholder="Ej. Ing. Elena Mendoza" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2" />
+          </div>
+          <div>
+            <label for="createAuditorTituloInput" class="block text-xs font-semibold text-slate-700 mb-1">Título Profesional *</label>
+            <input id="createAuditorTituloInput" type="text" required placeholder="Ingeniera Industrial · Esp. SGC" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2" />
+          </div>
+          <div>
+            <label for="createAuditorCredencialInput" class="block text-xs font-semibold text-slate-700 mb-1">Código de Credencial *</label>
+            <input id="createAuditorCredencialInput" type="text" required placeholder="Ej. AUD-2025-099" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2 font-mono" />
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label for="createAuditorEmailInput" class="block text-xs font-semibold text-slate-700 mb-1">Correo Electrónico *</label>
+            <input id="createAuditorEmailInput" type="email" required placeholder="emendoza@fondonorma.org.ve" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2" />
+          </div>
+          <div>
+            <label for="createAuditorTelefonoInput" class="block text-xs font-semibold text-slate-700 mb-1">Teléfono</label>
+            <input id="createAuditorTelefonoInput" type="text" placeholder="+58 414 555 0199" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2" />
+          </div>
+          <div>
+            <label for="createAuditorCalificacionSelect" class="block text-xs font-semibold text-slate-700 mb-1">Calificación *</label>
+            <select id="createAuditorCalificacionSelect" required class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2">
+              <option value="Calificado">Calificado</option>
+              <option value="En Entrenamiento">En Entrenamiento</option>
+              <option value="Observador">Observador</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label for="createAuditorNormasInput" class="block text-xs font-semibold text-slate-700 mb-1">Normas Acreditadas (separadas por coma)</label>
+            <input id="createAuditorNormasInput" type="text" value="ISO 9001:2015" placeholder="ISO 9001:2015, ISO 14001:2015" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2" />
+          </div>
+          <div>
+            <label for="createAuditorSectoresInput" class="block text-xs font-semibold text-slate-700 mb-1">Sectores IAF (números separados por coma)</label>
+            <input id="createAuditorSectoresInput" type="text" value="17" placeholder="17, 18" class="w-full text-xs rounded-lg border border-slate-300 bg-white px-2.5 py-2 font-mono" />
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button
+            type="button"
+            data-action="close-create-auditor"
+            class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold cursor-pointer"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors cursor-pointer"
+          >
+            Guardar Auditor
+          </button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function getAuditorValidityStates(auditor: AuditorDetailEntity): string[] {
+  if (!auditor.competencias || auditor.competencias.length === 0) {
+    return ['Vigente'];
+  }
+  const states = new Set<string>();
+  for (const comp of auditor.competencias) {
+    states.add(getCredentialValidityState(comp.fecha_vencimiento));
+  }
+  return Array.from(states);
+}
+
 /**
- * Renders the Universal List / Grid Directory View for Auditores
+ * Renders the Universal Multi View Directory for Auditores
  */
 function renderAuditorDirectory(
   profile: UserProfile,
@@ -46,515 +145,324 @@ function renderAuditorDirectory(
   allAuditors: AuditorDetailEntity[],
   loading: boolean
 ): string {
-  const filtered = filterAuditors(allAuditors, {
-    query: state.query,
-    selectedCalificacion: state.selectedCalificacion,
-    selectedStandard: state.selectedStandard,
-    selectedSectorIaf: state.selectedSectorIaf,
-    sortColumn: state.sortColumn,
-    sortDirection: state.sortDirection,
-  });
+  const isStaff =
+    (profile.role === 'ADMIN' || profile.role === 'WORKER') &&
+    (!profile.status || profile.status === 'APPROVED');
 
-  // Calculate facet distributions
-  const calificacionCounts: Record<string, number> = {};
-  const standardCounts: Record<string, number> = {};
-  const sectorCounts: Record<string, number> = {};
+  const uniqueNormas = Array.from(
+    new Set(allAuditors.flatMap((a) => a.normas_acreditadas))
+  ).sort((a, b) => a.localeCompare(b, 'es'));
 
-  for (const aud of allAuditors) {
-    calificacionCounts[aud.calificacion] = (calificacionCounts[aud.calificacion] || 0) + 1;
-    for (const std of aud.normas_acreditadas) {
-      standardCounts[std] = (standardCounts[std] || 0) + 1;
-    }
-    for (const sec of aud.sectores_iaf) {
-      const secKey = String(sec);
-      sectorCounts[secKey] = (sectorCounts[secKey] || 0) + 1;
-    }
-  }
+  const uniqueSectors = Array.from(
+    new Set(allAuditors.flatMap((a) => a.sectores_iaf))
+  ).sort((a, b) => a - b);
 
-  const renderSortArrow = (col: string) => {
-    if (state.sortColumn !== col || state.sortDirection === 'none') {
-      return '<span class="text-slate-300 ml-1">⇅</span>';
-    }
-    return state.sortDirection === 'asc'
-      ? '<span class="text-slate-900 ml-1 font-bold">↑</span>'
-      : '<span class="text-slate-900 ml-1 font-bold">↓</span>';
+  const facetCategories: MultiViewFacetCategory<AuditorDetailEntity>[] = [
+    {
+      id: 'norma',
+      label: 'Norma Calificada',
+      options: uniqueNormas.map((n) => ({ value: n, label: n })),
+      extractValues: (aud) => aud.normas_acreditadas,
+    },
+    {
+      id: 'sector_iaf',
+      label: 'Sector IAF',
+      options: uniqueSectors.map((s) => ({ value: String(s), label: `Sector IAF ${s}` })),
+      extractValues: (aud) => aud.sectores_iaf.map((s) => String(s)),
+    },
+    {
+      id: 'vigencia',
+      label: 'Vigencia de Credenciales',
+      options: [
+        { value: 'Vigente', label: 'Vigente' },
+        { value: 'Por Vencer', label: 'Por Vencer' },
+        { value: 'Vencido', label: 'Vencido' },
+      ],
+      extractValues: (aud) => getAuditorValidityStates(aud),
+    },
+  ];
+
+  const effectiveSelections: MultiViewSelectionMap = state.facetSelections
+    ? state.facetSelections
+    : {
+        norma:
+          state.selectedStandard !== 'ALL' ? new Set([state.selectedStandard]) : new Set<string>(),
+        sector_iaf:
+          state.selectedSectorIaf !== 'ALL'
+            ? new Set([state.selectedSectorIaf])
+            : new Set<string>(),
+        vigencia: new Set<string>(),
+      };
+
+  const searchOptions = {
+    getSearchableText: (aud: AuditorDetailEntity) =>
+      [
+        aud.nombre,
+        aud.codigo_credencial,
+        aud.email,
+        aud.titulo_profesional,
+        aud.categoria_profesional,
+        aud.calificacion,
+        aud.normas_acreditadas.join(' '),
+        aud.sectores_iaf.map((s) => `Sector ${s}`).join(' '),
+      ].join(' '),
   };
 
-  return `
-    <div class="space-y-6">
-      <!-- Header Banner & Regulatory Context -->
-      <div class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div class="space-y-1">
-          <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-800 text-xs font-bold border border-indigo-200">
-            <span>👤</span>
-            <span>DOMINIO CERTIFICACIÓN · FASE 4.3</span>
-          </div>
-          <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-            Directorio de Auditores y Matriz de Competencias
-          </h2>
-          <p class="text-xs text-slate-600">
-            Cuerpo de evaluadores técnicos calificados bajo ISO/IEC 17021-1:2015 cláusula 7.2 e ISO 19011:2018
-          </p>
-        </div>
-        <div class="flex items-center gap-2 self-start sm:self-auto">
-          <span class="text-xs font-semibold px-3 py-1 bg-slate-100 text-slate-700 rounded-full border border-slate-200 tabular-nums">
-            Total: <strong>${allAuditors.length}</strong> auditores
+  let filtered = filterRecordsWithFacets(
+    allAuditors,
+    state.query,
+    facetCategories,
+    effectiveSelections,
+    searchOptions
+  );
+
+  if (!state.facetSelections && state.selectedCalificacion !== 'ALL') {
+    filtered = filtered.filter((a) => a.calificacion === state.selectedCalificacion);
+  }
+
+  const sorted = sortItems(filtered, state.sortColumn, state.sortDirection, (aud, col) => {
+    switch (col) {
+      case 'nombre':
+        return aud.nombre;
+      case 'codigo_credencial':
+        return aud.codigo_credencial;
+      case 'calificacion':
+        return aud.calificacion;
+      case 'normas':
+        return aud.normas_acreditadas.length;
+      case 'sectores':
+        return aud.sectores_iaf.length;
+      default:
+        return '';
+    }
+  });
+
+  const facetGroups = computeReactiveFacetCounts(
+    allAuditors,
+    state.query,
+    facetCategories,
+    effectiveSelections,
+    searchOptions
+  );
+
+  const columns: ColumnDefinition<AuditorDetailEntity>[] = [
+    {
+      id: 'nombre',
+      header: 'Auditor',
+      sortable: true,
+      renderCell: (auditor) => `
+        <button
+          type="button"
+          data-action="select-auditor"
+          data-auditor-id="${escapeHtml(auditor.id)}"
+          class="text-left font-bold text-slate-900 hover:text-indigo-700 transition-colors cursor-pointer group"
+        >
+          <span class="group-hover:underline text-sm font-bold">${escapeHtml(auditor.nombre)}</span>
+          <span class="block text-[11px] text-slate-500 font-normal line-clamp-1">${escapeHtml(auditor.titulo_profesional)}</span>
+        </button>
+      `,
+    },
+    {
+      id: 'codigo_credencial',
+      header: 'Credencial',
+      sortable: true,
+      renderCell: (auditor) => `
+        <span class="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 whitespace-nowrap">
+          ${escapeHtml(auditor.codigo_credencial)}
+        </span>
+      `,
+    },
+    {
+      id: 'calificacion',
+      header: 'Calificación',
+      sortable: true,
+      align: 'center',
+      renderCell: (auditor) => {
+        const statusVisual = getQualificationStatusVisual(auditor.calificacion);
+        return `
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap ${statusVisual.badgeClass}">
+            <span class="w-1.5 h-1.5 rounded-full ${statusVisual.dotClass}"></span>
+            <span>${escapeHtml(statusVisual.label)}</span>
           </span>
-        </div>
-      </div>
-
-      <!-- Main Directory Layout: Sidebar Facets + Content Area -->
-      <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-        <!-- Sidebar Facets Panel -->
-        <aside class="lg:col-span-1 bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-5" aria-label="Filtros y Facetas">
-          <div class="space-y-4">
-            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                <span>⚡</span>
-                <span>Filtros y Facetas</span>
-              </h3>
-              ${
-                state.query ||
-                state.selectedCalificacion !== 'ALL' ||
-                state.selectedStandard !== 'ALL' ||
-                state.selectedSectorIaf !== 'ALL'
-                  ? `
-                <button
-                  type="button"
-                  id="resetAuditorFiltersBtn"
-                  class="text-[11px] font-semibold text-indigo-700 hover:text-indigo-900 cursor-pointer"
-                >
-                  Restablecer
-                </button>
-              `
-                  : ''
-              }
-            </div>
-
-            <!-- Facet 1: Calificación Status -->
-            <div class="space-y-2">
-              <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Calificación</span>
-              <div class="space-y-1">
-                <button
-                  type="button"
-                  data-auditor-filter-calificacion="ALL"
-                  class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-between ${
-                    state.selectedCalificacion === 'ALL'
-                      ? 'bg-slate-900 text-white font-semibold'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span>Todas las Calificaciones</span>
-                  <span class="text-[10px] tabular-nums ${state.selectedCalificacion === 'ALL' ? 'text-slate-300' : 'text-slate-500'}">
-                    ${allAuditors.length}
-                  </span>
-                </button>
-                ${['Calificado', 'En Entrenamiento', 'Observador']
-                  .map((cal) => {
-                    const visual = getQualificationStatusVisual(cal);
-                    const count = calificacionCounts[cal] || 0;
-                    const isSelected = state.selectedCalificacion === cal;
-                    return `
-                    <button
-                      type="button"
-                      data-auditor-filter-calificacion="${escapeHtml(cal)}"
-                      class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-between ${
-                        isSelected
-                          ? 'bg-slate-900 text-white font-semibold'
-                          : 'text-slate-700 hover:bg-slate-100'
-                      }"
-                    >
-                      <span class="inline-flex items-center gap-1.5 truncate">
-                        <span class="w-1.5 h-1.5 rounded-full ${visual.dotClass}"></span>
-                        <span>${escapeHtml(cal)}</span>
-                      </span>
-                      <span class="text-[10px] tabular-nums ${isSelected ? 'text-slate-300' : 'text-slate-500'}">
-                        ${count}
-                      </span>
-                    </button>
-                  `;
-                  })
-                  .join('')}
-              </div>
-            </div>
-
-            <!-- Facet 2: Normas Acreditadas -->
-            <div class="space-y-2 pt-2 border-t border-slate-100">
-              <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Norma de Gestión</span>
-              <div class="space-y-1">
-                <button
-                  type="button"
-                  data-auditor-filter-standard="ALL"
-                  class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-between ${
-                    state.selectedStandard === 'ALL'
-                      ? 'bg-slate-900 text-white font-semibold'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span>Todas las Normas</span>
-                </button>
-                ${Object.entries(standardCounts)
-                  .map(([std, count]) => `
-                    <button
-                      type="button"
-                      data-auditor-filter-standard="${escapeHtml(std)}"
-                      class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-between ${
-                        state.selectedStandard === std
-                          ? 'bg-slate-900 text-white font-semibold'
-                          : 'text-slate-700 hover:bg-slate-100'
-                      }"
-                    >
-                      <span class="truncate">${escapeHtml(std)}</span>
-                      <span class="text-[10px] tabular-nums ${state.selectedStandard === std ? 'text-slate-300' : 'text-slate-500'}">
-                        ${count}
-                      </span>
-                    </button>
-                  `)
-                  .join('')}
-              </div>
-            </div>
-
-            <!-- Facet 3: Sector Técnico IAF -->
-            <div class="space-y-2 pt-2 border-t border-slate-100">
-              <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Sector Técnico IAF</span>
-              <div class="space-y-1">
-                <button
-                  type="button"
-                  data-auditor-filter-iaf="ALL"
-                  class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-between ${
-                    state.selectedSectorIaf === 'ALL'
-                      ? 'bg-slate-900 text-white font-semibold'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }"
-                >
-                  <span>Todos los Sectores</span>
-                </button>
-                ${Object.entries(sectorCounts)
-                  .sort(([a], [b]) => Number(a) - Number(b))
-                  .map(([sec, count]) => `
-                    <button
-                      type="button"
-                      data-auditor-filter-iaf="${escapeHtml(sec)}"
-                      class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-between ${
-                        state.selectedSectorIaf === sec
-                          ? 'bg-slate-900 text-white font-semibold'
-                          : 'text-slate-700 hover:bg-slate-100'
-                      }"
-                    >
-                      <span>Sector IAF ${sec}</span>
-                      <span class="text-[10px] tabular-nums ${state.selectedSectorIaf === sec ? 'text-slate-300' : 'text-slate-500'}">
-                        ${count}
-                      </span>
-                    </button>
-                  `)
-                  .join('')}
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <!-- Main Directory: Search, Switcher & Data Grid/Table -->
-        <main class="lg:col-span-3 space-y-4">
-          <!-- Controls Bar -->
-          <div class="bg-white border border-slate-200 rounded-xl p-3 sm:p-4 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            <div class="relative flex-1 min-w-0">
-              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <span aria-hidden="true">🔍</span>
-              </div>
-              <input
-                id="auditorDirectorySearchInput"
-                type="text"
-                autocomplete="off"
-                value="${escapeHtml(state.query)}"
-                placeholder="Buscar por Nombre, credencial, email o especialidad... (/ para enfocar)"
-                class="w-full pl-9 pr-10 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900"
-              />
-              ${
-                state.query
-                  ? `
-                <button
-                  type="button"
-                  id="clearAuditorSearchBtn"
-                  class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-700 cursor-pointer"
-                  title="Limpiar búsqueda (Esc)"
-                >
-                  ✕
-                </button>
-              `
-                  : ''
-              }
-            </div>
-
-            <!-- View Mode Switcher -->
-            <div class="inline-flex items-center p-1 bg-slate-100 rounded-lg border border-slate-200 shrink-0 self-start sm:self-auto">
-              <button
-                type="button"
-                data-auditor-view-mode="grid"
-                class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs transition-colors cursor-pointer ${
-                  state.viewMode === 'grid'
-                    ? 'bg-white text-slate-900 font-bold shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }"
-              >
-                <span>⊞</span>
-                <span>Tarjetas</span>
-              </button>
-              <button
-                type="button"
-                data-auditor-view-mode="list"
-                class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs transition-colors cursor-pointer ${
-                  state.viewMode === 'list'
-                    ? 'bg-white text-slate-900 font-bold shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }"
-              >
-                <span>☰</span>
-                <span>Tabla</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Results Summary -->
-          <div class="text-xs text-slate-500 px-1">
-            Mostrando <strong>${filtered.length}</strong> de <strong>${allAuditors.length}</strong> evaluadores registrados
-          </div>
-
-          <!-- Dynamic Presentation View -->
-          ${
-            loading
-              ? `
-            <div class="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-500 text-sm font-medium">
-              <div class="inline-block animate-spin w-6 h-6 border-2 border-slate-900 border-t-transparent rounded-full mb-3"></div>
-              <p>Cargando cuerpo de auditores y competencias...</p>
-            </div>
-          `
-              : filtered.length === 0
-              ? `
-            <div class="bg-white border border-slate-200 rounded-xl p-12 text-center space-y-3">
-              <span class="text-4xl block">🔍</span>
-              <h4 class="text-base font-bold text-slate-900">No se encontraron auditores</h4>
-              <p class="text-xs text-slate-500 max-w-md mx-auto">
-                No hay auditores que coincidan con la búsqueda "${escapeHtml(state.query)}" o los filtros aplicados.
-              </p>
-              <button
-                type="button"
-                id="resetAuditorFiltersBtn"
-                class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                Restablecer Filtros
-              </button>
-            </div>
-          `
-              : state.viewMode === 'list'
-              ? renderAuditorListTable(filtered, renderSortArrow)
-              : renderAuditorCardGrid(filtered)
-          }
-        </main>
-      </div>
-    </div>
-  `;
-}
-
-/**
- * Renders the High-Density Cards Grid View for Auditors
- */
-function renderAuditorCardGrid(auditors: AuditorDetailEntity[]): string {
-  return `
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      ${auditors
-        .map((auditor) => {
-          const statusVisual = getQualificationStatusVisual(auditor.calificacion);
-          const distinctSectors = countDistinctQualifiedSectors(auditor.competencias);
-          const distinctSubsectors = countDistinctQualifiedSubsectors(auditor.competencias);
-
-          return `
-          <div
-            data-action="select-auditor"
-            data-auditor-id="${auditor.id}"
-            class="bg-white border border-slate-200 hover:border-indigo-300 rounded-xl p-5 shadow-xs hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between space-y-4 group"
-          >
-            <!-- Card Header: Name, Credential & Status -->
-            <div class="space-y-2">
-              <div class="flex items-start justify-between gap-2">
-                <div class="space-y-1 flex-1 min-w-0">
-                  <span class="font-mono text-[11px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                    🪪 ${escapeHtml(auditor.codigo_credencial)}
-                  </span>
-                  <h4 class="text-base font-bold text-slate-900 group-hover:text-indigo-700 transition-colors truncate">
-                    ${escapeHtml(auditor.nombre)}
-                  </h4>
-                  <p class="text-xs text-slate-500 line-clamp-1">
-                    ${escapeHtml(auditor.titulo_profesional)}
-                  </p>
-                </div>
-
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border shrink-0 ${statusVisual.badgeClass}">
-                  <span class="w-1.5 h-1.5 rounded-full ${statusVisual.dotClass}"></span>
-                  <span>${escapeHtml(statusVisual.label)}</span>
+        `;
+      },
+    },
+    {
+      id: 'normas',
+      header: 'Normas Acreditadas',
+      sortable: true,
+      renderCell: (auditor) => `
+        <div class="flex flex-wrap gap-1 max-w-xs">
+          ${auditor.normas_acreditadas
+            .map(
+              (n) => `
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-800 border border-slate-200">
+                  ${escapeHtml(n)}
                 </span>
-              </div>
+              `
+            )
+            .join('')}
+        </div>
+      `,
+    },
+    {
+      id: 'sectores',
+      header: 'Sectores IAF',
+      sortable: true,
+      align: 'center',
+      renderCell: (auditor) => {
+        const distinctSectors = countDistinctQualifiedSectors(auditor.competencias);
+        return `
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold whitespace-nowrap">
+            <span>🏭</span>
+            <span>${distinctSectors} sectores</span>
+          </span>
+        `;
+      },
+    },
+    {
+      id: 'contacto',
+      header: 'Contacto',
+      sortable: false,
+      align: 'right',
+      renderCell: (auditor) => `
+        <div class="font-mono text-[11px] text-slate-600 whitespace-nowrap">${escapeHtml(auditor.email)}</div>
+        <div class="font-mono text-[11px] text-slate-400 whitespace-nowrap">${escapeHtml(auditor.telefono)}</div>
+      `,
+    },
+    {
+      id: 'acciones',
+      header: 'Acciones',
+      sortable: false,
+      align: 'center',
+      renderCell: (auditor) => `
+        <button
+          type="button"
+          data-action="select-auditor"
+          data-auditor-id="${escapeHtml(auditor.id)}"
+          class="text-xs font-semibold text-indigo-700 hover:text-indigo-900 inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+        >
+          <span>Ver Ficha</span>
+          <span>→</span>
+        </button>
+      `,
+    },
+  ];
+
+  const renderCard = (auditor: AuditorDetailEntity): string => {
+    const statusVisual = getQualificationStatusVisual(auditor.calificacion);
+    const distinctSectors = countDistinctQualifiedSectors(auditor.competencias);
+    const distinctSubsectors = countDistinctQualifiedSubsectors(auditor.competencias);
+
+    return `
+      <div
+        data-action="select-auditor"
+        data-auditor-id="${escapeHtml(auditor.id)}"
+        class="bg-white border border-slate-200 hover:border-indigo-300 rounded-xl p-5 shadow-xs hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between space-y-4 group"
+      >
+        <div class="space-y-2">
+          <div class="flex items-start justify-between gap-2">
+            <div class="space-y-1 flex-1 min-w-0">
+              <span class="font-mono text-[11px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                🪪 ${escapeHtml(auditor.codigo_credencial)}
+              </span>
+              <h3 class="text-base font-bold text-slate-900 group-hover:text-indigo-700 transition-colors truncate">
+                ${escapeHtml(auditor.nombre)}
+              </h3>
+              <p class="text-xs text-slate-500 line-clamp-1">
+                ${escapeHtml(auditor.titulo_profesional)}
+              </p>
             </div>
 
-            <!-- Card Body: Accredited Standards & Sector Scopes -->
-            <div class="text-xs text-slate-600 bg-slate-50/75 p-3 rounded-lg border border-slate-100 space-y-2">
-              <div>
-                <span class="text-[10px] uppercase font-bold text-slate-400 block mb-1">Normas Acreditadas:</span>
-                <div class="flex flex-wrap gap-1">
-                  ${auditor.normas_acreditadas
-                    .map(
-                      (n) => `
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border shrink-0 ${statusVisual.badgeClass}">
+              <span class="w-1.5 h-1.5 rounded-full ${statusVisual.dotClass}"></span>
+              <span>${escapeHtml(statusVisual.label)}</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="text-xs text-slate-600 bg-slate-50/75 p-3 rounded-lg border border-slate-100 space-y-2">
+          <div>
+            <span class="text-[10px] uppercase font-bold text-slate-400 block mb-1">Normas Acreditadas:</span>
+            <div class="flex flex-wrap gap-1">
+              ${auditor.normas_acreditadas
+                .map(
+                  (n) => `
                     <span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-white text-slate-800 border border-slate-200">
                       📘 ${escapeHtml(n)}
                     </span>
                   `
-                    )
-                    .join('')}
-                </div>
-              </div>
-
-              <div class="flex items-center justify-between pt-1 border-t border-slate-200/50">
-                <span class="text-slate-500 text-[11px]">Sectores IAF Calificados:</span>
-                <span class="font-medium text-slate-800 inline-flex items-center gap-1">
-                  <span>🏭</span>
-                  <span>${distinctSectors} sectores (${distinctSubsectors} subsectores)</span>
-                </span>
-              </div>
-            </div>
-
-            <!-- Card Footer: Contact & Details Link -->
-            <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-              <span class="font-mono text-[11px] truncate max-w-[180px]">✉️ ${escapeHtml(auditor.email)}</span>
-              <span class="font-semibold text-indigo-700 group-hover:text-indigo-900 inline-flex items-center gap-1">
-                <span>Ver Ficha</span>
-                <span>→</span>
-              </span>
+                )
+                .join('')}
             </div>
           </div>
-        `;
-        })
-        .join('')}
-    </div>
-  `;
-}
 
-/**
- * Renders the Tabular List View for Auditors
- */
-function renderAuditorListTable(
-  auditors: AuditorDetailEntity[],
-  renderSortArrow: (col: string) => string
-): string {
-  return `
-    <div class="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-xs border-collapse">
-          <thead>
-            <tr class="bg-slate-50/90 border-b border-slate-200 text-slate-700 font-semibold select-none">
-              <th scope="col" class="py-3 px-4 cursor-pointer hover:bg-slate-100/70" data-action="sort-auditor" data-column="nombre">
-                Auditor ${renderSortArrow('nombre')}
-              </th>
-              <th scope="col" class="py-3 px-4 cursor-pointer hover:bg-slate-100/70" data-action="sort-auditor" data-column="codigo_credencial">
-                Credencial ${renderSortArrow('codigo_credencial')}
-              </th>
-              <th scope="col" class="py-3 px-4 text-center cursor-pointer hover:bg-slate-100/70" data-action="sort-auditor" data-column="calificacion">
-                Calificación ${renderSortArrow('calificacion')}
-              </th>
-              <th scope="col" class="py-3 px-4 cursor-pointer hover:bg-slate-100/70" data-action="sort-auditor" data-column="normas">
-                Normas Acreditadas ${renderSortArrow('normas')}
-              </th>
-              <th scope="col" class="py-3 px-4 text-center cursor-pointer hover:bg-slate-100/70" data-action="sort-auditor" data-column="sectores">
-                Sectores IAF ${renderSortArrow('sectores')}
-              </th>
-              <th scope="col" class="py-3 px-4 text-right">Contacto</th>
-              <th scope="col" class="py-3 px-4 text-center">Acciones</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100">
-            ${auditors
-              .map((auditor) => {
-                const statusVisual = getQualificationStatusVisual(auditor.calificacion);
-                const distinctSectors = countDistinctQualifiedSectors(auditor.competencias);
+          <div class="flex items-center justify-between pt-1 border-t border-slate-200/50">
+            <span class="text-slate-500 text-[11px]">Sectores IAF Calificados:</span>
+            <span class="font-medium text-slate-800 inline-flex items-center gap-1">
+              <span>🏭</span>
+              <span>${distinctSectors} sectores (${distinctSubsectors} subsectores)</span>
+            </span>
+          </div>
+        </div>
 
-                return `
-                <tr class="hover:bg-slate-50/80 transition-colors">
-                  <!-- Name & Title -->
-                  <td class="py-3 px-4">
-                    <button
-                      type="button"
-                      data-action="select-auditor"
-                      data-auditor-id="${auditor.id}"
-                      class="text-left font-bold text-slate-900 hover:text-indigo-700 transition-colors cursor-pointer group"
-                    >
-                      <span class="group-hover:underline text-sm font-bold">${escapeHtml(auditor.nombre)}</span>
-                      <span class="block text-[11px] text-slate-500 font-normal line-clamp-1">${escapeHtml(auditor.titulo_profesional)}</span>
-                    </button>
-                  </td>
-
-                  <!-- Credential Code -->
-                  <td class="py-3 px-4 whitespace-nowrap font-mono text-xs font-bold text-slate-700">
-                    <span class="bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                      ${escapeHtml(auditor.codigo_credencial)}
-                    </span>
-                  </td>
-
-                  <!-- Qualification Status Badge -->
-                  <td class="py-3 px-4 text-center whitespace-nowrap">
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${statusVisual.badgeClass}">
-                      <span class="w-1.5 h-1.5 rounded-full ${statusVisual.dotClass}"></span>
-                      <span>${escapeHtml(statusVisual.label)}</span>
-                    </span>
-                  </td>
-
-                  <!-- Accredited Standards -->
-                  <td class="py-3 px-4">
-                    <div class="flex flex-wrap gap-1 max-w-xs">
-                      ${auditor.normas_acreditadas
-                        .map(
-                          (n) => `
-                        <span class="px-1.5 py-0.2 rounded text-[10px] font-medium bg-slate-100 text-slate-800 border border-slate-200">
-                          ${escapeHtml(n)}
-                        </span>
-                      `
-                        )
-                        .join('')}
-                    </div>
-                  </td>
-
-                  <!-- Sectors IAF Count -->
-                  <td class="py-3 px-4 text-center whitespace-nowrap font-semibold text-slate-800">
-                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-700 border border-indigo-200">
-                      <span>🏭</span>
-                      <span>${distinctSectors} sectores</span>
-                    </span>
-                  </td>
-
-                  <!-- Contact -->
-                  <td class="py-3 px-4 text-right whitespace-nowrap font-mono text-[11px] text-slate-600">
-                    <div>${escapeHtml(auditor.email)}</div>
-                    <div class="text-slate-400">${escapeHtml(auditor.telefono)}</div>
-                  </td>
-
-                  <!-- Acciones -->
-                  <td class="py-3 px-4 text-center whitespace-nowrap">
-                    <button
-                      type="button"
-                      data-action="select-auditor"
-                      data-auditor-id="${auditor.id}"
-                      class="text-xs font-semibold text-indigo-700 hover:text-indigo-900 inline-flex items-center gap-1 cursor-pointer"
-                    >
-                      <span>Ver Ficha</span>
-                      <span>→</span>
-                    </button>
-                  </td>
-                </tr>
-              `;
-              })
-              .join('')}
-          </tbody>
-        </table>
+        <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+          <span class="font-mono text-[11px] truncate max-w-[180px]">✉️ ${escapeHtml(auditor.email)}</span>
+          <span class="font-semibold text-indigo-700 group-hover:text-indigo-900 inline-flex items-center gap-1">
+            <span>Ver Ficha</span>
+            <span>→</span>
+          </span>
+        </div>
       </div>
-    </div>
-  `;
+    `;
+  };
+
+  const actionsHtml = isStaff
+    ? `
+      <button
+        type="button"
+        data-action="open-create-auditor"
+        class="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+      >
+        <span aria-hidden="true">+</span>
+        <span>Nuevo Auditor</span>
+      </button>
+    `
+    : '';
+
+  const inlineFormHtml =
+    isStaff && state.isCreating ? renderCreateAuditorForm(state.createErrorMessage) : '';
+
+  return renderUniversalTemplate<AuditorDetailEntity>({
+    domainKey: 'auditores',
+    title: 'Equipo de Auditores',
+    subtitle:
+      'Cuerpo de evaluadores técnicos calificados bajo ISO/IEC 17021-1:2015 cláusula 7.2 e ISO 19011:2018',
+    entityLabel: 'auditores registrados',
+    searchQuery: state.query,
+    searchPlaceholder: 'Buscar por nombre, credencial, email o especialidad... (Presione "/" para enfocar)',
+    searchInputId: 'auditorDirectorySearchInput',
+    clearSearchBtnId: 'clearAuditorSearchBtn',
+    totalCount: allAuditors.length,
+    filteredCount: sorted.length,
+    viewMode: state.viewMode,
+    isSidebarOpen: state.isSidebarOpen ?? true,
+    sortState: {
+      column: state.sortColumn,
+      direction: state.sortDirection,
+    },
+    facetGroups,
+    items: sorted,
+    columns,
+    renderCard,
+    emptyStateTitle: 'No se encontraron auditores',
+    emptyStateMessage:
+      'No hay evaluadores que coincidan con el término de búsqueda o las facetas seleccionadas.',
+    actionsHtml,
+    inlineFormHtml,
+    loading,
+    loadingMessage: 'Cargando cuerpo de auditores y competencias...',
+  });
 }
 
 /**

@@ -85,10 +85,6 @@ export function renderResultadoView(props: ResultadoViewProps): string {
       <section class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs space-y-4">
         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div class="space-y-1">
-            <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-800 text-[11px] font-bold border border-indigo-200">
-              <span aria-hidden="true">📋</span>
-              <span>DOMINIO AUDITORÍAS · RESULTADO Y HALLAZGOS</span>
-            </div>
             <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
               Tablero de Hallazgos y Acciones Correctivas
             </h2>
@@ -98,6 +94,9 @@ export function renderResultadoView(props: ResultadoViewProps): string {
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
+            <div class="text-xs text-slate-500 font-medium tabular-nums mr-1">
+              Mostrando <span class="font-bold text-slate-900 tabular-nums">${scopedFindings.length}</span> de <span class="font-semibold text-slate-700 tabular-nums">${findings.length}</span> hallazgos registrados
+            </div>
             <!-- View Switcher: Tabla | Kanban -->
             <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 shadow-2xs" role="group" aria-label="Vista del tablero de hallazgos">
               <button
@@ -221,11 +220,33 @@ export function renderResultadoView(props: ResultadoViewProps): string {
             <input
               type="text"
               id="resultadoSearchInput"
+              autocomplete="off"
               value="${escapeHtml(state.searchQuery)}"
-              placeholder="Buscar por código, cláusula, proceso, evidencia..."
+              placeholder="Buscar por código, cláusula, proceso, evidencia... (/)"
               aria-label="Buscar hallazgos"
-              class="w-full min-w-0 text-xs rounded-lg border border-slate-300 bg-white pl-8 pr-3 py-2"
+              class="w-full min-w-0 text-xs rounded-lg border border-slate-300 bg-white pl-9 pr-10 py-2 shadow-2xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors"
             />
+            <div class="absolute inset-y-0 right-0 pr-2 flex items-center gap-1">
+              ${
+                state.searchQuery
+                  ? `
+                    <button
+                      type="button"
+                      id="clearResultadoSearchBtn"
+                      title="Limpiar búsqueda (Esc)"
+                      aria-label="Limpiar búsqueda"
+                      class="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  `
+                  : `
+                    <kbd class="hidden md:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-200 rounded select-none">
+                      /
+                    </kbd>
+                  `
+              }
+            </div>
           </div>
 
           <div class="lg:col-span-3 min-w-0">

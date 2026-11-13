@@ -2,18 +2,25 @@ import { escapeHtml } from '../lib/html';
 import type { UserProfile } from '../lib/healthCheck';
 import type { TipoAuditoriaCatalogItem } from '../lib/extraDomain';
 import {
-  renderSortIndicator,
+  computeReactiveFacetCounts,
+  filterRecordsWithFacets,
   sortItems,
+  type ColumnDefinition,
+  type MultiViewFacetCategory,
+  type MultiViewSelectionMap,
   type SortDirection,
 } from '../lib/universalTemplate';
+import { renderUniversalTemplate } from './universalTemplate';
 
 export interface TipoAuditoriaViewState {
   selectedTipoId: string | null;
   query: string;
-  selectedCycle: string;
+  selectedCycle?: string;
   viewMode: 'grid' | 'list';
   sortColumn: string | null;
   sortDirection: SortDirection;
+  isSidebarOpen?: boolean;
+  facetSelections?: MultiViewSelectionMap;
 }
 
 export interface TipoAuditoriaViewProps {
@@ -40,39 +47,66 @@ export function renderTipoAuditoriaView(props: TipoAuditoriaViewProps): string {
     }
   }
 
-  // Otherwise, render the Universal Directory View
+  // Otherwise, render the Universal Multi View Directory
   return renderTipoDirectoryView({
     state,
     tiposList,
+    loading: props.loading,
   });
+}
+
+function getTipoCycleCategory(item: TipoAuditoriaCatalogItem): string {
+  const stage = `${item.etapa_ciclo} ${item.tipo}`.toLowerCase();
+  if (stage.includes('inicial') || stage.includes('etapa 1') || stage.includes('etapa 2')) {
+    return 'Inicial';
+  }
+  if (stage.includes('vigilancia') || stage.includes('seguimiento')) {
+    return 'Seguimiento';
+  }
+  if (stage.includes('recertificación') || stage.includes('recertificacion') || stage.includes('renovación') || stage.includes('renovacion')) {
+    return 'Renovación';
+  }
+  return 'Especial';
 }
 
 function renderTipoDirectoryView(params: {
   state: TipoAuditoriaViewState;
   tiposList: TipoAuditoriaCatalogItem[];
+  loading?: boolean;
 }): string {
-  const { state, tiposList } = params;
+  const { state, tiposList, loading } = params;
 
-  // Filter
-  const filtered = tiposList.filter((item) => {
-    if (state.query) {
-      const q = state.query.toLowerCase();
-      const tipoMatch = item.tipo.toLowerCase().includes(q);
-      const descMatch = item.descripcion.toLowerCase().includes(q);
-      const cycleMatch = item.etapa_ciclo.toLowerCase().includes(q);
-      if (!tipoMatch && !descMatch && !cycleMatch) return false;
-    }
+  const facetCategories: MultiViewFacetCategory<TipoAuditoriaCatalogItem>[] = [
+    {
+      id: 'ciclo',
+      label: 'Categoría de Ciclo',
+      options: ['Inicial', 'Seguimiento', 'Renovación', 'Especial'],
+      extractValues: (item) => getTipoCycleCategory(item),
+    },
+  ];
 
-    if (state.selectedCycle && state.selectedCycle !== 'ALL') {
-      if (!item.etapa_ciclo.toLowerCase().includes(state.selectedCycle.toLowerCase())) {
-        return false;
-      }
-    }
+  const effectiveSelections: MultiViewSelectionMap = state.facetSelections
+    ? state.facetSelections
+    : {
+        ciclo:
+          state.selectedCycle && state.selectedCycle !== 'ALL'
+            ? new Set([state.selectedCycle])
+            : new Set<string>(),
+      };
 
-    return true;
-  });
+  const searchOptions = {
+    getSearchableText: (item: TipoAuditoriaCatalogItem) =>
+      `${item.tipo} ${item.etapa_ciclo} ${item.descripcion} ${item.duracion_formula}`,
+  };
 
-  // Sort
+  const filtered = filterRecordsWithFacets(
+    tiposList,
+    state.query,
+    facetCategories,
+    effectiveSelections,
+    searchOptions
+  );
+
   const sorted = sortItems(
     filtered,
     state.sortColumn,
@@ -93,258 +127,143 @@ function renderTipoDirectoryView(params: {
     }
   );
 
-  // Table view HTML
-  const tableViewHtml = `
-    <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
-      <table class="w-full text-left text-xs border-collapse">
-        <thead>
-          <tr class="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200 select-none">
-            <th class="py-3 px-4">
-              <button
-                type="button"
-                data-action="sort-tipo"
-                data-column="tipo"
-                class="hover:text-slate-900 inline-flex items-center gap-1 font-bold cursor-pointer"
-              >
-                <span>Modalidad Canónica</span>
-                <span class="text-[10px] text-slate-400 font-mono">${state.sortColumn === 'tipo' ? renderSortIndicator(state.sortDirection) : '▲▼'}</span>
-              </button>
-            </th>
-            <th class="py-3 px-4">
-              <button
-                type="button"
-                data-action="sort-tipo"
-                data-column="etapa"
-                class="hover:text-slate-900 inline-flex items-center gap-1 font-bold cursor-pointer"
-              >
-                <span>Etapa del Ciclo Trienal</span>
-                <span class="text-[10px] text-slate-400 font-mono">${state.sortColumn === 'etapa' ? renderSortIndicator(state.sortDirection) : '▲▼'}</span>
-              </button>
-            </th>
-            <th class="py-3 px-4">
-              <button
-                type="button"
-                data-action="sort-tipo"
-                data-column="descripcion"
-                class="hover:text-slate-900 inline-flex items-center gap-1 font-bold cursor-pointer"
-              >
-                <span>Propósito Normativo (ISO 17021-1)</span>
-                <span class="text-[10px] text-slate-400 font-mono">${state.sortColumn === 'descripcion' ? renderSortIndicator(state.sortDirection) : '▲▼'}</span>
-              </button>
-            </th>
-            <th class="py-3 px-4 text-center">
-              <button
-                type="button"
-                data-action="sort-tipo"
-                data-column="usage"
-                class="hover:text-slate-900 inline-flex items-center gap-1 font-bold cursor-pointer"
-              >
-                <span>Auditorías</span>
-                <span class="text-[10px] text-slate-400 font-mono">${state.sortColumn === 'usage' ? renderSortIndicator(state.sortDirection) : '▲▼'}</span>
-              </button>
-            </th>
-            <th class="py-3 px-4 text-right">Acciones</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          ${
-            sorted.length === 0
-              ? `
-                <tr>
-                  <td colspan="5" class="py-8 text-center text-slate-400 text-xs italic">
-                    No se encontraron tipos de auditoría que coincidan con los filtros aplicados.
-                  </td>
-                </tr>
-              `
-              : sorted
-                  .map((item) => {
-                    return `
-                      <tr class="hover:bg-slate-50/70 transition-colors">
-                        <td class="py-3 px-4 font-bold text-slate-900">
-                          <button
-                            type="button"
-                            data-action="select-tipo"
-                            data-tipo-id="${escapeHtml(item.id)}"
-                            class="inline-flex items-center gap-2 text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
-                          >
-                            <span class="font-mono bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded text-xs font-bold">
-                              ${escapeHtml(item.tipo)}
-                            </span>
-                          </button>
-                        </td>
-                        <td class="py-3 px-4 text-slate-700 font-medium">
-                          <span class="inline-flex items-center gap-1 text-[11px] bg-slate-100 px-2 py-0.5 rounded text-slate-800 font-semibold">
-                            <span>🔄</span>
-                            <span>${escapeHtml(item.etapa_ciclo)}</span>
-                          </span>
-                        </td>
-                        <td class="py-3 px-4 text-slate-600 max-w-sm">
-                          ${escapeHtml(item.descripcion)}
-                        </td>
-                        <td class="py-3 px-4 text-center">
-                          <span class="inline-flex items-center gap-1 font-mono font-bold px-2.5 py-0.5 rounded-full text-xs bg-slate-100 text-slate-800 border border-slate-200">
-                            ${item.usage_count} ejecutadas
-                          </span>
-                        </td>
-                        <td class="py-3 px-4 text-right">
-                          <button
-                            type="button"
-                            data-action="select-tipo"
-                            data-tipo-id="${escapeHtml(item.id)}"
-                            class="px-2.5 py-1 rounded-md text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors cursor-pointer"
-                          >
-                            Ver Detalle →
-                          </button>
-                        </td>
-                      </tr>
-                    `;
-                  })
-                  .join('')
-          }
-        </tbody>
-      </table>
-    </div>
-  `;
+  const facetGroups = computeReactiveFacetCounts(
+    tiposList,
+    state.query,
+    facetCategories,
+    effectiveSelections,
+    searchOptions
+  );
 
-  // Grid view HTML
-  const gridViewHtml = `
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      ${sorted
-        .map((item) => {
-          return `
-            <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs hover:shadow-xs transition-shadow space-y-3 flex flex-col justify-between">
-              <div class="space-y-2">
-                <div class="flex items-center justify-between gap-2">
-                  <span class="font-mono bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded text-xs font-bold">
-                    ${escapeHtml(item.tipo)}
-                  </span>
-                  <span class="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                    ISO 17021-1
-                  </span>
-                </div>
-                <div class="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                  <span>🔄</span>
-                  <span>${escapeHtml(item.etapa_ciclo)}</span>
-                </div>
-                <p class="text-xs text-slate-600 leading-relaxed font-medium">
-                  ${escapeHtml(item.descripcion)}
-                </p>
-                <div class="text-[11px] text-slate-500 pt-1 border-t border-slate-100">
-                  <strong class="text-slate-700">Duración:</strong> ${escapeHtml(item.duracion_formula)}
-                </div>
-              </div>
-              <div class="pt-3 flex items-center justify-between border-t border-slate-100 text-xs">
-                <span class="font-mono text-slate-500 font-semibold">${item.usage_count} eventos</span>
-                <button
-                  type="button"
-                  data-action="select-tipo"
-                  data-tipo-id="${escapeHtml(item.id)}"
-                  class="font-semibold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
-                >
-                  Reglas de Ciclo →
-                </button>
-              </div>
-            </div>
-          `;
-        })
-        .join('')}
-    </div>
-  `;
+  const columns: ColumnDefinition<TipoAuditoriaCatalogItem>[] = [
+    {
+      id: 'tipo',
+      header: 'Modalidad Canónica',
+      sortable: true,
+      renderCell: (item) => `
+        <button
+          type="button"
+          data-action="select-tipo"
+          data-tipo-id="${escapeHtml(item.id)}"
+          class="inline-flex items-center gap-2 text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+        >
+          <span class="font-mono bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded text-xs font-bold">
+            ${escapeHtml(item.tipo)}
+          </span>
+        </button>
+      `,
+    },
+    {
+      id: 'etapa',
+      header: 'Etapa del Ciclo Trienal',
+      sortable: true,
+      renderCell: (item) => `
+        <span class="inline-flex items-center gap-1 text-[11px] bg-slate-100 px-2 py-0.5 rounded text-slate-800 font-semibold">
+          <span aria-hidden="true">🔄</span>
+          <span>${escapeHtml(item.etapa_ciclo)}</span>
+        </span>
+      `,
+    },
+    {
+      id: 'descripcion',
+      header: 'Propósito Normativo (ISO 17021-1)',
+      sortable: true,
+      renderCell: (item) => `
+        <span class="text-slate-600 block max-w-sm">${escapeHtml(item.descripcion)}</span>
+      `,
+    },
+    {
+      id: 'usage',
+      header: 'Auditorías',
+      sortable: true,
+      align: 'center',
+      renderCell: (item) => `
+        <span class="inline-flex items-center gap-1 font-mono font-bold px-2.5 py-0.5 rounded-full text-xs bg-slate-100 text-slate-800 border border-slate-200 tabular-nums">
+          ${item.usage_count} ejecutadas
+        </span>
+      `,
+    },
+    {
+      id: 'acciones',
+      header: 'Acciones',
+      align: 'right',
+      renderCell: (item) => `
+        <button
+          type="button"
+          data-action="select-tipo"
+          data-tipo-id="${escapeHtml(item.id)}"
+          class="px-2.5 py-1 rounded-md text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors cursor-pointer"
+        >
+          Ver Detalle →
+        </button>
+      `,
+    },
+  ];
 
-  return `
-    <div class="space-y-6">
-      <!-- Universal Header Section -->
-      <header class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs space-y-4">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div class="space-y-1">
-            <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-800 text-xs font-bold border border-indigo-200">
-              <span>📑</span>
-              <span>CATÁLOGO DE MODALIDADES DE AUDITORÍA</span>
-            </div>
-            <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-              Tipos de Auditoría de Certificación
-            </h1>
-            <p class="text-xs text-slate-600 max-w-2xl">
-              Las 9 modalidades canónicas reguladas por ISO/IEC 17021-1:2015 para los ciclos de certificación inicial, vigilancia anual y renovación trienal.
-            </p>
+  const renderCard = (item: TipoAuditoriaCatalogItem): string => {
+    return `
+      <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs hover:shadow-xs transition-shadow space-y-3 flex flex-col justify-between">
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-mono bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded text-xs font-bold">
+              ${escapeHtml(item.tipo)}
+            </span>
+            <span class="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+              ISO 17021-1
+            </span>
           </div>
-          <div class="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 self-start sm:self-auto">
-            9 Modalidades ISO
+          <div class="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+            <span aria-hidden="true">🔄</span>
+            <span>${escapeHtml(item.etapa_ciclo)}</span>
+          </div>
+          <p class="text-xs text-slate-600 leading-relaxed font-medium">
+            ${escapeHtml(item.descripcion)}
+          </p>
+          <div class="text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+            <strong class="text-slate-700">Duración:</strong> ${escapeHtml(item.duracion_formula)}
           </div>
         </div>
-
-        <!-- Search Bar and View Switcher -->
-        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
-          <div class="relative flex-1 min-w-0">
-            <label for="tipoSearchInput" class="sr-only">Buscar por tipo de auditoría</label>
-            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
-            <input
-              id="tipoSearchInput"
-              type="text"
-              value="${escapeHtml(state.query)}"
-              placeholder="Buscar tipo (Etapa 1, Vigilancia, Renovación...)..."
-              autocomplete="off"
-              class="w-full pl-10 pr-12 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-colors"
-            />
-            ${
-              state.query
-                ? `
-                  <button
-                    type="button"
-                    id="clearTipoSearchBtn"
-                    title="Limpiar búsqueda"
-                    class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-700 cursor-pointer"
-                  >
-                    ✕
-                  </button>
-                `
-                : ''
-            }
-          </div>
-
-          <div class="inline-flex items-center p-1 bg-slate-100 rounded-lg border border-slate-200 shrink-0">
-            <button
-              type="button"
-              data-action="set-tipo-view-mode"
-              data-mode="grid"
-              aria-pressed="${state.viewMode === 'grid' ? 'true' : 'false'}"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                state.viewMode === 'grid'
-                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }"
-            >
-              <span>⊞</span>
-              <span>Cuadrícula</span>
-            </button>
-            <button
-              type="button"
-              data-action="set-tipo-view-mode"
-              data-mode="list"
-              aria-pressed="${state.viewMode === 'list' ? 'true' : 'false'}"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                state.viewMode === 'list'
-                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }"
-            >
-              <span>☰</span>
-              <span>Lista</span>
-            </button>
-          </div>
+        <div class="pt-3 flex items-center justify-between border-t border-slate-100 text-xs">
+          <span class="font-mono text-slate-500 font-semibold tabular-nums">${item.usage_count} eventos</span>
+          <button
+            type="button"
+            data-action="select-tipo"
+            data-tipo-id="${escapeHtml(item.id)}"
+            class="font-semibold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+          >
+            Reglas de Ciclo →
+          </button>
         </div>
-      </header>
-
-      <!-- Main Layout -->
-      <div class="space-y-4">
-        ${state.viewMode === 'grid' ? gridViewHtml : tableViewHtml}
       </div>
-    </div>
-  `;
+    `;
+  };
+
+  return renderUniversalTemplate({
+    domainKey: 'tipos',
+    title: 'Tipos de Auditoría de Certificación',
+    subtitle:
+      'Las 9 modalidades canónicas reguladas por ISO/IEC 17021-1:2015 para los ciclos de certificación inicial, vigilancia anual y renovación trienal.',
+    entityLabel: 'tipos de auditoría',
+    searchQuery: state.query,
+    searchPlaceholder: 'Buscar tipo (Etapa 1, Vigilancia, Renovación...)...',
+    searchInputId: 'tipoSearchInput',
+    clearSearchBtnId: 'clearTipoSearchBtn',
+    totalCount: tiposList.length,
+    filteredCount: sorted.length,
+    viewMode: state.viewMode,
+    isSidebarOpen: state.isSidebarOpen ?? true,
+    sortState: {
+      column: state.sortColumn,
+      direction: state.sortDirection,
+    },
+    facetGroups,
+    items: sorted,
+    columns,
+    renderCard,
+    emptyStateTitle: 'No se encontraron tipos de auditoría',
+    emptyStateMessage: 'No se encontraron tipos de auditoría que coincidan con los filtros aplicados.',
+    loading,
+  });
 }
 
 function renderTipoDetailPage(params: {

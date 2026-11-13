@@ -158,6 +158,8 @@ export function renderExtraView(
       sortColumn: state.iafState?.sortColumn || null,
       sortDirection: state.iafState?.sortDirection || 'none',
       isAddSubsectorModalOpen: Boolean(state.iafState?.isAddSubsectorModalOpen),
+      isSidebarOpen: state.iafState?.isSidebarOpen ?? true,
+      facetSelections: state.iafState?.facetSelections,
     };
 
     activeContentHtml = renderSectorIafView({
@@ -240,6 +242,8 @@ export function renderExtraView(
       viewMode: state.estatusState?.viewMode || 'grid',
       sortColumn: state.estatusState?.sortColumn || null,
       sortDirection: state.estatusState?.sortDirection || 'none',
+      isSidebarOpen: state.estatusState?.isSidebarOpen ?? true,
+      facetSelections: state.estatusState?.facetSelections,
     };
 
     activeContentHtml = renderEstatusView({
@@ -256,6 +260,8 @@ export function renderExtraView(
       viewMode: state.tipoState?.viewMode || 'grid',
       sortColumn: state.tipoState?.sortColumn || null,
       sortDirection: state.tipoState?.sortDirection || 'none',
+      isSidebarOpen: state.tipoState?.isSidebarOpen ?? true,
+      facetSelections: state.tipoState?.facetSelections,
     };
 
     activeContentHtml = renderTipoAuditoriaView({
@@ -271,6 +277,8 @@ export function renderExtraView(
       viewMode: state.metodologiaState?.viewMode || 'grid',
       sortColumn: state.metodologiaState?.sortColumn || null,
       sortDirection: state.metodologiaState?.sortDirection || 'none',
+      isSidebarOpen: state.metodologiaState?.isSidebarOpen ?? true,
+      facetSelections: state.metodologiaState?.facetSelections,
     };
 
     activeContentHtml = renderMetodologiaAuditoriaView({
@@ -292,6 +300,8 @@ export function renderExtraView(
       sortDirection: state.normaState?.sortDirection || 'none',
       isAddAccreditationModalOpen: Boolean(state.normaState?.isAddAccreditationModalOpen),
       inspectingClauseId: state.normaState?.inspectingClauseId || null,
+      isSidebarOpen: state.normaState?.isSidebarOpen ?? true,
+      facetSelections: state.normaState?.facetSelections,
     };
 
     activeContentHtml = renderNormaView({
@@ -307,7 +317,7 @@ export function renderExtraView(
   }
 
   return `
-    <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-3 pb-8 space-y-5">
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 pt-3 pb-8 space-y-5">
       <div id="extraActiveViewContainer">
         ${activeContentHtml}
       </div>
