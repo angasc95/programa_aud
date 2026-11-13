@@ -12,7 +12,7 @@ INSERT INTO public.estatus (id, estatus) VALUES
     ('a0000000-0000-0000-0000-000000000006', 'En Ejecución'),
     ('a0000000-0000-0000-0000-000000000007', 'En Espera'),
     ('a0000000-0000-0000-0000-000000000008', 'Inactivo')
-ON CONFLICT (estatus) DO UPDATE SET updated_at = NOW();
+ON CONFLICT (estatus) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW();
 
 -- 2. Modalidades de Auditoría Estandarizadas (9 Modalidades Canónicas Title-Case)
 INSERT INTO public.tipo_auditoria (id, tipo) VALUES
@@ -25,14 +25,14 @@ INSERT INTO public.tipo_auditoria (id, tipo) VALUES
     ('b0000000-0000-0000-0000-000000000007', 'Extraordinaria'),
     ('b0000000-0000-0000-0000-000000000008', 'Especial'),
     ('b0000000-0000-0000-0000-000000000009', 'Otro')
-ON CONFLICT (tipo) DO UPDATE SET updated_at = NOW();
+ON CONFLICT (tipo) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW();
 
 -- 3. Metodologías de Auditoría Estandarizadas (3 Métodos Canónicos Title-Case)
 INSERT INTO public.metodologia_auditoria (id, metodologia) VALUES
     ('c0000000-0000-0000-0000-000000000001', 'Presencial'),
     ('c0000000-0000-0000-0000-000000000002', 'Remota'),
     ('c0000000-0000-0000-0000-000000000003', 'Mixta')
-ON CONFLICT (metodologia) DO UPDATE SET updated_at = NOW();
+ON CONFLICT (metodologia) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW();
 
 -- 4. Sectores IAF Principales
 INSERT INTO public.sector_iaf (id, sector) VALUES
@@ -41,7 +41,7 @@ INSERT INTO public.sector_iaf (id, sector) VALUES
     ('d0000000-0000-0000-0000-000000000028', 28),
     ('d0000000-0000-0000-0000-000000000033', 33),
     ('d0000000-0000-0000-0000-000000000035', 35)
-ON CONFLICT (sector) DO UPDATE SET updated_at = NOW();
+ON CONFLICT (sector) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW();
 
 -- 5. Sub-Sectores IAF Jerárquicos con Categoría de Riesgo (Fase 1)
 INSERT INTO public.subsector_iaf (id, id_sector_iaf, codigo, descripcion, categoria_riesgo) VALUES
@@ -49,7 +49,7 @@ INSERT INTO public.subsector_iaf (id, id_sector_iaf, codigo, descripcion, catego
     ('da000000-0000-0000-0000-000000000172', 'd0000000-0000-0000-0000-000000000017', '17.2', 'Fabricación de productos metálicos elaborados, troquelado y conformado', 'MEDIO'),
     ('da000000-0000-0000-0000-000000000281', 'd0000000-0000-0000-0000-000000000028', '28.1', 'Construcción de edificios y obras de ingeniería civil', 'MEDIO'),
     ('da000000-0000-0000-0000-000000000331', 'd0000000-0000-0000-0000-000000000033', '33.1', 'Servicios de tecnologías de información y desarrollo de software', 'BAJO')
-ON CONFLICT (codigo) DO UPDATE SET
+ON CONFLICT (codigo) WHERE deleted_at IS NULL DO UPDATE SET
     descripcion = EXCLUDED.descripcion,
     categoria_riesgo = EXCLUDED.categoria_riesgo,
     updated_at = NOW();
@@ -59,7 +59,7 @@ INSERT INTO public.organismo_acreditacion (id, codigo, nombre, pais, sitio_web) 
     ('db000000-0000-0000-0000-000000000001', 'ENAC', 'Entidad Nacional de Acreditación', 'España', 'https://www.enac.es'),
     ('db000000-0000-0000-0000-000000000002', 'UKAS', 'United Kingdom Accreditation Service', 'Reino Unido', 'https://www.ukas.com'),
     ('db000000-0000-0000-0000-000000000003', 'ANAB', 'ANSI National Accreditation Board', 'Estados Unidos', 'https://anab.ansi.org')
-ON CONFLICT (codigo) DO UPDATE SET
+ON CONFLICT (codigo) WHERE deleted_at IS NULL DO UPDATE SET
     nombre = EXCLUDED.nombre,
     pais = EXCLUDED.pais,
     sitio_web = EXCLUDED.sitio_web,
@@ -71,7 +71,7 @@ INSERT INTO public.norma (id, esquema, codigo, titulo, estatus, fecha_publicacio
     ('e0000000-0000-0000-0000-000000014001', 'SGA - Gestión Ambiental', 'ISO 14001:2015', 'Sistemas de Gestión Ambiental — Requisitos con orientación para su uso', 'Vigente', '2015-09-15', 'ISO 14001:2015'),
     ('e0000000-0000-0000-0000-000000045001', 'SST - Seguridad y Salud Laboral', 'ISO 45001:2018', 'Sistemas de Gestión de la Seguridad y Salud en el Trabajo — Requisitos', 'Vigente', '2018-03-12', 'ISO 45001:2018'),
     ('e0000000-0000-0000-0000-000000027001', 'SGSI - Seguridad de la Información', 'ISO/IEC 27001:2022', 'Seguridad de la información, ciberseguridad y protección de la privacidad — Sistemas de gestión', 'Vigente', '2022-10-25', 'ISO/IEC 27001:2022')
-ON CONFLICT (codigo) DO UPDATE SET
+ON CONFLICT (codigo) WHERE deleted_at IS NULL DO UPDATE SET
     esquema = EXCLUDED.esquema,
     titulo = EXCLUDED.titulo,
     estatus = EXCLUDED.estatus,
@@ -154,7 +154,7 @@ INSERT INTO public.certificado (id, id_norma, id_estatus, id_sector_iaf, id_orga
         'Diseño, manufactura, estampado, fundición y comercialización de piezas metálicas y componentes troquelados para la industria automotriz y de línea blanca nacional.',
         TRUE
     )
-ON CONFLICT (numero_certificado) DO UPDATE SET
+ON CONFLICT (numero_certificado) WHERE deleted_at IS NULL DO UPDATE SET
     alcance = EXCLUDED.alcance,
     multisitio = EXCLUDED.multisitio,
     updated_at = NOW();
@@ -163,7 +163,7 @@ ON CONFLICT (numero_certificado) DO UPDATE SET
 INSERT INTO public.sitio (id, id_certificado, numero_sitio, nombre_sitio, direccion_sitio) VALUES
     ('50000000-0000-0000-0000-000000000000', '40000000-0000-0000-0000-000000000001', 0, 'Sede Principal HQ', 'Av. Industrial 100, Valencia, Edo. Carabobo'),
     ('50000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 1, 'Planta Valencia', 'Zona Industrial Carabobo, Galpón 4-B, Valencia')
-ON CONFLICT (id_certificado, numero_sitio) DO UPDATE SET
+ON CONFLICT (id_certificado, numero_sitio) WHERE deleted_at IS NULL DO UPDATE SET
     nombre_sitio = EXCLUDED.nombre_sitio,
     direccion_sitio = EXCLUDED.direccion_sitio,
     updated_at = NOW();
@@ -172,19 +172,19 @@ ON CONFLICT (id_certificado, numero_sitio) DO UPDATE SET
 INSERT INTO public.turno (id, hora_entrada, hora_salida) VALUES
     ('70000000-0000-0000-0000-000000000001', '07:00:00', '15:00:00'),
     ('70000000-0000-0000-0000-000000000002', '15:00:00', '23:00:00')
-ON CONFLICT (hora_entrada, hora_salida) DO NOTHING;
+ON CONFLICT (hora_entrada, hora_salida) WHERE deleted_at IS NULL DO NOTHING;
 
 INSERT INTO public.turnos_por_sitio (id, id_sitio, id_turno) VALUES
     ('71000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001'),
     ('71000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000002')
-ON CONFLICT (id_sitio, id_turno) DO NOTHING;
+ON CONFLICT (id_sitio, id_turno) WHERE deleted_at IS NULL DO NOTHING;
 
 -- 16. Procesos Operativos con Categorización 'tipo' (Fase 1)
 INSERT INTO public.proceso (id, id_certificado, nombre_proceso, tipo) VALUES
     ('60000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'Troquelado y Fundición', 'Medular'),
     ('60000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000001', 'Dirección Estratégica y Calidad', 'Estratégico'),
     ('60000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000001', 'Mantenimiento y Logística', 'De Apoyo')
-ON CONFLICT (id_certificado, nombre_proceso) DO UPDATE SET
+ON CONFLICT (id_certificado, nombre_proceso) WHERE deleted_at IS NULL DO UPDATE SET
     tipo = EXCLUDED.tipo,
     updated_at = NOW();
 
@@ -202,7 +202,7 @@ INSERT INTO public.requisitos_no_aplicables_certificado (id, id_certificado, id_
         'f0000000-0000-0000-0000-000000000051',
         'La organización no realiza diseño ni desarrollo de nuevos productos; la fabricación y estampado se ejecutan estrictamente bajo planos de ingeniería y especificaciones provistas por los clientes (exclusión justificada según ISO 9001 cláusula 4.3).'
     )
-ON CONFLICT (id_certificado, id_requisito) DO UPDATE SET
+ON CONFLICT (id_certificado, id_requisito) WHERE deleted_at IS NULL DO UPDATE SET
     justificacion = EXCLUDED.justificacion,
     updated_at = NOW();
 
@@ -226,7 +226,7 @@ ON CONFLICT (id_auditoria, id_auditor) DO NOTHING;
 -- 21. Sitios en Alcance de la Auditoría
 INSERT INTO public.sitios_por_auditoria (id, id_auditoria, id_sitio) VALUES
     ('90000000-0000-0000-0000-000000000001', '80000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001')
-ON CONFLICT (id_auditoria, id_sitio) DO NOTHING;
+ON CONFLICT (id_auditoria, id_sitio) WHERE deleted_at IS NULL DO NOTHING;
 
 -- 22. Hallazgos de Campo
 INSERT INTO public.hallazgo (id, id_auditoria, id_requisito, id_proceso, tipo, descripcion, evidencia, cerrado) VALUES
