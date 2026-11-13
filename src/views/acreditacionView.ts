@@ -1,20 +1,26 @@
 import { escapeHtml } from '../lib/html';
 import type { UserProfile } from '../lib/healthCheck';
-import type {
-  NormaEntity,
-  OrganismoAcreditacion,
-  SectorIafEntity,
+import {
+  formatRiskCategoryBadge,
+  INITIAL_SUBSECTORES_IAF,
+  type NormaEntity,
+  type OrganismoAcreditacion,
+  type SectorIafEntity,
+  type SubsectorIafEntity,
 } from '../lib/extraDomain';
 import {
   ALL_SECTORS_FACET_VALUE,
   ALL_SECTORS_LABEL,
   evaluateAccreditationExpiry,
+  filterCoveredCertificatesForAccreditation,
   formatAcreditacionDirectoryStatusBadge,
   formatAcreditacionExpiryBadge,
   formatAcreditacionSectorLabel,
   getAcreditacionSectorFacetValue,
+  getSubsectoresForAccreditation,
   type AcreditacionDetailEntity,
 } from '../lib/acreditacionDomain';
+import type { CertificadoDetailEntity } from '../lib/multisiteSampling';
 import {
   computeReactiveFacetCounts,
   filterRecordsWithFacets,
@@ -26,9 +32,13 @@ import {
   type SortDirection,
 } from '../lib/universalTemplate';
 import { renderUniversalTemplate } from './universalTemplate';
+import { renderDetailPageTemplate, type DetailParentChip } from './detailTemplate';
+
+export type AcreditacionChildTab = 'certificados' | 'subsectores';
 
 export interface AcreditacionViewState {
   selectedAccreditationId: string | null;
+  activeChildTab?: AcreditacionChildTab;
   query: string;
   viewMode: 'grid' | 'list';
   sortColumn: string | null;
@@ -39,6 +49,17 @@ export interface AcreditacionViewState {
   createErrorMessage?: string | null;
   createSuccessMessage?: string | null;
   organismoMode?: 'existing' | 'new';
+  isEditingAttributes?: boolean;
+  editFormData?: {
+    numero_acreditacion?: string;
+    fecha_concesion?: string;
+    fecha_vencimiento?: string | null;
+    estatus?: string;
+  };
+  editErrorMessage?: string | null;
+  saveSuccessMessage?: string | null;
+  archiveConfirmOpen?: boolean;
+  archiveErrorMessage?: string | null;
 }
 
 export interface AcreditacionViewProps {
@@ -48,25 +69,45 @@ export interface AcreditacionViewProps {
   organismos: OrganismoAcreditacion[];
   normas: NormaEntity[];
   sectores: SectorIafEntity[];
+  certificates?: ReadonlyArray<CertificadoDetailEntity>;
+  subsectores?: ReadonlyArray<SubsectorIafEntity>;
   loading?: boolean;
 }
 
 export function renderAcreditacionView(props: AcreditacionViewProps): string {
-  const { profile, state, acreditaciones, organismos, normas, sectores, loading } = props;
+  const {
+    profile,
+    state,
+    acreditaciones,
+    organismos,
+    normas,
+    sectores,
+    certificates = [],
+    subsectores = INITIAL_SUBSECTORES_IAF,
+    loading,
+  } = props;
   const isStaff =
     (profile.role === 'ADMIN' || profile.role === 'WORKER') &&
     (!profile.status || profile.status === 'APPROVED');
 
+  const activeAccreditations = acreditaciones.filter((a) => !a.deleted_at);
+
   if (state.selectedAccreditationId) {
-    const selected = acreditaciones.find((a) => a.id === state.selectedAccreditationId);
+    const selected = activeAccreditations.find((a) => a.id === state.selectedAccreditationId);
     if (selected) {
-      return renderAcreditacionDetailPreview(selected);
+      return renderAcreditacionDetailView({
+        acr: selected,
+        state,
+        isStaff,
+        certificates,
+        subsectores,
+      });
     }
   }
 
   return renderAcreditacionDirectoryView({
     state,
-    acreditaciones,
+    acreditaciones: activeAccreditations,
     organismos,
     normas,
     sectores,
@@ -678,7 +719,14 @@ function renderAcreditacionDirectoryView(params: {
   });
 }
 
-function renderAcreditacionDetailPreview(acr: AcreditacionDetailEntity): string {
+function renderAcreditacionDetailView(params: {
+  acr: AcreditacionDetailEntity;
+  state: AcreditacionViewState;
+  isStaff: boolean;
+  certificates: ReadonlyArray<CertificadoDetailEntity>;
+  subsectores: ReadonlyArray<SubsectorIafEntity>;
+}): string {
+  const { acr, state, isStaff, certificates, subsectores } = params;
   const statusBadge = formatAcreditacionDirectoryStatusBadge(acr.estatus);
   const expiryEval = evaluateAccreditationExpiry(acr.fecha_vencimiento);
   const expiryBadge = formatAcreditacionExpiryBadge(expiryEval);
@@ -687,92 +735,506 @@ function renderAcreditacionDetailPreview(acr: AcreditacionDetailEntity): string 
     acr.sector_descripcion
   );
 
-  return `
-    <div class="space-y-6">
-      <div class="flex items-center justify-between gap-4">
-        <button
-          type="button"
-          data-action="back-to-accreditations-list"
-          class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
-        >
-          <span>←</span>
-          <span>Volver a Acreditaciones Vigentes</span>
-        </button>
+  const coveredCerts = filterCoveredCertificatesForAccreditation(acr, certificates);
+  const scopedSubsectores = getSubsectoresForAccreditation(acr, subsectores);
+  const activeTab: AcreditacionChildTab =
+    state.activeChildTab === 'subsectores' ? 'subsectores' : 'certificados';
+  const isEditing = Boolean(state.isEditingAttributes) && isStaff;
 
-        <button
-          type="button"
-          data-action="open-changelog"
-          data-table-name="acreditacion_norma_iaf"
-          data-record-id="${escapeHtml(acr.id)}"
-          data-entity-name="Acreditación ${escapeHtml(acr.numero_acreditacion)}"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
-        >
-          <span aria-hidden="true">🕒</span>
-          <span>Historial de Cambios</span>
-        </button>
+  const parents: DetailParentChip[] = [
+    {
+      label: 'Organismo de Acreditación',
+      value: `${acr.organismo_codigo} — ${acr.organismo_nombre} (${acr.organismo_pais})`,
+      symbol: '🏛️',
+    },
+    {
+      label: 'Norma',
+      value: acr.norma_codigo,
+      symbol: '📘',
+      navAction: {
+        nav: 'extra',
+        subview: 'standards',
+        entityType: 'norma',
+        entityId: acr.id_norma,
+      },
+    },
+    acr.id_sector_iaf || acr.sector_numero !== null
+      ? {
+          label: 'Sector IAF',
+          value: `Sector ${acr.sector_numero ?? '—'}${acr.sector_descripcion ? ` · ${acr.sector_descripcion}` : ''}`,
+          symbol: '🏭',
+          navAction: {
+            nav: 'extra',
+            subview: 'iaf',
+            entityType: 'sector_iaf',
+            entityId: acr.id_sector_iaf || String(acr.sector_numero),
+            sectorNumber: acr.sector_numero ?? undefined,
+          },
+        }
+      : {
+          label: 'Sector IAF',
+          value: ALL_SECTORS_LABEL,
+          symbol: '🌐',
+        },
+  ];
+
+  const normalizedWebsiteUrl = acr.organismo_sitio_web
+    ? /^https?:\/\//i.test(acr.organismo_sitio_web.trim())
+      ? acr.organismo_sitio_web.trim()
+      : `https://${acr.organismo_sitio_web.trim()}`
+    : null;
+
+  const parentMetaHtml = normalizedWebsiteUrl
+    ? `
+      <a
+        href="${escapeHtml(normalizedWebsiteUrl)}"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-xs font-semibold text-indigo-700 hover:text-indigo-900 transition-colors"
+      >
+        <span aria-hidden="true">🌐</span>
+        <span>Sitio web ${escapeHtml(acr.organismo_codigo)}</span>
+        <span aria-hidden="true">↗</span>
+      </a>
+    `
+    : '';
+
+  const recordActionsHtml = isStaff
+    ? `
+      <div class="flex flex-wrap items-center gap-2">
+        ${
+          isEditing
+            ? `
+              <button
+                type="button"
+                id="cancelEditAcreditacionBtn"
+                class="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
+              >
+                ✕ Cancelar Edición
+              </button>
+            `
+            : `
+              <button
+                type="button"
+                id="startEditAcreditacionBtn"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+              >
+                <span aria-hidden="true">✏️</span>
+                <span>Editar</span>
+              </button>
+              <button
+                type="button"
+                data-action="open-archive-accreditacion"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-200 transition-colors cursor-pointer"
+              >
+                <span aria-hidden="true">🗄️</span>
+                <span>Archivar</span>
+              </button>
+            `
+        }
       </div>
+    `
+    : '';
 
-      <header class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs space-y-4">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div class="flex items-start gap-3 min-w-0">
-            <span class="text-3xl select-none shrink-0" aria-hidden="true">🏅</span>
-            <div class="space-y-1 min-w-0">
-              <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 font-mono">
-                ${escapeHtml(acr.organismo_codigo)} · ${escapeHtml(acr.organismo_pais)}
+  const feedbackHtml = `
+    ${
+      state.saveSuccessMessage
+        ? `
+          <div class="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium rounded-lg flex items-center gap-2">
+            <span>✓</span>
+            <span>${escapeHtml(state.saveSuccessMessage)}</span>
+          </div>
+        `
+        : ''
+    }
+    ${
+      state.editErrorMessage
+        ? `
+          <div role="alert" class="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium rounded-lg flex items-center gap-2">
+            <span>✕</span>
+            <span>${escapeHtml(state.editErrorMessage)}</span>
+          </div>
+        `
+        : ''
+    }
+    ${
+      state.archiveErrorMessage
+        ? `
+          <div role="alert" class="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium rounded-lg flex items-center gap-2">
+            <span>✕</span>
+            <span>${escapeHtml(state.archiveErrorMessage)}</span>
+          </div>
+        `
+        : ''
+    }
+    ${
+      isStaff && state.archiveConfirmOpen
+        ? `
+          <div class="p-4 bg-rose-50/80 border border-rose-200 rounded-xl space-y-3">
+            <div class="flex items-start justify-between gap-2">
+              <div class="space-y-0.5">
+                <h4 class="text-xs font-bold text-rose-900">Confirmar archivo lógico de acreditación</h4>
+                <p class="text-[11px] text-rose-800">
+                  La acreditación <strong>${escapeHtml(acr.numero_acreditacion)}</strong> pasará a estado archivado (soft-delete) preservando la bitácora forense ISO/IEC 17021-1.
+                </p>
               </div>
-              <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 font-mono truncate">
-                ${escapeHtml(acr.numero_acreditacion)}
-              </h1>
-              <p class="text-xs text-slate-600 font-medium">
-                ${escapeHtml(acr.organismo_nombre)} · ${escapeHtml(acr.norma_codigo)}
-              </p>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center">
+              <div class="sm:col-span-2">
+                <label for="archiveAcreditacionReasonInput" class="sr-only">Motivo de archivo</label>
+                <input
+                  id="archiveAcreditacionReasonInput"
+                  type="text"
+                  placeholder="Motivo de archivo (opcional, ej. Retiro voluntario del alcance)"
+                  class="w-full text-xs rounded-lg border border-rose-300 bg-white px-2.5 py-1.5"
+                />
+              </div>
+              <div class="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  id="cancelArchiveAcreditacionBtn"
+                  class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  id="confirmArchiveAcreditacionBtn"
+                  class="px-3 py-1.5 text-xs font-bold text-white bg-rose-700 hover:bg-rose-800 rounded-lg cursor-pointer"
+                >
+                  Confirmar Archivo
+                </button>
+              </div>
             </div>
           </div>
+        `
+        : ''
+    }
+  `;
 
-          <div class="flex items-center gap-2 self-start sm:self-auto shrink-0">
-            <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold border ${statusBadge.badgeClass}">
-              <span>${statusBadge.symbol}</span>
-              <span>${escapeHtml(statusBadge.label)}</span>
-            </span>
-          </div>
-        </div>
-      </header>
+  const effectiveCoveredCount =
+    certificates.length > 0 ? coveredCerts.length : acr.activeCertificatesCount;
 
-      <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-1">
-          <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Norma Cubierta</div>
-          <div class="text-xs font-mono font-bold text-indigo-800">${escapeHtml(acr.norma_codigo)}</div>
-          <div class="text-[11px] text-slate-500 line-clamp-2">${escapeHtml(acr.norma_titulo)}</div>
+  const customRecordBodyHtml = isEditing
+    ? renderEditAcreditacionForm(acr, state.editFormData)
+    : renderReadOnlyAcreditacionBody(acr, expiryBadge, sectorMeta, effectiveCoveredCount);
+
+  return renderDetailPageTemplate({
+    entityType: 'Acreditación ISO/IEC 17011',
+    entitySymbol: '🏅',
+    title: acr.numero_acreditacion,
+    eyebrowCode: `${acr.organismo_codigo} · ${acr.norma_codigo}`,
+    subtitle: `${acr.organismo_nombre} (${acr.organismo_pais}) · ${acr.norma_titulo}`,
+    statusBadge: {
+      label: statusBadge.label,
+      badgeClass: statusBadge.badgeClass,
+      symbol: statusBadge.symbol,
+    },
+    secondaryHeaderBadge: {
+      label: expiryBadge.label,
+      badgeClass: expiryBadge.badgeClass,
+    },
+    backButton: {
+      label: 'Volver a Acreditaciones Vigentes',
+      nav: 'extra',
+      subview: 'accreditations',
+      action: 'back-to-accreditations-list',
+    },
+    parents,
+    parentMetaHtml,
+    tableName: 'acreditacion_norma_iaf',
+    recordId: acr.id,
+    recordActionsHtml,
+    feedbackHtml,
+    attributes: [],
+    customRecordBodyHtml,
+    childTabs: [
+      {
+        id: 'certificados',
+        label: 'Certificados Amparados',
+        symbol: '📜',
+        count: coveredCerts.length,
+      },
+      {
+        id: 'subsectores',
+        label: 'Sub-Sectores IAF del Alcance',
+        symbol: '🧩',
+        count: scopedSubsectores.length,
+      },
+    ],
+    activeChildTabId: activeTab,
+    childTabAttrName: 'data-accred-tab',
+    renderChildTabContent: (tabId) =>
+      tabId === 'subsectores'
+        ? renderAcreditacionSubsectoresTab(acr, scopedSubsectores)
+        : renderAcreditacionCertificadosTab(acr, coveredCerts),
+  });
+}
+
+function renderReadOnlyAcreditacionBody(
+  acr: AcreditacionDetailEntity,
+  expiryBadge: { label: string; badgeClass: string },
+  sectorMeta: { shortLabel: string; detailLabel: string },
+  effectiveCoveredCount: number
+): string {
+  return `
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div class="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1">
+        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Número de Acreditación</div>
+        <div class="text-xs font-mono font-bold text-slate-900">${escapeHtml(acr.numero_acreditacion)}</div>
+        <div class="text-[11px] text-slate-500">${escapeHtml(acr.organismo_codigo)} · ${escapeHtml(acr.organismo_pais)}</div>
+      </div>
+
+      <div class="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1">
+        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Alcance Sectorial IAF</div>
+        <div class="text-xs font-bold text-slate-900">${escapeHtml(sectorMeta.shortLabel)}</div>
+        <div class="text-[11px] text-slate-500 line-clamp-2">${escapeHtml(sectorMeta.detailLabel)}</div>
+      </div>
+
+      <div class="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1">
+        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Vigencia & Expiración</div>
+        <div class="text-xs font-mono font-semibold text-slate-800 tabular-nums">
+          ${escapeHtml(acr.fecha_concesion)} → ${escapeHtml(acr.fecha_vencimiento || 'Indefinida')}
+        </div>
+        <div>
+          <span class="inline-flex px-2 py-0.5 rounded text-[10px] font-semibold border ${expiryBadge.badgeClass}">
+            ${escapeHtml(expiryBadge.label)}
+          </span>
+        </div>
+      </div>
+
+      <div class="p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl space-y-1">
+        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Certificados Amparados</div>
+        <div class="text-lg font-mono font-bold text-slate-900 tabular-nums">${effectiveCoveredCount}</div>
+        <div class="text-[11px] text-slate-500">${
+          effectiveCoveredCount === 1
+            ? 'Certificado activo cubierto'
+            : 'Certificados activos cubiertos'
+        }</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderEditAcreditacionForm(
+  acr: AcreditacionDetailEntity,
+  formData?: AcreditacionViewState['editFormData']
+): string {
+  const numeroValue = formData?.numero_acreditacion ?? acr.numero_acreditacion;
+  const concesionValue = formData?.fecha_concesion ?? acr.fecha_concesion;
+  const vencimientoValue =
+    formData?.fecha_vencimiento !== undefined
+      ? formData.fecha_vencimiento || ''
+      : acr.fecha_vencimiento || '';
+  const estatusValue = formData?.estatus ?? acr.estatus;
+
+  return `
+    <form id="editAcreditacionForm" class="bg-slate-50 border border-slate-200 rounded-xl p-4 sm:p-5 space-y-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div class="space-y-1">
+          <label for="editAccredNumeroInput" class="block text-xs font-bold text-slate-700">N° de Acreditación *</label>
+          <input
+            id="editAccredNumeroInput"
+            name="numero_acreditacion"
+            type="text"
+            required
+            value="${escapeHtml(numeroValue)}"
+            class="w-full text-xs font-mono p-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          />
         </div>
 
-        <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-1">
-          <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Alcance Sectorial IAF</div>
-          <div class="text-xs font-bold text-slate-900">${escapeHtml(sectorMeta.shortLabel)}</div>
-          <div class="text-[11px] text-slate-500">${escapeHtml(sectorMeta.detailLabel)}</div>
+        <div class="space-y-1">
+          <label for="editAccredFechaConcesionInput" class="block text-xs font-bold text-slate-700">Fecha de Concesión *</label>
+          <input
+            id="editAccredFechaConcesionInput"
+            name="fecha_concesion"
+            type="date"
+            required
+            value="${escapeHtml(concesionValue)}"
+            class="w-full text-xs font-mono p-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          />
         </div>
 
-        <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-1">
-          <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Vigencia de Concesión</div>
-          <div class="text-xs font-mono font-semibold text-slate-800">
-            ${escapeHtml(acr.fecha_concesion)} → ${escapeHtml(acr.fecha_vencimiento || 'Indefinida')}
-          </div>
-          <div>
-            <span class="inline-flex px-2 py-0.5 rounded text-[10px] font-semibold border ${expiryBadge.badgeClass}">
-              ${escapeHtml(expiryBadge.label)}
-            </span>
-          </div>
+        <div class="space-y-1">
+          <label for="editAccredFechaVencimientoInput" class="block text-xs font-bold text-slate-700">Fecha de Vencimiento</label>
+          <input
+            id="editAccredFechaVencimientoInput"
+            name="fecha_vencimiento"
+            type="date"
+            value="${escapeHtml(vencimientoValue)}"
+            class="w-full text-xs font-mono p-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          />
         </div>
 
-        <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-1">
-          <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Impacto Operativo</div>
-          <div class="text-lg font-mono font-bold text-slate-900 tabular-nums">${acr.activeCertificatesCount}</div>
-          <div class="text-[11px] text-slate-500">${
-            acr.activeCertificatesCount === 1
-              ? 'Certificado activo cubierto'
-              : 'Certificados activos cubiertos'
-          }</div>
+        <div class="space-y-1">
+          <label for="editAccredEstatusSelect" class="block text-xs font-bold text-slate-700">Estatus *</label>
+          <select
+            id="editAccredEstatusSelect"
+            name="estatus"
+            required
+            class="w-full text-xs p-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          >
+            ${(['Activa', 'Suspendida', 'Vencida', 'En Renovación'] as const)
+              .map(
+                (opt) =>
+                  `<option value="${opt}" ${estatusValue === opt ? 'selected' : ''}>${opt}</option>`
+              )
+              .join('')}
+          </select>
         </div>
-      </section>
+      </div>
+
+      <div class="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          id="cancelEditAcreditacionBtnSecondary"
+          class="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+        >
+          Cancelar
+        </button>
+        <button
+          type="submit"
+          class="px-4 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-2xs transition-colors cursor-pointer"
+        >
+          💾 Guardar Cambios
+        </button>
+      </div>
+    </form>
+  `;
+}
+
+function renderAcreditacionCertificadosTab(
+  acr: AcreditacionDetailEntity,
+  certificates: ReadonlyArray<CertificadoDetailEntity>
+): string {
+  if (certificates.length === 0) {
+    return `
+      <div class="p-8 text-center bg-slate-50/70 border border-slate-200 rounded-xl space-y-2">
+        <div class="text-2xl">📜</div>
+        <h4 class="text-xs font-bold text-slate-800">Sin certificados activos amparados actualmente</h4>
+        <p class="text-xs text-slate-500 max-w-md mx-auto">
+          No existen certificados activos emitidos bajo ${escapeHtml(acr.norma_codigo)} dentro del alcance sectorial de ${escapeHtml(acr.numero_acreditacion)}.
+        </p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="space-y-3">
+      <div>
+        <h3 class="text-sm font-bold text-slate-900">Certificados Amparados por ${escapeHtml(acr.numero_acreditacion)}</h3>
+        <p class="text-xs text-slate-500">
+          Certificados operativos cubiertos bajo ${escapeHtml(acr.norma_codigo)} (${escapeHtml(formatAcreditacionSectorLabel(acr.sector_numero, acr.sector_descripcion).shortLabel)}).
+        </p>
+      </div>
+
+      <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200">
+              <th scope="col" class="py-3 px-4">N° Certificado</th>
+              <th scope="col" class="py-3 px-4">Organización Cliente</th>
+              <th scope="col" class="py-3 px-4">Norma</th>
+              <th scope="col" class="py-3 px-4">Sector IAF</th>
+              <th scope="col" class="py-3 px-4">Vigencia</th>
+              <th scope="col" class="py-3 px-4 text-center">Estatus</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            ${certificates
+              .map(
+                (cert) => `
+                  <tr class="hover:bg-slate-50/70 transition-colors">
+                    <td class="py-3 px-4 whitespace-nowrap">
+                      <button
+                        type="button"
+                        data-action="select-cert"
+                        data-cert-id="${escapeHtml(cert.id)}"
+                        class="font-mono font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer inline-flex items-center gap-1.5"
+                      >
+                        <span aria-hidden="true">📜</span>
+                        <span>${escapeHtml(cert.numero_certificado)}</span>
+                      </button>
+                    </td>
+                    <td class="py-3 px-4 font-semibold text-slate-800">${escapeHtml(cert.organizacion_nombre)}</td>
+                    <td class="py-3 px-4 font-mono text-slate-700 whitespace-nowrap">${escapeHtml(cert.norma_codigo)}</td>
+                    <td class="py-3 px-4 text-slate-600 whitespace-nowrap">Sector ${cert.sector_iaf}</td>
+                    <td class="py-3 px-4 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                      ${escapeHtml(cert.fecha_emision)} → ${escapeHtml(cert.fecha_vencimiento)}
+                    </td>
+                    <td class="py-3 px-4 text-center whitespace-nowrap">
+                      <span class="inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        ${escapeHtml(cert.estatus)}
+                      </span>
+                    </td>
+                  </tr>
+                `
+              )
+              .join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderAcreditacionSubsectoresTab(
+  acr: AcreditacionDetailEntity,
+  subsectores: ReadonlyArray<SubsectorIafEntity>
+): string {
+  if (subsectores.length === 0) {
+    return `
+      <div class="p-8 text-center bg-slate-50/70 border border-slate-200 rounded-xl space-y-2">
+        <div class="text-2xl">🧩</div>
+        <h4 class="text-xs font-bold text-slate-800">Sin sub-sectores IAF detallados</h4>
+        <p class="text-xs text-slate-500 max-w-md mx-auto">
+          No hay sub-sectores técnicos registrados para el alcance de la acreditación ${escapeHtml(acr.numero_acreditacion)}.
+        </p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="space-y-3">
+      <div>
+        <h3 class="text-sm font-bold text-slate-900">Sub-Sectores Técnicos IAF del Alcance</h3>
+        <p class="text-xs text-slate-500">
+          Clasificación técnica IAF y nivel de complejidad/riesgo para ${escapeHtml(acr.numero_acreditacion)}.
+        </p>
+      </div>
+
+      <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200">
+              <th scope="col" class="py-3 px-4">Código</th>
+              <th scope="col" class="py-3 px-4">Sector IAF</th>
+              <th scope="col" class="py-3 px-4">Descripción Técnica</th>
+              <th scope="col" class="py-3 px-4 text-center">Nivel de Riesgo</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            ${subsectores
+              .map((sub) => {
+                const risk = formatRiskCategoryBadge(sub.categoria_riesgo);
+                return `
+                  <tr class="hover:bg-slate-50/70 transition-colors">
+                    <td class="py-3 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">${escapeHtml(sub.codigo)}</td>
+                    <td class="py-3 px-4 text-slate-700 whitespace-nowrap">Sector ${sub.sector_numero}</td>
+                    <td class="py-3 px-4 text-slate-700">${escapeHtml(sub.descripcion)}</td>
+                    <td class="py-3 px-4 text-center whitespace-nowrap">
+                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${risk.badgeClass}">
+                        <span>${risk.symbol}</span>
+                        <span>${escapeHtml(risk.label)}</span>
+                      </span>
+                    </td>
+                  </tr>
+                `;
+              })
+              .join('')}
+          </tbody>
+        </table>
+      </div>
     </div>
   `;
 }

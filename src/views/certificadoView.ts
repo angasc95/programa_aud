@@ -930,10 +930,16 @@ function renderSitiosChildTab(sites: SiteEntity[], certId: string): string {
                     </span>
                   </td>
                   <td class="py-3 px-4 font-bold text-slate-900">
-                    <div class="flex items-center gap-1.5">
-                      <span>${isHq ? '🏢' : '📍'}</span>
+                    <button
+                      type="button"
+                      data-action="select-sitio"
+                      data-sitio-id="${escapeHtml(site.id)}"
+                      data-cert-id="${escapeHtml(certId)}"
+                      class="flex items-center gap-1.5 text-left font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+                    >
+                      <span aria-hidden="true">${isHq ? '🏢' : '📍'}</span>
                       <span>${escapeHtml(site.nombre_sitio)}</span>
-                    </div>
+                    </button>
                     ${
                       site.actividades
                         ? `<p class="text-[11px] text-slate-500 font-normal pt-0.5 line-clamp-1">${escapeHtml(site.actividades)}</p>`

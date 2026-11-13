@@ -1060,7 +1060,15 @@ function renderSamplingChildTab(
                           }">
                             ${isHq ? 'Sitio 0 (HQ)' : `Sitio #${site.numero_sitio}`}
                           </span>
-                          <span class="font-bold text-slate-900">${escapeHtml(site.nombre_sitio)}</span>
+                          <button
+                            type="button"
+                            data-action="select-sitio"
+                            data-sitio-id="${escapeHtml(site.id_sitio)}"
+                            data-cert-id="${escapeHtml(audit.id_certificado)}"
+                            class="font-bold text-indigo-700 hover:text-indigo-900 hover:underline text-left cursor-pointer"
+                          >
+                            ${escapeHtml(site.nombre_sitio)}
+                          </button>
                         </div>
                         ${
                           site.notas

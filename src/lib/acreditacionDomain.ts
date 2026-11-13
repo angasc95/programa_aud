@@ -14,6 +14,7 @@ import {
   type NormaEntity,
   type OrganismoAcreditacion,
   type SectorIafEntity,
+  type SubsectorIafEntity,
 } from './extraDomain';
 
 export type AcreditacionEstatus = 'Activa' | 'Suspendida' | 'Vencida' | 'En Renovación';
@@ -217,24 +218,24 @@ export function normalizeAcreditacionStatus(raw: string | null | undefined): Acr
 }
 
 /**
- * Computes active operational certificates covered by a specific accreditation scope.
+ * Filters active operational certificates covered by a specific accreditation scope.
  * Matches active certificates sharing (id_norma, id_sector_iaf) or all active certificates
  * for that norm when id_sector_iaf is null ("Todos los Sectores").
  */
-export function computeActiveCertificatesCountForAccreditation(
+export function filterCoveredCertificatesForAccreditation<T extends CertificateCoverageInput>(
   accreditation: Pick<
     AcreditacionDetailEntity,
     'id_norma' | 'norma_codigo' | 'id_sector_iaf' | 'sector_numero'
   >,
-  certificates: ReadonlyArray<CertificateCoverageInput>
-): number {
-  if (!certificates || certificates.length === 0) return 0;
+  certificates: ReadonlyArray<T>
+): T[] {
+  if (!certificates || certificates.length === 0) return [];
 
   const targetNormCode = normalizeText(accreditation.norma_codigo);
   const isGeneralScope =
     accreditation.id_sector_iaf === null && accreditation.sector_numero === null;
 
-  let count = 0;
+  const matched: T[] = [];
   for (const cert of certificates) {
     if (!isActiveCertificateStatus(cert.estatus)) {
       continue;
@@ -251,7 +252,7 @@ export function computeActiveCertificatesCountForAccreditation(
     }
 
     if (isGeneralScope) {
-      count += 1;
+      matched.push(cert);
       continue;
     }
 
@@ -267,11 +268,48 @@ export function computeActiveCertificatesCountForAccreditation(
       Number(cert.sector_iaf) === accreditation.sector_numero;
 
     if (sectorMatchesById || sectorMatchesByNum) {
-      count += 1;
+      matched.push(cert);
     }
   }
 
-  return count;
+  return matched;
+}
+
+/**
+ * Computes active operational certificates covered by a specific accreditation scope.
+ */
+export function computeActiveCertificatesCountForAccreditation(
+  accreditation: Pick<
+    AcreditacionDetailEntity,
+    'id_norma' | 'norma_codigo' | 'id_sector_iaf' | 'sector_numero'
+  >,
+  certificates: ReadonlyArray<CertificateCoverageInput>
+): number {
+  return filterCoveredCertificatesForAccreditation(accreditation, certificates).length;
+}
+
+/**
+ * Resolves IAF technical sub-sectors covered by an accreditation scope.
+ * When `id_sector_iaf` and `sector_numero` are both null ("Todos los Sectores"),
+ * returns all registered technical sub-sectors ordered by code.
+ */
+export function getSubsectoresForAccreditation(
+  accreditation: Pick<AcreditacionDetailEntity, 'id_sector_iaf' | 'sector_numero'>,
+  subsectores: ReadonlyArray<SubsectorIafEntity>
+): SubsectorIafEntity[] {
+  if (!subsectores || subsectores.length === 0) return [];
+  const isGeneralScope =
+    accreditation.id_sector_iaf === null && accreditation.sector_numero === null;
+
+  const filtered = isGeneralScope
+    ? [...subsectores]
+    : subsectores.filter(
+        (sub) =>
+          (Boolean(accreditation.id_sector_iaf) && sub.id_sector_iaf === accreditation.id_sector_iaf) ||
+          (accreditation.sector_numero !== null && sub.sector_numero === accreditation.sector_numero)
+      );
+
+  return filtered.sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true }));
 }
 
 /**
@@ -414,6 +452,109 @@ export function validateAccreditationInput(
     normalized: {
       id_norma: idNorma,
       id_sector_iaf: idSectorIaf,
+      numero_acreditacion: numeroAcreditacion,
+      fecha_concesion: fechaConcesion,
+      fecha_vencimiento: fechaVencimiento,
+      estatus: matchedStatus,
+    },
+  };
+}
+
+export interface AccreditationEditValidationInput {
+  id: string;
+  id_organismo: string;
+  numero_acreditacion: string | null | undefined;
+  fecha_concesion: string | null | undefined;
+  fecha_vencimiento?: string | null;
+  estatus?: string | null;
+  existingAccreditations?: ReadonlyArray<
+    Pick<AcreditacionDetailEntity, 'id' | 'id_organismo' | 'numero_acreditacion' | 'deleted_at'>
+  >;
+}
+
+export interface AccreditationEditValidationResult {
+  valid: boolean;
+  error?: string;
+  normalized?: {
+    numero_acreditacion: string;
+    fecha_concesion: string;
+    fecha_vencimiento: string | null;
+    estatus: AcreditacionEstatus;
+  };
+}
+
+/**
+ * Validates updates to an existing accreditation record (`numero_acreditacion`, dates, status).
+ */
+export function validateAccreditationEditInput(
+  input: AccreditationEditValidationInput
+): AccreditationEditValidationResult {
+  const numeroAcreditacion = (input.numero_acreditacion || '').trim();
+  if (numeroAcreditacion.length < 2) {
+    return {
+      valid: false,
+      error: 'El número de acreditación es obligatorio (mínimo 2 caracteres).',
+    };
+  }
+
+  const fechaConcesion = (input.fecha_concesion || '').trim();
+  const grantMs = parseIsoDateUtcMs(fechaConcesion);
+  if (grantMs === null) {
+    return {
+      valid: false,
+      error: 'La fecha de concesión es obligatoria y debe tener formato YYYY-MM-DD válido.',
+    };
+  }
+
+  const rawExpiry = (input.fecha_vencimiento || '').trim();
+  let fechaVencimiento: string | null = null;
+  if (rawExpiry) {
+    const expiryMs = parseIsoDateUtcMs(rawExpiry);
+    if (expiryMs === null) {
+      return {
+        valid: false,
+        error: 'La fecha de vencimiento debe tener formato YYYY-MM-DD válido.',
+      };
+    }
+    if (expiryMs < grantMs) {
+      return {
+        valid: false,
+        error: 'La fecha de vencimiento debe ser igual o posterior a la fecha de concesión.',
+      };
+    }
+    fechaVencimiento = rawExpiry;
+  }
+
+  const rawStatus = (input.estatus || 'Activa').trim();
+  const matchedStatus = VALID_ACREDITACION_STATUSES.find(
+    (s) => normalizeText(s) === normalizeText(rawStatus)
+  );
+  if (!matchedStatus) {
+    return {
+      valid: false,
+      error: 'El estatus de acreditación seleccionado no es válido.',
+    };
+  }
+
+  if (input.existingAccreditations) {
+    const duplicate = input.existingAccreditations.some(
+      (existing) =>
+        existing.id !== input.id &&
+        !existing.deleted_at &&
+        existing.id_organismo === input.id_organismo &&
+        normalizeText(existing.numero_acreditacion) === normalizeText(numeroAcreditacion)
+    );
+    if (duplicate) {
+      return {
+        valid: false,
+        error: `Ya existe otra acreditación activa con el número "${numeroAcreditacion}" para este organismo.`,
+      };
+    }
+  }
+
+  return {
+    valid: true,
+    normalized: {
       numero_acreditacion: numeroAcreditacion,
       fecha_concesion: fechaConcesion,
       fecha_vencimiento: fechaVencimiento,

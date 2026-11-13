@@ -389,3 +389,74 @@ test('Phase 3: popToParentBreadcrumb steps back one level and returns parent seg
   assert.equal(noop.trail.length, 1);
   assert.equal(noop.target?.id, 'dashboard');
 });
+
+test('Phase 4.2.2: composite breadcrumb truncates cycles cleanly for Certificado -> Acreditacion -> Certificado and Sitio -> Certificado -> Sitio', () => {
+  let accredTrail = resetBreadcrumbToDomain('certificacion', 'certificates');
+  accredTrail = pushBreadcrumb(accredTrail, {
+    id: 'cert-fn-001',
+    label: 'FN-QMS-2024-001',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'cert',
+    entityId: '40000000-0000-0000-0000-000000000001',
+    tab: 'cobertura',
+  });
+  accredTrail = pushBreadcrumb(accredTrail, {
+    id: 'accred-enac-001',
+    label: '01/C-SC001',
+    route: 'extra',
+    subview: 'accreditations',
+    entityType: 'acreditacion',
+    entityId: 'dc000000-0000-0000-0000-000000000001',
+    tab: 'certificados',
+  });
+  assert.equal(accredTrail.length, 4);
+
+  const loopedCert = pushBreadcrumb(accredTrail, {
+    id: 'cert-fn-001-back',
+    label: 'FN-QMS-2024-001',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'cert',
+    entityId: '40000000-0000-0000-0000-000000000001',
+    tab: 'sitios',
+  });
+  assert.equal(loopedCert.length, 3);
+  assert.equal(loopedCert[2].entityType, 'cert');
+  assert.equal(loopedCert[2].tab, 'sitios');
+
+  let siteTrail = resetBreadcrumbToDomain('certificacion', 'certificates');
+  siteTrail = pushBreadcrumb(siteTrail, {
+    id: 'sitio-000',
+    label: 'Sitio 0 · Sede Principal HQ',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'sitio',
+    entityId: '50000000-0000-0000-0000-000000000001',
+    tab: 'turnos',
+  });
+  siteTrail = pushBreadcrumb(siteTrail, {
+    id: 'cert-001',
+    label: 'FN-QMS-2024-001',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'cert',
+    entityId: '40000000-0000-0000-0000-000000000001',
+    tab: 'sitios',
+  });
+  assert.equal(siteTrail.length, 4);
+
+  const loopedSitio = pushBreadcrumb(siteTrail, {
+    id: 'sitio-000-back',
+    label: 'Sitio 0 · Sede Principal HQ',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'sitio',
+    entityId: '50000000-0000-0000-0000-000000000001',
+    tab: 'auditorias',
+  });
+  assert.equal(loopedSitio.length, 3);
+  assert.equal(loopedSitio[2].entityType, 'sitio');
+  assert.equal(loopedSitio[2].tab, 'auditorias');
+});
+

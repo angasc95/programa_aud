@@ -9,13 +9,22 @@ import {
   computeActiveCertificatesCountForAccreditation,
   enrichAcreditacionesWithImpact,
   evaluateAccreditationExpiry,
+  filterCoveredCertificatesForAccreditation,
   formatAcreditacionSectorLabel,
   getAcreditacionSectorFacetValue,
+  getSubsectoresForAccreditation,
   mapSupabaseAcreditacionRows,
+  validateAccreditationEditInput,
   validateAccreditationInput,
   type AcreditacionDetailEntity,
 } from './acreditacionDomain';
-import { INITIAL_NORMAS, INITIAL_ORGANISMOS, INITIAL_SECTORES_IAF } from './extraDomain';
+import {
+  INITIAL_NORMAS,
+  INITIAL_ORGANISMOS,
+  INITIAL_SECTORES_IAF,
+  INITIAL_SUBSECTORES_IAF,
+} from './extraDomain';
+import { INITIAL_CERTIFICADOS_DETAILED } from './multisiteSampling';
 import { SAMPLE_CERTIFICATE_RECORDS } from './searchControls';
 import { renderAcreditacionView } from '../views/acreditacionView';
 import { renderExtraView } from '../views/extraView';
@@ -353,3 +362,178 @@ test('Phase 4.1.3: renderAcreditacionView enforces Multi View compliance, reacti
   assert.ok(detailHtml.includes(baseAcreds[0].numero_acreditacion));
   assert.equal(assertZeroUuidExposure(detailHtml).compliant, true);
 });
+
+test('Phase 4.2.2: filterCoveredCertificatesForAccreditation, getSubsectoresForAccreditation, and validateAccreditationEditInput behave accurately', () => {
+  const initialAcreds = buildInitialAcreditacionEntities(INITIAL_CERTIFICADOS_DETAILED);
+  const enacSector17 = initialAcreds[0];
+
+  const covered = filterCoveredCertificatesForAccreditation(
+    enacSector17,
+    INITIAL_CERTIFICADOS_DETAILED
+  );
+  assert.ok(covered.length >= 1);
+  assert.ok(covered.every((c) => c.norma_codigo === enacSector17.norma_codigo));
+
+  const subsectores17 = getSubsectoresForAccreditation(enacSector17, INITIAL_SUBSECTORES_IAF);
+  assert.ok(subsectores17.length >= 1);
+  assert.ok(subsectores17.every((s) => s.sector_numero === enacSector17.sector_numero));
+
+  const generalScopeAcr: AcreditacionDetailEntity = {
+    ...enacSector17,
+    id: 'dc000000-0000-0000-0000-000000000077',
+    id_sector_iaf: null,
+    sector_numero: null,
+    sector_descripcion: null,
+  };
+  const allSubs = getSubsectoresForAccreditation(generalScopeAcr, INITIAL_SUBSECTORES_IAF);
+  assert.equal(allSubs.length, INITIAL_SUBSECTORES_IAF.length);
+
+  // Edit validation allows saving same numero_acreditacion on self
+  const selfValid = validateAccreditationEditInput({
+    id: enacSector17.id,
+    id_organismo: enacSector17.id_organismo,
+    numero_acreditacion: enacSector17.numero_acreditacion,
+    fecha_concesion: enacSector17.fecha_concesion,
+    fecha_vencimiento: '2029-12-31',
+    estatus: 'En Renovación',
+    existingAccreditations: initialAcreds,
+  });
+  assert.equal(selfValid.valid, true);
+  assert.equal(selfValid.normalized?.estatus, 'En Renovación');
+
+  // Edit validation rejects expiry earlier than grant date
+  const badDates = validateAccreditationEditInput({
+    id: enacSector17.id,
+    id_organismo: enacSector17.id_organismo,
+    numero_acreditacion: enacSector17.numero_acreditacion,
+    fecha_concesion: '2026-06-01',
+    fecha_vencimiento: '2026-05-01',
+    estatus: 'Activa',
+    existingAccreditations: initialAcreds,
+  });
+  assert.equal(badDates.valid, false);
+});
+
+test('Phase 4.2.2: renderAcreditacionView detail mode renders 3-Zone layout, clickable parent chips, Todos los Sectores badge, tabs, and RBAC', () => {
+  const initialAcreds = buildInitialAcreditacionEntities(INITIAL_CERTIFICADOS_DETAILED);
+  const enacSector17 = initialAcreds[0];
+
+  // 1. Specific sector accreditation detail with Certificados tab
+  const detailCertsHtml = renderAcreditacionView({
+    profile: ADMIN_PROFILE,
+    state: {
+      selectedAccreditationId: enacSector17.id,
+      activeChildTab: 'certificados',
+      query: '',
+      viewMode: 'list',
+      sortColumn: null,
+      sortDirection: 'none',
+    },
+    acreditaciones: initialAcreds,
+    organismos: INITIAL_ORGANISMOS,
+    normas: INITIAL_NORMAS,
+    sectores: INITIAL_SECTORES_IAF,
+    certificates: INITIAL_CERTIFICADOS_DETAILED,
+    subsectores: INITIAL_SUBSECTORES_IAF,
+  });
+
+  assert.ok(detailCertsHtml.includes('rel="noopener noreferrer"'));
+  assert.ok(detailCertsHtml.includes('data-parent-nav="true"'));
+  assert.ok(detailCertsHtml.includes('data-parent-type="norma"'));
+  assert.ok(detailCertsHtml.includes('data-parent-type="sector_iaf"'));
+  assert.ok(detailCertsHtml.includes('data-action="open-changelog"'));
+  assert.ok(detailCertsHtml.includes('id="startEditAcreditacionBtn"'));
+  assert.ok(detailCertsHtml.includes('data-action="open-archive-accreditacion"'));
+  assert.ok(detailCertsHtml.includes('data-action="select-cert"'));
+  assert.ok(detailCertsHtml.includes('Certificados Amparados'));
+  assert.ok(detailCertsHtml.includes('Sub-Sectores IAF del Alcance'));
+  assert.equal(/ZONA\s+[1-4]:/.test(detailCertsHtml), false);
+  assert.ok(
+    detailCertsHtml.indexOf('aria-label="Contexto y relaciones superiores"') <
+      detailCertsHtml.indexOf('<hr class="border-t border-slate-200 my-4" />') &&
+      detailCertsHtml.indexOf('<hr class="border-t border-slate-200 my-4" />') <
+        detailCertsHtml.indexOf('aria-label="Detalle del registro"') &&
+      detailCertsHtml.indexOf('aria-label="Detalle del registro"') < detailCertsHtml.indexOf('role="tablist"')
+  );
+  assert.equal(assertZeroUuidExposure(detailCertsHtml).compliant, true);
+
+  // 2. Null-sector accreditation shows non-clickable "Todos los Sectores" and Sub-Sectores tab
+  const nullSectorAcr: AcreditacionDetailEntity = {
+    ...enacSector17,
+    id: 'dc000000-0000-0000-0000-000000000088',
+    numero_acreditacion: '01/C-GEN088',
+    id_sector_iaf: null,
+    sector_numero: null,
+    sector_descripcion: null,
+  };
+  const subsectoresHtml = renderAcreditacionView({
+    profile: WORKER_PROFILE,
+    state: {
+      selectedAccreditationId: nullSectorAcr.id,
+      activeChildTab: 'subsectores',
+      query: '',
+      viewMode: 'list',
+      sortColumn: null,
+      sortDirection: 'none',
+    },
+    acreditaciones: [nullSectorAcr],
+    organismos: INITIAL_ORGANISMOS,
+    normas: INITIAL_NORMAS,
+    sectores: INITIAL_SECTORES_IAF,
+    certificates: INITIAL_CERTIFICADOS_DETAILED,
+    subsectores: INITIAL_SUBSECTORES_IAF,
+  });
+
+  assert.ok(subsectoresHtml.includes(ALL_SECTORS_LABEL));
+  assert.equal(subsectoresHtml.includes('data-parent-type="sector_iaf"'), false);
+  assert.ok(subsectoresHtml.includes('Sub-Sectores Técnicos IAF del Alcance'));
+  assert.equal(assertZeroUuidExposure(subsectoresHtml).compliant, true);
+
+  // 3. RBAC: CLIENT & AUDITOR cannot edit or archive, even if state flags are set
+  for (const nonStaff of [CLIENT_PROFILE, AUDITOR_PROFILE]) {
+    const readOnlyHtml = renderAcreditacionView({
+      profile: nonStaff,
+      state: {
+        selectedAccreditationId: enacSector17.id,
+        activeChildTab: 'certificados',
+        isEditingAttributes: true,
+        archiveConfirmOpen: true,
+        query: '',
+        viewMode: 'list',
+        sortColumn: null,
+        sortDirection: 'none',
+      },
+      acreditaciones: initialAcreds,
+      organismos: INITIAL_ORGANISMOS,
+      normas: INITIAL_NORMAS,
+      sectores: INITIAL_SECTORES_IAF,
+      certificates: INITIAL_CERTIFICADOS_DETAILED,
+      subsectores: INITIAL_SUBSECTORES_IAF,
+    });
+    assert.equal(readOnlyHtml.includes('id="startEditAcreditacionBtn"'), false);
+    assert.equal(readOnlyHtml.includes('id="editAcreditacionForm"'), false);
+    assert.equal(readOnlyHtml.includes('data-action="open-archive-accreditacion"'), false);
+    assert.equal(assertZeroUuidExposure(readOnlyHtml).compliant, true);
+  }
+
+  // 4. Soft-deleted accreditation is excluded from directory
+  const softDeletedDirHtml = renderAcreditacionView({
+    profile: ADMIN_PROFILE,
+    state: {
+      selectedAccreditationId: null,
+      query: '',
+      viewMode: 'list',
+      sortColumn: null,
+      sortDirection: 'none',
+    },
+    acreditaciones: [
+      enacSector17,
+      { ...nullSectorAcr, deleted_at: '2026-03-01T00:00:00Z' },
+    ],
+    organismos: INITIAL_ORGANISMOS,
+    normas: INITIAL_NORMAS,
+    sectores: INITIAL_SECTORES_IAF,
+  });
+  assert.equal(softDeletedDirHtml.includes('01/C-GEN088'), false);
+});
+

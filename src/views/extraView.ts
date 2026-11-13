@@ -213,6 +213,7 @@ export function renderExtraView(
   ) {
     const acredState: AcreditacionViewState = {
       selectedAccreditationId: state.acreditacionState?.selectedAccreditationId || null,
+      activeChildTab: state.acreditacionState?.activeChildTab || 'certificados',
       query: state.acreditacionState?.query || '',
       viewMode: state.acreditacionState?.viewMode || 'grid',
       sortColumn: state.acreditacionState?.sortColumn || null,
@@ -223,6 +224,12 @@ export function renderExtraView(
       createErrorMessage: state.acreditacionState?.createErrorMessage ?? null,
       createSuccessMessage: state.acreditacionState?.createSuccessMessage ?? null,
       organismoMode: state.acreditacionState?.organismoMode || 'existing',
+      isEditingAttributes: Boolean(state.acreditacionState?.isEditingAttributes),
+      editFormData: state.acreditacionState?.editFormData,
+      editErrorMessage: state.acreditacionState?.editErrorMessage ?? null,
+      saveSuccessMessage: state.acreditacionState?.saveSuccessMessage ?? null,
+      archiveConfirmOpen: Boolean(state.acreditacionState?.archiveConfirmOpen),
+      archiveErrorMessage: state.acreditacionState?.archiveErrorMessage ?? null,
     };
 
     activeContentHtml = renderAcreditacionView({
@@ -232,6 +239,8 @@ export function renderExtraView(
       organismos: mappedOrganismos,
       normas: mappedNormas,
       sectores: mappedSectores,
+      certificates: state.certificates || [],
+      subsectores: INITIAL_SUBSECTORES_IAF,
       loading: state.loading,
     });
   } else if (activeSub === 'estatus') {

@@ -29,6 +29,12 @@ import {
   type AuditorDetailEntity,
 } from '../lib/competencyMatrix';
 import type { ProgramacionAuditEntity } from '../lib/auditExecution';
+import {
+  INITIAL_TURNO_CATALOG,
+  resolveSitioDetailById,
+  type TurnoCatalogItem,
+} from '../lib/sitioDomain';
+import { renderSitioView, type SitioViewState } from './sitioView';
 
 export interface OrganizationRecord {
   id: string;
@@ -81,6 +87,9 @@ export interface CertificacionViewState {
   auditorState?: Partial<AuditorViewState>;
   allAuditorsDetailed?: AuditorDetailEntity[];
   programacionAudits?: ProgramacionAuditEntity[];
+  sitioState?: Partial<SitioViewState>;
+  shiftCatalog?: TurnoCatalogItem[];
+  archivedSiteIds?: ReadonlySet<string>;
 }
 
 export function renderCertificacionView(
@@ -202,18 +211,63 @@ export function renderCertificacionView(
         ? state.allCertificadosDetailed
         : INITIAL_CERTIFICADOS_DETAILED;
 
-    const orgList: OrganizacionEntity[] =
-      state.allOrganizaciones !== undefined
-        ? state.allOrganizaciones
-        : INITIAL_ORGANIZACIONES;
+    const selectedSitioId = state.sitioState?.selectedSitioId || null;
+    const resolvedSitio = selectedSitioId
+      ? resolveSitioDetailById({
+          sitioId: selectedSitioId,
+          certificates: certList,
+          programacionAudits: state.programacionAudits || [],
+          shiftCatalog: state.shiftCatalog || INITIAL_TURNO_CATALOG,
+          archivedSiteIds: state.archivedSiteIds,
+        })
+      : null;
 
-    contentHtml = renderCertificadoView({
-      profile,
-      state: certState,
-      certificates: certList,
-      organizaciones: orgList,
-      loading: state.loading,
-    });
+    if (resolvedSitio) {
+      const siblingSites = certList.flatMap((c) =>
+        c.sitios
+          .filter((s) => !state.archivedSiteIds?.has(s.id))
+          .map((s) => ({
+            id: s.id,
+            id_certificado: c.id,
+            numero_sitio: s.numero_sitio,
+            deleted_at: null,
+          }))
+      );
+
+      const sitioViewState: SitioViewState = {
+        selectedSitioId,
+        activeChildTab: state.sitioState?.activeChildTab || 'turnos',
+        isEditingAttributes: Boolean(state.sitioState?.isEditingAttributes),
+        editFormData: state.sitioState?.editFormData,
+        editErrorMessage: state.sitioState?.editErrorMessage ?? null,
+        saveSuccessMessage: state.sitioState?.saveSuccessMessage ?? null,
+        archiveConfirmOpen: Boolean(state.sitioState?.archiveConfirmOpen),
+        archiveErrorMessage: state.sitioState?.archiveErrorMessage ?? null,
+        isAssigningShift: Boolean(state.sitioState?.isAssigningShift),
+        shiftActionMessage: state.sitioState?.shiftActionMessage ?? null,
+      };
+
+      contentHtml = renderSitioView({
+        profile,
+        state: sitioViewState,
+        sitio: resolvedSitio,
+        siblingSites,
+        shiftCatalog: state.shiftCatalog || INITIAL_TURNO_CATALOG,
+      });
+    } else {
+      const orgList: OrganizacionEntity[] =
+        state.allOrganizaciones !== undefined
+          ? state.allOrganizaciones
+          : INITIAL_ORGANIZACIONES;
+
+      contentHtml = renderCertificadoView({
+        profile,
+        state: certState,
+        certificates: certList,
+        organizaciones: orgList,
+        loading: state.loading,
+      });
+    }
   }
 
   return `

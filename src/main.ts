@@ -49,7 +49,11 @@ import {
   type IafRecord,
   type CatalogItem,
 } from './views/extraView';
-import type { AcreditacionViewState } from './views/acreditacionView';
+import type {
+  AcreditacionChildTab,
+  AcreditacionViewState,
+} from './views/acreditacionView';
+import type { SitioChildTab, SitioViewState } from './views/sitioView';
 import {
   extractUniqueStandards,
   extractUniqueStatuses,
@@ -130,6 +134,7 @@ import {
   enrichAcreditacionesWithImpact,
   mapSupabaseAcreditacionRows,
   toLegacyAcreditacionNormaIaf,
+  validateAccreditationEditInput,
   validateAccreditationInput,
   type AcreditacionDetailEntity,
   type CertificateCoverageInput,
@@ -147,6 +152,13 @@ import {
   type CertificadoViewState,
   type CertificadoChildTab,
 } from './lib/multisiteSampling';
+import {
+  INITIAL_TURNO_CATALOG,
+  canArchiveSitio,
+  resolveSitioDetailById,
+  validateSitioInput,
+  type TurnoCatalogItem,
+} from './lib/sitioDomain';
 import {
   INITIAL_AUDITORES_DETAILED,
   getCredentialValidityState,
@@ -237,6 +249,8 @@ interface AppState {
     allAuditorsDetailed: AuditorDetailEntity[];
     allOrganismos: OrganismoAcreditacion[];
     allAcreditaciones: AcreditacionDetailEntity[];
+    shiftCatalog: TurnoCatalogItem[];
+    archivedSiteIds: Set<string>;
     programacionAudits: ProgramacionAuditEntity[];
     phase5Findings: Phase5FindingEntity[];
     sessionAuditLogs: AuditLogEntry[];
@@ -261,6 +275,7 @@ interface AppState {
   resultadoDomain: ResultadoViewState;
   organizacionDomain: OrganizacionViewState;
   certificadoDomain: CertificadoViewState;
+  sitioDomain: SitioViewState;
   auditorDomain: AuditorViewState;
   extraDomain: {
     selectedNormaId: string | null;
@@ -313,6 +328,7 @@ interface AppState {
     metodologiaFacetSelections: MultiViewSelectionMap;
 
     selectedAccreditationId: string | null;
+    activeAccreditationTab: AcreditacionChildTab;
     accredSearchQuery: string;
     accredViewMode: 'grid' | 'list';
     accredSortColumn: string | null;
@@ -323,6 +339,12 @@ interface AppState {
     accredCreateErrorMessage: string | null;
     accredCreateSuccessMessage: string | null;
     accredOrganismoMode: 'existing' | 'new';
+    isEditingAccreditation: boolean;
+    accredEditFormData?: AcreditacionViewState['editFormData'];
+    accredEditErrorMessage: string | null;
+    accredSaveSuccessMessage: string | null;
+    accredArchiveConfirmOpen: boolean;
+    accredArchiveErrorMessage: string | null;
   };
 }
 
@@ -622,6 +644,8 @@ const state: AppState = {
     allAuditorsDetailed: [...INITIAL_AUDITORES_DETAILED],
     allOrganismos: INITIAL_ORGANISMOS.map((o) => ({ ...o })),
     allAcreditaciones: buildInitialAcreditacionEntities(),
+    shiftCatalog: [...INITIAL_TURNO_CATALOG],
+    archivedSiteIds: new Set<string>(),
     programacionAudits: INITIAL_PROGRAMACION_AUDITS.map((a) => ({
       ...a,
       equipo: a.equipo.map((m) => ({ ...m })),
@@ -726,6 +750,18 @@ const state: AppState = {
     isCreating: false,
     createErrorMessage: null,
   },
+  sitioDomain: {
+    selectedSitioId: null,
+    activeChildTab: 'turnos',
+    isEditingAttributes: false,
+    editFormData: undefined,
+    editErrorMessage: null,
+    saveSuccessMessage: null,
+    archiveConfirmOpen: false,
+    archiveErrorMessage: null,
+    isAssigningShift: false,
+    shiftActionMessage: null,
+  },
   auditorDomain: {
     selectedAuditorId: null,
     activeChildTab: 'competencias',
@@ -796,6 +832,7 @@ const state: AppState = {
     metodologiaFacetSelections: {},
 
     selectedAccreditationId: null,
+    activeAccreditationTab: 'certificados',
     accredSearchQuery: '',
     accredViewMode: 'grid',
     accredSortColumn: null,
@@ -806,6 +843,12 @@ const state: AppState = {
     accredCreateErrorMessage: null,
     accredCreateSuccessMessage: null,
     accredOrganismoMode: 'existing',
+    isEditingAccreditation: false,
+    accredEditFormData: undefined,
+    accredEditErrorMessage: null,
+    accredSaveSuccessMessage: null,
+    accredArchiveConfirmOpen: false,
+    accredArchiveErrorMessage: null,
   },
 };
 
@@ -933,7 +976,8 @@ function render(): void {
     state.profile.status === 'APPROVED' &&
     state.activeRoute === 'certificacion' &&
     (Boolean(state.organizacionDomain.selectedOrganizacionId) ||
-      Boolean(state.certificadoDomain.selectedCertId));
+      Boolean(state.certificadoDomain.selectedCertId) ||
+      Boolean(state.sitioDomain.selectedSitioId));
 
   let effectiveRoute: ActiveRoute = state.activeRoute;
   if (!canAccessRoute(state.profile, effectiveRoute) && !isAuditorContextualCertAccess) {
@@ -1025,6 +1069,9 @@ function render(): void {
       auditorState: state.auditorDomain,
       allAuditorsDetailed: state.domainData.allAuditorsDetailed,
       programacionAudits: scopedProgramacionAudits,
+      sitioState: state.sitioDomain,
+      shiftCatalog: state.domainData.shiftCatalog,
+      archivedSiteIds: state.domainData.archivedSiteIds,
     });
   } else if (effectiveRoute === 'extra') {
     const coverageCerts: CertificateCoverageInput[] = [];
@@ -1059,6 +1106,7 @@ function render(): void {
     );
     const acreditacionViewState: Partial<AcreditacionViewState> = {
       selectedAccreditationId: state.extraDomain.selectedAccreditationId,
+      activeChildTab: state.extraDomain.activeAccreditationTab,
       query: state.extraDomain.accredSearchQuery,
       viewMode: state.extraDomain.accredViewMode,
       sortColumn: state.extraDomain.accredSortColumn,
@@ -1069,6 +1117,12 @@ function render(): void {
       createErrorMessage: state.extraDomain.accredCreateErrorMessage,
       createSuccessMessage: state.extraDomain.accredCreateSuccessMessage,
       organismoMode: state.extraDomain.accredOrganismoMode,
+      isEditingAttributes: state.extraDomain.isEditingAccreditation,
+      editFormData: state.extraDomain.accredEditFormData,
+      editErrorMessage: state.extraDomain.accredEditErrorMessage,
+      saveSuccessMessage: state.extraDomain.accredSaveSuccessMessage,
+      archiveConfirmOpen: state.extraDomain.accredArchiveConfirmOpen,
+      archiveErrorMessage: state.extraDomain.accredArchiveErrorMessage,
     };
 
     bodyHtml = renderExtraView(state.profile, {
@@ -1291,6 +1345,7 @@ function inferEntityTypeFromSegment(seg: BreadcrumbSegment): BreadcrumbEntityTyp
   if (seg.entityType) return seg.entityType;
   if (seg.id.startsWith('org-')) return 'org';
   if (seg.id.startsWith('cert-')) return 'cert';
+  if (seg.id.startsWith('sitio-')) return 'sitio';
   if (seg.id.startsWith('aud-')) return 'auditor';
   if (seg.id.startsWith('prog-audit-') || seg.id.startsWith('resultados-')) return 'audit';
   if (seg.id.startsWith('norma-')) return 'norma';
@@ -1320,6 +1375,16 @@ function clearAllEntitySelections(): void {
   state.certificadoDomain.isCreating = false;
   state.certificadoDomain.createErrorMessage = null;
 
+  state.sitioDomain.selectedSitioId = null;
+  state.sitioDomain.isEditingAttributes = false;
+  state.sitioDomain.editFormData = undefined;
+  state.sitioDomain.editErrorMessage = null;
+  state.sitioDomain.saveSuccessMessage = null;
+  state.sitioDomain.archiveConfirmOpen = false;
+  state.sitioDomain.archiveErrorMessage = null;
+  state.sitioDomain.isAssigningShift = false;
+  state.sitioDomain.shiftActionMessage = null;
+
   state.auditorDomain.selectedAuditorId = null;
   state.auditorDomain.isEditingAttributes = false;
   state.auditorDomain.editErrorMessage = null;
@@ -1346,6 +1411,12 @@ function clearAllEntitySelections(): void {
   state.extraDomain.isCreatingAccreditation = false;
   state.extraDomain.accredCreateErrorMessage = null;
   state.extraDomain.accredCreateSuccessMessage = null;
+  state.extraDomain.isEditingAccreditation = false;
+  state.extraDomain.accredEditFormData = undefined;
+  state.extraDomain.accredEditErrorMessage = null;
+  state.extraDomain.accredSaveSuccessMessage = null;
+  state.extraDomain.accredArchiveConfirmOpen = false;
+  state.extraDomain.accredArchiveErrorMessage = null;
   state.extraDomain.inspectingClauseId = null;
 }
 
@@ -1363,8 +1434,13 @@ function applyBreadcrumbSegmentState(targetSeg: BreadcrumbSegment): void {
   if (entityType === 'org' && entityId) {
     state.organizacionDomain.selectedOrganizacionId = entityId;
     state.organizacionDomain.activeChildTab = tab === 'auditorias' ? 'auditorias' : 'certificados';
+  } else if (entityType === 'sitio' && entityId) {
+    state.activeRoute = 'certificacion';
+    state.activeSubSection = 'certificates';
+    state.sitioDomain.selectedSitioId = entityId;
+    state.sitioDomain.activeChildTab = tab === 'auditorias' ? 'auditorias' : 'turnos';
   } else if (
-    (entityType === 'cert' || entityType === 'sitio' || entityType === 'proceso' || entityType === 'turno') &&
+    (entityType === 'cert' || entityType === 'proceso' || entityType === 'turno') &&
     entityId
   ) {
     state.certificadoDomain.selectedCertId = entityId;
@@ -1377,8 +1453,6 @@ function applyBreadcrumbSegmentState(targetSeg: BreadcrumbSegment): void {
       tab === 'auditorias'
     ) {
       state.certificadoDomain.activeChildTab = tab;
-    } else if (entityType === 'sitio') {
-      state.certificadoDomain.activeChildTab = 'sitios';
     } else if (entityType === 'proceso') {
       state.certificadoDomain.activeChildTab = 'procesos';
     } else if (entityType === 'turno') {
@@ -1410,6 +1484,8 @@ function applyBreadcrumbSegmentState(targetSeg: BreadcrumbSegment): void {
         : 'subsectores';
   } else if (entityType === 'accreditation' && entityId) {
     state.extraDomain.selectedAccreditationId = entityId;
+    state.extraDomain.activeAccreditationTab =
+      tab === 'subsectores' ? 'subsectores' : 'certificados';
   } else if (entityType === 'estatus' && entityId) {
     state.extraDomain.selectedEstatusId = entityId;
     state.extraDomain.activeEstatusTab =
@@ -2058,6 +2134,9 @@ function bindAuthenticatedEvents(): void {
           INITIAL_CERTIFICADOS_DETAILED.find((c) => c.id === entityId);
         state.activeRoute = 'certificacion';
         state.activeSubSection = 'certificates';
+        state.sitioDomain.selectedSitioId = null;
+        state.sitioDomain.isEditingAttributes = false;
+        state.sitioDomain.archiveConfirmOpen = false;
         state.certificadoDomain.selectedCertId = entityId;
         state.certificadoDomain.activeChildTab = 'sitios';
         state.certificadoDomain.isEditingAttributes = false;
@@ -2205,6 +2284,12 @@ function bindAuthenticatedEvents(): void {
         state.activeRoute = 'extra';
         state.activeSubSection = 'accreditations';
         state.extraDomain.selectedAccreditationId = entityId;
+        state.extraDomain.activeAccreditationTab = 'certificados';
+        state.extraDomain.isEditingAccreditation = false;
+        state.extraDomain.accredEditErrorMessage = null;
+        state.extraDomain.accredSaveSuccessMessage = null;
+        state.extraDomain.accredArchiveConfirmOpen = false;
+        state.extraDomain.accredArchiveErrorMessage = null;
         state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
           id: `accreditation-${entityId}`,
           label: acr ? `${acr.organismo_codigo} ${acr.numero_acreditacion}` : 'Acreditación',
@@ -2212,6 +2297,7 @@ function bindAuthenticatedEvents(): void {
           subview: 'accreditations',
           entityType: 'accreditation',
           entityId,
+          tab: 'certificados',
           tooltip: acr
             ? `Acreditación > ${acr.organismo_codigo} · ${acr.numero_acreditacion}`
             : 'Acreditación',
@@ -2911,14 +2997,21 @@ function bindAuthenticatedEvents(): void {
     });
   });
 
-  // --- 6. Acreditaciones (Phase 4.1.3) Events ---
+  // --- 6. Acreditaciones (Phase 4.1.3 & 4.2.2) Events ---
   const navigateToAccreditationDetail = (accredId: string): void => {
     if (!accredId) return;
-    const acr = state.domainData.allAcreditaciones.find((a) => a.id === accredId);
+    const acr = state.domainData.allAcreditaciones.find((a) => a.id === accredId && !a.deleted_at);
     state.activeRoute = 'extra';
     state.activeSubSection = 'accreditations';
     state.extraDomain.selectedAccreditationId = accredId;
+    state.extraDomain.activeAccreditationTab = 'certificados';
     state.extraDomain.accredCreateSuccessMessage = null;
+    state.extraDomain.isEditingAccreditation = false;
+    state.extraDomain.accredEditFormData = undefined;
+    state.extraDomain.accredEditErrorMessage = null;
+    state.extraDomain.accredSaveSuccessMessage = null;
+    state.extraDomain.accredArchiveConfirmOpen = false;
+    state.extraDomain.accredArchiveErrorMessage = null;
     state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
       id: `accreditation-${accredId}`,
       label: acr ? `${acr.organismo_codigo} ${acr.numero_acreditacion}` : 'Acreditación',
@@ -2926,6 +3019,7 @@ function bindAuthenticatedEvents(): void {
       subview: 'accreditations',
       entityType: 'accreditation',
       entityId: accredId,
+      tab: 'certificados',
       tooltip: acr
         ? `Acreditación > ${acr.organismo_codigo} · ${acr.numero_acreditacion}`
         : 'Acreditación',
@@ -2972,6 +3066,234 @@ function bindAuthenticatedEvents(): void {
         render();
       });
     });
+
+  document.querySelectorAll<HTMLElement>('[data-accred-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.accredTab;
+      if (tab === 'certificados' || tab === 'subsectores') {
+        state.extraDomain.activeAccreditationTab = tab;
+        syncCurrentBreadcrumbTab(tab);
+        render();
+      }
+    });
+  });
+
+  document.getElementById('startEditAcreditacionBtn')?.addEventListener('click', () => {
+    if (!isApprovedStaff()) return;
+    const acr = state.domainData.allAcreditaciones.find(
+      (a) => a.id === state.extraDomain.selectedAccreditationId && !a.deleted_at
+    );
+    if (!acr) return;
+    state.extraDomain.isEditingAccreditation = true;
+    state.extraDomain.accredArchiveConfirmOpen = false;
+    state.extraDomain.accredEditErrorMessage = null;
+    state.extraDomain.accredSaveSuccessMessage = null;
+    state.extraDomain.accredArchiveErrorMessage = null;
+    state.extraDomain.accredEditFormData = {
+      numero_acreditacion: acr.numero_acreditacion,
+      fecha_concesion: acr.fecha_concesion,
+      fecha_vencimiento: acr.fecha_vencimiento,
+      estatus: acr.estatus,
+    };
+    render();
+  });
+
+  const cancelAccredEdit = (): void => {
+    state.extraDomain.isEditingAccreditation = false;
+    state.extraDomain.accredEditErrorMessage = null;
+    render();
+  };
+  document.getElementById('cancelEditAcreditacionBtn')?.addEventListener('click', cancelAccredEdit);
+  document
+    .getElementById('cancelEditAcreditacionBtnSecondary')
+    ?.addEventListener('click', cancelAccredEdit);
+
+  document.getElementById('editAcreditacionForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!isApprovedStaff()) return;
+    const accredId = state.extraDomain.selectedAccreditationId;
+    if (!accredId) return;
+    const current = state.domainData.allAcreditaciones.find(
+      (a) => a.id === accredId && !a.deleted_at
+    );
+    if (!current) return;
+
+    const form = e.target as HTMLFormElement;
+    const numeroInput =
+      (form.querySelector('[name="numero_acreditacion"]') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const concesionInput =
+      (form.querySelector('[name="fecha_concesion"]') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const vencimientoInput =
+      (form.querySelector('[name="fecha_vencimiento"]') as HTMLInputElement | null)?.value.trim() ||
+      '';
+    const estatusInput =
+      (form.querySelector('[name="estatus"]') as HTMLSelectElement | null)?.value || 'Activa';
+
+    state.extraDomain.accredEditFormData = {
+      numero_acreditacion: numeroInput,
+      fecha_concesion: concesionInput,
+      fecha_vencimiento: vencimientoInput || null,
+      estatus: estatusInput,
+    };
+
+    const validation = validateAccreditationEditInput({
+      id: accredId,
+      id_organismo: current.id_organismo,
+      numero_acreditacion: numeroInput,
+      fecha_concesion: concesionInput,
+      fecha_vencimiento: vencimientoInput || null,
+      estatus: estatusInput,
+      existingAccreditations: state.domainData.allAcreditaciones,
+    });
+
+    if (!validation.valid || !validation.normalized) {
+      state.extraDomain.accredEditErrorMessage =
+        validation.error || 'No se pudieron validar los datos de la acreditación.';
+      render();
+      return;
+    }
+
+    const oldSnapshot = {
+      numero_acreditacion: current.numero_acreditacion,
+      fecha_concesion: current.fecha_concesion,
+      fecha_vencimiento: current.fecha_vencimiento,
+      estatus: current.estatus,
+    };
+    const normData = validation.normalized;
+
+    state.domainData.allAcreditaciones = state.domainData.allAcreditaciones.map((a) =>
+      a.id === accredId
+        ? {
+            ...a,
+            numero_acreditacion: normData.numero_acreditacion,
+            fecha_concesion: normData.fecha_concesion,
+            fecha_vencimiento: normData.fecha_vencimiento,
+            estatus: normData.estatus,
+          }
+        : a
+    );
+
+    state.breadcrumbs = state.breadcrumbs.map((seg) =>
+      seg.entityType === 'accreditation' && seg.entityId === accredId
+        ? {
+            ...seg,
+            label: `${current.organismo_codigo} ${normData.numero_acreditacion}`,
+            tooltip: `Acreditación > ${current.organismo_codigo} · ${normData.numero_acreditacion}`,
+          }
+        : seg
+    );
+
+    recordPhase5SessionLog('acreditacion_norma_iaf', accredId, 'UPDATE', oldSnapshot, {
+      numero_acreditacion: normData.numero_acreditacion,
+      fecha_concesion: normData.fecha_concesion,
+      fecha_vencimiento: normData.fecha_vencimiento,
+      estatus: normData.estatus,
+    });
+
+    state.extraDomain.isEditingAccreditation = false;
+    state.extraDomain.accredEditErrorMessage = null;
+    state.extraDomain.accredSaveSuccessMessage =
+      'Atributos de la acreditación actualizados y registrados en Historial de Cambios.';
+
+    void (async () => {
+      try {
+        await supabase
+          .from('acreditacion_norma_iaf')
+          .update({
+            numero_acreditacion: normData.numero_acreditacion,
+            fecha_concesion: normData.fecha_concesion,
+            fecha_vencimiento: normData.fecha_vencimiento,
+            estatus: normData.estatus,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', accredId);
+      } catch {
+        // Reactive state preserved
+      }
+    })();
+
+    render();
+  });
+
+  document
+    .querySelectorAll<HTMLElement>('[data-action="open-archive-accreditacion"]')
+    .forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (!isApprovedStaff()) return;
+        state.extraDomain.accredArchiveConfirmOpen = true;
+        state.extraDomain.accredArchiveErrorMessage = null;
+        state.extraDomain.accredSaveSuccessMessage = null;
+        render();
+      });
+    });
+
+  document.getElementById('cancelArchiveAcreditacionBtn')?.addEventListener('click', () => {
+    state.extraDomain.accredArchiveConfirmOpen = false;
+    state.extraDomain.accredArchiveErrorMessage = null;
+    render();
+  });
+
+  document.getElementById('confirmArchiveAcreditacionBtn')?.addEventListener('click', () => {
+    if (!isApprovedStaff()) return;
+    const accredId = state.extraDomain.selectedAccreditationId;
+    if (!accredId) return;
+    const current = state.domainData.allAcreditaciones.find(
+      (a) => a.id === accredId && !a.deleted_at
+    );
+    if (!current) return;
+
+    const reasonInput =
+      (document.getElementById('archiveAcreditacionReasonInput') as HTMLInputElement | null)
+        ?.value.trim() || 'Archivo lógico solicitado desde ficha de acreditación';
+    const deletedAtIso = new Date().toISOString();
+
+    state.domainData.allAcreditaciones = state.domainData.allAcreditaciones.map((a) =>
+      a.id === accredId ? { ...a, deleted_at: deletedAtIso } : a
+    );
+
+    recordPhase5SessionLog(
+      'acreditacion_norma_iaf',
+      accredId,
+      'UPDATE',
+      {
+        numero_acreditacion: current.numero_acreditacion,
+        estatus: current.estatus,
+        deleted_at: null,
+      },
+      {
+        deleted_at: deletedAtIso,
+        delete_reason: reasonInput,
+      }
+    );
+
+    void (async () => {
+      try {
+        const { error } = await supabase.rpc('archive_record', {
+          p_table: 'acreditacion_norma_iaf',
+          p_record_id: accredId,
+          p_reason: reasonInput,
+        });
+        if (error) {
+          await supabase
+            .from('acreditacion_norma_iaf')
+            .update({
+              deleted_at: deletedAtIso,
+              delete_reason: reasonInput,
+            })
+            .eq('id', accredId);
+        }
+      } catch {
+        // Optimistic reactive fallback preserved
+      }
+    })();
+
+    state.extraDomain.accredArchiveConfirmOpen = false;
+    backtrackToParentBreadcrumb();
+    state.extraDomain.accredCreateSuccessMessage = `Acreditación ${current.numero_acreditacion} archivada lógicamente.`;
+    render();
+  });
 
   document
     .querySelectorAll<HTMLElement>('[data-action="open-create-acreditacion"]')
@@ -3553,6 +3875,9 @@ function bindAuthenticatedEvents(): void {
       if (!certId) return;
       state.activeRoute = 'certificacion';
       state.activeSubSection = 'certificates';
+      state.sitioDomain.selectedSitioId = null;
+      state.sitioDomain.isEditingAttributes = false;
+      state.sitioDomain.archiveConfirmOpen = false;
       state.certificadoDomain.selectedCertId = certId;
       state.certificadoDomain.activeChildTab = 'sitios';
       state.certificadoDomain.isEditingAttributes = false;
@@ -3864,6 +4189,582 @@ function bindAuthenticatedEvents(): void {
 
     render();
   });
+
+  // ===============================================
+  // DOMAIN CERTIFICACIÓN (Phase 4.2.2: Sitio Detail View)
+  // ===============================================
+  const navigateToSitioDetail = (sitioId: string): void => {
+    if (!sitioId) return;
+    if (
+      !canAccessRoute(state.profile, 'certificacion') &&
+      !(state.profile?.role === 'AUDITOR' && state.profile?.status === 'APPROVED')
+    ) {
+      return;
+    }
+
+    const resolvedSitio = resolveSitioDetailById({
+      sitioId,
+      certificates: state.domainData.allCertificadosDetailed,
+      programacionAudits: state.domainData.programacionAudits,
+      shiftCatalog: state.domainData.shiftCatalog,
+      archivedSiteIds: state.domainData.archivedSiteIds,
+    });
+    if (!resolvedSitio) return;
+
+    state.activeRoute = 'certificacion';
+    state.activeSubSection = 'certificates';
+    state.sitioDomain.selectedSitioId = sitioId;
+    state.sitioDomain.activeChildTab = 'turnos';
+    state.sitioDomain.isEditingAttributes = false;
+    state.sitioDomain.editFormData = undefined;
+    state.sitioDomain.editErrorMessage = null;
+    state.sitioDomain.saveSuccessMessage = null;
+    state.sitioDomain.archiveConfirmOpen = false;
+    state.sitioDomain.archiveErrorMessage = null;
+    state.sitioDomain.isAssigningShift = false;
+    state.sitioDomain.shiftActionMessage = null;
+
+    state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
+      id: `sitio-${sitioId}`,
+      label: `Sitio ${resolvedSitio.numero_sitio}`,
+      route: 'certificacion',
+      subview: 'certificates',
+      entityType: 'sitio',
+      entityId: sitioId,
+      tab: 'turnos',
+      tooltip: `Certificado ${resolvedSitio.numero_certificado} > Sitio ${resolvedSitio.numero_sitio} — ${resolvedSitio.nombre_sitio}`,
+    });
+    syncUrlHash('certificacion', 'certificates');
+    render();
+  };
+
+  document.querySelectorAll<HTMLElement>('[data-action="select-sitio"]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const sitioId = btn.dataset.sitioId;
+      if (sitioId) navigateToSitioDetail(sitioId);
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="select-sitio-preview"]').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('button, a, input, select')) return;
+      const sitioId = row.dataset.sitioId;
+      if (sitioId) navigateToSitioDetail(sitioId);
+    });
+  });
+
+  document
+    .querySelectorAll<HTMLElement>('[data-action="back-to-cert-from-sitio"]')
+    .forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.navBack === 'true') return;
+        backtrackToParentBreadcrumb();
+        render();
+      });
+    });
+
+  document.querySelectorAll<HTMLElement>('[data-sitio-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.sitioTab as SitioChildTab | undefined;
+      if (tab === 'turnos' || tab === 'auditorias') {
+        state.sitioDomain.activeChildTab = tab;
+        state.sitioDomain.shiftActionMessage = null;
+        syncCurrentBreadcrumbTab(tab);
+        render();
+      }
+    });
+  });
+
+  document.getElementById('startEditSitioBtn')?.addEventListener('click', () => {
+    if (!isApprovedStaff()) return;
+    const sitioId = state.sitioDomain.selectedSitioId;
+    if (!sitioId) return;
+    const currentSitio = resolveSitioDetailById({
+      sitioId,
+      certificates: state.domainData.allCertificadosDetailed,
+      programacionAudits: state.domainData.programacionAudits,
+      shiftCatalog: state.domainData.shiftCatalog,
+      archivedSiteIds: state.domainData.archivedSiteIds,
+    });
+    if (!currentSitio) return;
+
+    state.sitioDomain.isEditingAttributes = true;
+    state.sitioDomain.archiveConfirmOpen = false;
+    state.sitioDomain.editErrorMessage = null;
+    state.sitioDomain.saveSuccessMessage = null;
+    state.sitioDomain.archiveErrorMessage = null;
+    state.sitioDomain.editFormData = {
+      numero_sitio: currentSitio.numero_sitio,
+      nombre_sitio: currentSitio.nombre_sitio,
+      direccion_sitio: currentSitio.direccion_sitio,
+    };
+    render();
+  });
+
+  const cancelSitioEdit = (): void => {
+    state.sitioDomain.isEditingAttributes = false;
+    state.sitioDomain.editErrorMessage = null;
+    render();
+  };
+  document.getElementById('cancelEditSitioBtn')?.addEventListener('click', cancelSitioEdit);
+  document
+    .getElementById('cancelEditSitioBtnSecondary')
+    ?.addEventListener('click', cancelSitioEdit);
+
+  document.getElementById('editSitioForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!isApprovedStaff()) return;
+    const sitioId = state.sitioDomain.selectedSitioId;
+    if (!sitioId) return;
+
+    const currentSitio = resolveSitioDetailById({
+      sitioId,
+      certificates: state.domainData.allCertificadosDetailed,
+      programacionAudits: state.domainData.programacionAudits,
+      shiftCatalog: state.domainData.shiftCatalog,
+      archivedSiteIds: state.domainData.archivedSiteIds,
+    });
+    if (!currentSitio) return;
+
+    const form = e.target as HTMLFormElement;
+    const numeroInput =
+      (form.querySelector('[name="numero_sitio"]') as HTMLInputElement | null)?.value ?? '';
+    const nombreInput =
+      (form.querySelector('[name="nombre_sitio"]') as HTMLInputElement | null)?.value.trim() || '';
+    const direccionInput =
+      (form.querySelector('[name="direccion_sitio"]') as HTMLInputElement | null)?.value.trim() || '';
+
+    state.sitioDomain.editFormData = {
+      numero_sitio: numeroInput,
+      nombre_sitio: nombreInput,
+      direccion_sitio: direccionInput,
+    };
+
+    const existingSites = state.domainData.allCertificadosDetailed.flatMap((c) =>
+      c.sitios
+        .filter((s) => !state.domainData.archivedSiteIds.has(s.id))
+        .map((s) => ({
+          id: s.id,
+          id_certificado: c.id,
+          numero_sitio: s.numero_sitio,
+          deleted_at: null,
+        }))
+    );
+
+    const validation = validateSitioInput({
+      numero_sitio: numeroInput,
+      nombre_sitio: nombreInput,
+      direccion_sitio: direccionInput,
+      id_certificado: currentSitio.id_certificado,
+      currentSitioId: sitioId,
+      existingSites,
+    });
+
+    if (!validation.valid || !validation.normalized) {
+      state.sitioDomain.editErrorMessage =
+        validation.error || 'No se pudieron validar los datos del sitio.';
+      render();
+      return;
+    }
+
+    const normSitio = validation.normalized;
+    const oldSnapshot = {
+      numero_sitio: currentSitio.numero_sitio,
+      nombre_sitio: currentSitio.nombre_sitio,
+      direccion_sitio: currentSitio.direccion_sitio,
+    };
+
+    state.domainData.allCertificadosDetailed = state.domainData.allCertificadosDetailed.map((c) => {
+      if (c.id !== currentSitio.id_certificado) return c;
+      return {
+        ...c,
+        sitios: c.sitios.map((s) =>
+          s.id === sitioId
+            ? {
+                ...s,
+                numero_sitio: normSitio.numero_sitio,
+                nombre_sitio: normSitio.nombre_sitio,
+                direccion_sitio: normSitio.direccion_sitio,
+              }
+            : s
+        ),
+        turnos: c.turnos.map((t) => ({
+          ...t,
+          sitios_vinculados: t.sitios_vinculados.map((label) =>
+            label === currentSitio.nombre_sitio ? normSitio.nombre_sitio : label
+          ),
+        })),
+      };
+    });
+
+    state.domainData.sites = state.domainData.sites.map((s) =>
+      s.id === sitioId
+        ? {
+            ...s,
+            numero_sitio: normSitio.numero_sitio,
+            nombre_sitio: normSitio.nombre_sitio,
+            direccion_sitio: normSitio.direccion_sitio,
+          }
+        : s
+    );
+
+    state.domainData.programacionAudits = state.domainData.programacionAudits.map((aud) =>
+      aud.id_certificado !== currentSitio.id_certificado
+        ? aud
+        : {
+            ...aud,
+            sitiosMuestreo: aud.sitiosMuestreo.map((sm) =>
+              sm.id_sitio === sitioId
+                ? {
+                    ...sm,
+                    numero_sitio: normSitio.numero_sitio,
+                    nombre_sitio: normSitio.nombre_sitio,
+                    direccion_sitio: normSitio.direccion_sitio,
+                  }
+                : sm
+            ),
+          }
+    );
+
+    state.breadcrumbs = state.breadcrumbs.map((seg) =>
+      seg.entityType === 'sitio' && seg.entityId === sitioId
+        ? {
+            ...seg,
+            label: `Sitio ${normSitio.numero_sitio}`,
+            tooltip: `Certificado ${currentSitio.numero_certificado} > Sitio ${normSitio.numero_sitio} — ${normSitio.nombre_sitio}`,
+          }
+        : seg
+    );
+
+    recordPhase5SessionLog('sitio', sitioId, 'UPDATE', oldSnapshot, {
+      numero_sitio: normSitio.numero_sitio,
+      nombre_sitio: normSitio.nombre_sitio,
+      direccion_sitio: normSitio.direccion_sitio,
+    });
+
+    state.sitioDomain.isEditingAttributes = false;
+    state.sitioDomain.editErrorMessage = null;
+    state.sitioDomain.saveSuccessMessage =
+      'Atributos del sitio guardados y registrados en Historial de Cambios.';
+
+    void (async () => {
+      try {
+        await supabase
+          .from('sitio')
+          .update({
+            numero_sitio: normSitio.numero_sitio,
+            nombre_sitio: normSitio.nombre_sitio,
+            direccion_sitio: normSitio.direccion_sitio,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', sitioId);
+      } catch {
+        // Optimistic reactive fallback preserved
+      }
+    })();
+
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-action="open-archive-sitio"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!isApprovedStaff()) return;
+      state.sitioDomain.archiveConfirmOpen = true;
+      state.sitioDomain.archiveErrorMessage = null;
+      state.sitioDomain.saveSuccessMessage = null;
+      render();
+    });
+  });
+
+  document.getElementById('cancelArchiveSitioBtn')?.addEventListener('click', () => {
+    state.sitioDomain.archiveConfirmOpen = false;
+    state.sitioDomain.archiveErrorMessage = null;
+    render();
+  });
+
+  document.getElementById('confirmArchiveSitioBtn')?.addEventListener('click', () => {
+    if (!isApprovedStaff()) return;
+    const sitioId = state.sitioDomain.selectedSitioId;
+    if (!sitioId) return;
+
+    const currentSitio = resolveSitioDetailById({
+      sitioId,
+      certificates: state.domainData.allCertificadosDetailed,
+      programacionAudits: state.domainData.programacionAudits,
+      shiftCatalog: state.domainData.shiftCatalog,
+      archivedSiteIds: state.domainData.archivedSiteIds,
+    });
+    if (!currentSitio) return;
+
+    const siblingSites = state.domainData.allCertificadosDetailed.flatMap((c) =>
+      c.sitios
+        .filter((s) => !state.domainData.archivedSiteIds.has(s.id))
+        .map((s) => ({
+          id: s.id,
+          id_certificado: c.id,
+          numero_sitio: s.numero_sitio,
+          deleted_at: null,
+        }))
+    );
+
+    const guard = canArchiveSitio({
+      site: currentSitio,
+      siblingSites,
+      associatedAuditsCount: currentSitio.auditorias.length,
+    });
+
+    if (!guard.allowed) {
+      state.sitioDomain.archiveConfirmOpen = false;
+      state.sitioDomain.archiveErrorMessage =
+        guard.reason || 'Este sitio tiene dependencias activas que impiden archivarlo.';
+      render();
+      return;
+    }
+
+    const reasonInput =
+      (document.getElementById('archiveSitioReasonInput') as HTMLInputElement | null)?.value.trim() ||
+      'Archivo lógico solicitado desde ficha de sitio';
+    const deletedAtIso = new Date().toISOString();
+
+    state.domainData.archivedSiteIds.add(sitioId);
+    state.domainData.allCertificadosDetailed = state.domainData.allCertificadosDetailed.map((c) =>
+      c.id === currentSitio.id_certificado
+        ? {
+            ...c,
+            sitios: c.sitios.filter((s) => s.id !== sitioId),
+          }
+        : c
+    );
+    state.domainData.sites = state.domainData.sites.filter((s) => s.id !== sitioId);
+    state.exploration.records = state.exploration.records.map((r) => {
+      if (r.id !== currentSitio.id_certificado) return r;
+      const updatedCert = state.domainData.allCertificadosDetailed.find((c) => c.id === r.id);
+      return {
+        ...r,
+        sitios_count: updatedCert ? updatedCert.sitios.length : Math.max(0, r.sitios_count - 1),
+      };
+    });
+
+    recordPhase5SessionLog(
+      'sitio',
+      sitioId,
+      'UPDATE',
+      {
+        numero_sitio: currentSitio.numero_sitio,
+        nombre_sitio: currentSitio.nombre_sitio,
+        deleted_at: null,
+      },
+      {
+        deleted_at: deletedAtIso,
+        delete_reason: reasonInput,
+      }
+    );
+
+    void (async () => {
+      try {
+        const { error } = await supabase.rpc('archive_record', {
+          p_table: 'sitio',
+          p_record_id: sitioId,
+          p_reason: reasonInput,
+        });
+        if (error) {
+          await supabase
+            .from('sitio')
+            .update({
+              deleted_at: deletedAtIso,
+              delete_reason: reasonInput,
+            })
+            .eq('id', sitioId);
+        }
+      } catch {
+        // Optimistic reactive fallback preserved
+      }
+    })();
+
+    state.sitioDomain.archiveConfirmOpen = false;
+    backtrackToParentBreadcrumb();
+    state.certificadoDomain.saveSuccessMessage = `Sitio ${currentSitio.numero_sitio} (${currentSitio.nombre_sitio}) archivado lógicamente.`;
+    render();
+  });
+
+  document
+    .querySelectorAll<HTMLElement>('[data-action="toggle-assign-sitio-turno"]')
+    .forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (!isApprovedStaff()) return;
+        state.sitioDomain.isAssigningShift = !state.sitioDomain.isAssigningShift;
+        state.sitioDomain.shiftActionMessage = null;
+        render();
+      });
+    });
+
+  document.getElementById('assignSitioTurnoForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!isApprovedStaff()) return;
+    const sitioId = state.sitioDomain.selectedSitioId;
+    if (!sitioId) return;
+
+    const turnoId =
+      (document.getElementById('assignSitioTurnoSelect') as HTMLSelectElement | null)?.value || '';
+    const shift = state.domainData.shiftCatalog.find((t) => t.id === turnoId);
+    if (!shift) return;
+
+    const currentSitio = resolveSitioDetailById({
+      sitioId,
+      certificates: state.domainData.allCertificadosDetailed,
+      programacionAudits: state.domainData.programacionAudits,
+      shiftCatalog: state.domainData.shiftCatalog,
+      archivedSiteIds: state.domainData.archivedSiteIds,
+    });
+    if (!currentSitio) return;
+
+    state.domainData.allCertificadosDetailed = state.domainData.allCertificadosDetailed.map((c) => {
+      if (c.id !== currentSitio.id_certificado) return c;
+
+      const updatedSites = c.sitios.map((s) => {
+        if (s.id !== sitioId) return s;
+        const existingLabels = s.turnos_vinculados || [];
+        const nextLabels = existingLabels.includes(shift.descripcion)
+          ? existingLabels
+          : [...existingLabels, shift.descripcion];
+        return {
+          ...s,
+          turnos_vinculados: nextLabels,
+        };
+      });
+
+      const hasShiftOnCert = c.turnos.some((t) => t.id === shift.id);
+      const updatedCertShifts = hasShiftOnCert
+        ? c.turnos.map((t) => {
+            if (t.id !== shift.id) return t;
+            const linked = t.sitios_vinculados.includes(currentSitio.nombre_sitio)
+              ? t.sitios_vinculados
+              : [...t.sitios_vinculados, currentSitio.nombre_sitio];
+            return { ...t, sitios_vinculados: linked };
+          })
+        : [
+            ...c.turnos,
+            {
+              id: shift.id,
+              hora_entrada: shift.hora_entrada,
+              hora_salida: shift.hora_salida,
+              descripcion: shift.descripcion,
+              sitios_vinculados: [currentSitio.nombre_sitio],
+            },
+          ];
+
+      return {
+        ...c,
+        sitios: updatedSites,
+        turnos: updatedCertShifts,
+      };
+    });
+
+    recordPhase5SessionLog('sitio', sitioId, 'UPDATE', null, {
+      accion: 'ASIGNAR_TURNO',
+      turno: shift.descripcion,
+      horario: `${shift.hora_entrada} - ${shift.hora_salida}`,
+    });
+
+    state.sitioDomain.isAssigningShift = false;
+    state.sitioDomain.shiftActionMessage = `Turno "${shift.descripcion}" asignado al Sitio ${currentSitio.numero_sitio}.`;
+
+    void (async () => {
+      try {
+        await supabase.from('turnos_por_sitio').insert({
+          id_sitio: sitioId,
+          id_turno: shift.id,
+        });
+      } catch {
+        // Optimistic reactive fallback preserved
+      }
+    })();
+
+    render();
+  });
+
+  document
+    .querySelectorAll<HTMLElement>('[data-action="unassign-sitio-turno"]')
+    .forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (!isApprovedStaff()) return;
+        const sitioId = btn.dataset.sitioId || state.sitioDomain.selectedSitioId;
+        const turnoId = btn.dataset.turnoId;
+        if (!sitioId || !turnoId) return;
+
+        const currentSitio = resolveSitioDetailById({
+          sitioId,
+          certificates: state.domainData.allCertificadosDetailed,
+          programacionAudits: state.domainData.programacionAudits,
+          shiftCatalog: state.domainData.shiftCatalog,
+          archivedSiteIds: state.domainData.archivedSiteIds,
+        });
+        const shift = state.domainData.shiftCatalog.find((t) => t.id === turnoId);
+        if (!currentSitio || !shift) return;
+
+        state.domainData.allCertificadosDetailed = state.domainData.allCertificadosDetailed.map(
+          (c) => {
+            if (c.id !== currentSitio.id_certificado) return c;
+            return {
+              ...c,
+              sitios: c.sitios.map((s) =>
+                s.id === sitioId
+                  ? {
+                      ...s,
+                      turnos_vinculados: (s.turnos_vinculados || []).filter(
+                        (lbl) =>
+                          lbl.trim().toLowerCase() !== shift.descripcion.trim().toLowerCase() &&
+                          lbl !== shift.id
+                      ),
+                    }
+                  : s
+              ),
+              turnos: c.turnos.map((t) =>
+                t.id === turnoId
+                  ? {
+                      ...t,
+                      sitios_vinculados: t.sitios_vinculados.filter(
+                        (name) =>
+                          name.trim().toLowerCase() !==
+                          currentSitio.nombre_sitio.trim().toLowerCase()
+                      ),
+                    }
+                  : t
+              ),
+            };
+          }
+        );
+
+        recordPhase5SessionLog(
+          'sitio',
+          sitioId,
+          'UPDATE',
+          { turno_asignado: shift.descripcion },
+          { accion: 'DESVINCULAR_TURNO', turno: shift.descripcion }
+        );
+
+        state.sitioDomain.shiftActionMessage = `Turno "${shift.descripcion}" desvinculado del Sitio ${currentSitio.numero_sitio}.`;
+
+        void (async () => {
+          try {
+            await supabase
+              .from('turnos_por_sitio')
+              .update({
+                deleted_at: new Date().toISOString(),
+              })
+              .eq('id_sitio', sitioId)
+              .eq('id_turno', turnoId)
+              .is('deleted_at', null);
+          } catch {
+            // Optimistic reactive fallback preserved
+          }
+        })();
+
+        render();
+      });
+    });
 
   // 13. Nav link: view organization from certificate Zone 1 (cross-entity lineage push)
   document.querySelectorAll<HTMLElement>('[data-action="view-org-from-cert"]').forEach((btn) => {
@@ -4476,6 +5377,9 @@ function bindPhase5AuditoriasEvents(): void {
 
       state.activeRoute = 'certificacion';
       state.activeSubSection = 'certificates';
+      state.sitioDomain.selectedSitioId = null;
+      state.sitioDomain.isEditingAttributes = false;
+      state.sitioDomain.archiveConfirmOpen = false;
       state.certificadoDomain.selectedCertId = certId;
       state.certificadoDomain.activeChildTab = 'sitios';
       state.certificadoDomain.isEditingAttributes = false;
@@ -6300,6 +7204,8 @@ function resetClientSessionState(): void {
       recomendacion: a.recomendacion ? { ...a.recomendacion } : null,
     })),
     phase5Findings: INITIAL_PHASE5_FINDINGS.map((f) => ({ ...f })),
+    shiftCatalog: INITIAL_TURNO_CATALOG.map((t) => ({ ...t })),
+    archivedSiteIds: new Set<string>(),
     sessionAuditLogs: [],
     loading: false,
   };
@@ -6382,6 +7288,18 @@ function resetClientSessionState(): void {
     isCreating: false,
     createErrorMessage: null,
   };
+  state.sitioDomain = {
+    selectedSitioId: null,
+    activeChildTab: 'turnos',
+    isEditingAttributes: false,
+    editFormData: undefined,
+    editErrorMessage: null,
+    saveSuccessMessage: null,
+    archiveConfirmOpen: false,
+    archiveErrorMessage: null,
+    isAssigningShift: false,
+    shiftActionMessage: null,
+  };
   state.auditorDomain = {
     selectedAuditorId: null,
     activeChildTab: 'competencias',
@@ -6452,6 +7370,7 @@ function resetClientSessionState(): void {
     metodologiaFacetSelections: {},
 
     selectedAccreditationId: null,
+    activeAccreditationTab: 'certificados',
     accredSearchQuery: '',
     accredViewMode: 'grid',
     accredSortColumn: null,
@@ -6462,6 +7381,12 @@ function resetClientSessionState(): void {
     accredCreateErrorMessage: null,
     accredCreateSuccessMessage: null,
     accredOrganismoMode: 'existing',
+    isEditingAccreditation: false,
+    accredEditFormData: undefined,
+    accredEditErrorMessage: null,
+    accredSaveSuccessMessage: null,
+    accredArchiveConfirmOpen: false,
+    accredArchiveErrorMessage: null,
   };
   state.auth = {
     ...state.auth,
@@ -6990,6 +7915,24 @@ async function loadDomainData(): Promise<void> {
         descripcion: idx === 0 ? 'Turno Matutino Operativo' : 'Turno Vespertino / Nocturno',
         sitios_vinculados: ['Planta Valencia'],
       }));
+      const liveShiftCatalog: TurnoCatalogItem[] = shiftsRes.data.map(
+        (row: Record<string, unknown>, idx: number) => {
+          const seedMatch = INITIAL_TURNO_CATALOG.find((t) => t.id === String(row.id));
+          return {
+            id: String(row.id),
+            hora_entrada: String(row.hora_entrada),
+            hora_salida: String(row.hora_salida),
+            descripcion:
+              seedMatch?.descripcion ||
+              (idx === 0 ? 'Turno Matutino Operativo' : `Turno Operativo ${idx + 1}`),
+          };
+        }
+      );
+      const liveIds = new Set(liveShiftCatalog.map((t) => t.id));
+      state.domainData.shiftCatalog = [
+        ...liveShiftCatalog,
+        ...INITIAL_TURNO_CATALOG.filter((t) => !liveIds.has(t.id)),
+      ];
     }
 
     // Process Standards
