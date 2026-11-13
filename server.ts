@@ -25,8 +25,8 @@ function loadJsonFallbackConfig(filePath: string): void {
 }
 
 loadJsonFallbackConfig(path.resolve(__dirname, 'supabase.config.json'));
-dotenv.config({ path: path.resolve(__dirname, 'supabase.env') });
-dotenv.config({ path: path.resolve(__dirname, '.env'), override: true });
+dotenv.config({ path: path.resolve(__dirname, 'supabase.env'), quiet: true });
+dotenv.config({ path: path.resolve(__dirname, '.env'), override: true, quiet: true });
 
 function resolvePort(): number {
   const portArgIndex = process.argv.indexOf('--port');
@@ -163,6 +163,7 @@ async function runAllQueriesInOrder(): Promise<{
       password: databaseKey,
       database: 'postgres',
       ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 5000,
     });
 
     await client.connect();
@@ -218,7 +219,8 @@ async function createServer(): Promise<void> {
   });
 
   const isStartScript = process.env.npm_lifecycle_event === 'start';
-  const useProdStatic = process.env.NODE_ENV === 'production' || isStartScript;
+  const hasDistBuild = fsSync.existsSync(path.resolve(__dirname, 'dist', 'index.html'));
+  const useProdStatic = isStartScript || (process.env.NODE_ENV === 'production' && hasDistBuild);
 
   let mountedVite = false;
   if (!useProdStatic) {
@@ -228,12 +230,14 @@ async function createServer(): Promise<void> {
         server: {
           middlewareMode: true,
           hmr: false,
+          ws: false,
         },
         appType: 'spa',
       });
       app.use(vite.middlewares);
       mountedVite = true;
-    } catch {
+    } catch (err) {
+      console.warn('Vite dev middleware failed to initialize, falling back to static dist:', err);
       mountedVite = false;
     }
   }
@@ -260,7 +264,11 @@ async function createServer(): Promise<void> {
     } else {
       console.error('Server error:', err);
     }
+    process.exit(1);
   });
 }
 
-void createServer();
+createServer().catch((err) => {
+  console.error('Fatal server startup error:', err);
+  process.exit(1);
+});

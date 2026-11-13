@@ -18,8 +18,8 @@ try {
   // ignore
 }
 
-dotenv.config({ path: path.resolve(process.cwd(), 'supabase.env') });
-dotenv.config({ override: true });
+dotenv.config({ path: path.resolve(process.cwd(), 'supabase.env'), quiet: true });
+dotenv.config({ override: true, quiet: true });
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -90,6 +90,7 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       allowedHosts: true,
       hmr: false,
+      ws: false,
     },
   };
 });
