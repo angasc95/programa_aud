@@ -102,7 +102,10 @@ import {
   scopeSitesOrProcessesForCertificates,
 } from './lib/accessControl';
 import {
+  clearFacetSelections,
   cycleSortDirection,
+  toggleFacetSelection,
+  type MultiViewSelectionMap,
   type SortDirection,
 } from './lib/universalTemplate';
 import {
@@ -293,6 +296,10 @@ interface AppState {
     metodologiaViewMode: 'grid' | 'list';
     metodologiaSortColumn: string | null;
     metodologiaSortDirection: SortDirection;
+  };
+  multiViewUi: {
+    isSidebarOpen: boolean;
+    facetSelections: MultiViewSelectionMap;
   };
 }
 
@@ -737,6 +744,10 @@ const state: AppState = {
     metodologiaViewMode: 'grid',
     metodologiaSortColumn: null,
     metodologiaSortDirection: 'none',
+  },
+  multiViewUi: {
+    isSidebarOpen: true,
+    facetSelections: {},
   },
 };
 
@@ -1395,6 +1406,35 @@ function bindAuthenticatedEvents(): void {
       } else if (target === 'database' && isApprovedAdmin() && state.dbCheck.lastCheckedAt === null) {
         void runHealthChecks();
       }
+    });
+  });
+
+  // Universal Multi View Sidebar & Multi-Select Facet Scaffolding (Phase 4.1.1)
+  document.querySelectorAll<HTMLElement>('[data-toggle-sidebar="true"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.multiViewUi.isSidebarOpen = !state.multiViewUi.isSidebarOpen;
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLInputElement>('input[data-facet-checkbox="true"]').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      const groupId = cb.dataset.facetGroup;
+      const value = cb.dataset.facetValue;
+      if (!groupId || !value) return;
+      state.multiViewUi.facetSelections = toggleFacetSelection(
+        state.multiViewUi.facetSelections,
+        groupId,
+        value
+      );
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-clear-filters="true"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.multiViewUi.facetSelections = clearFacetSelections();
+      render();
     });
   });
 
@@ -6214,7 +6254,8 @@ document.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   // '/' shortcut to focus search input
   if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) {
-    const searchInput = (document.getElementById('programacionSearchInput') ||
+    const searchInput = (document.querySelector('[data-universal-search="true"]') ||
+      document.getElementById('programacionSearchInput') ||
       document.getElementById('resultadoSearchInput') ||
       document.getElementById('auditorDirectorySearchInput') ||
       document.getElementById('certDirectorySearchInput') ||
@@ -6246,7 +6287,11 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (document.activeElement?.id === 'certificateSearchInput') {
+  if (
+    document.activeElement?.id === 'certificateSearchInput' ||
+    (document.activeElement instanceof HTMLElement &&
+      document.activeElement.dataset.universalSearch === 'true')
+  ) {
     (document.activeElement as HTMLElement).blur();
     return;
   }

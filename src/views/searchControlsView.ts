@@ -44,7 +44,7 @@ export function renderSearchControls(props: SearchControlsProps): string {
           </div>
           <input
             id="certificateSearchInput"
-            type="search"
+            type="text"
             value="${escapeHtml(filters.query)}"
             placeholder="Buscar por N° Certificado (FN-...), Empresa o RIF..."
             autocomplete="off"

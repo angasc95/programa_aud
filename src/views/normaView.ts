@@ -416,7 +416,7 @@ function renderNormaDirectoryView(params: {
             </div>
             <input
               id="normaSearchInput"
-              type="search"
+              type="text"
               value="${escapeHtml(state.query)}"
               placeholder="Buscar por código (ISO 9001, 14001...), título o esquema..."
               autocomplete="off"

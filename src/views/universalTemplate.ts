@@ -10,15 +10,15 @@ import type { ViewMode } from '../lib/searchControls';
 export interface UniversalTemplateProps<T> {
   title: string;
   subtitle?: string;
-  badge?: {
-    label: string;
-    symbol?: string;
-  };
+  entityLabel?: string;
   searchQuery: string;
   searchPlaceholder?: string;
+  searchInputId?: string;
+  clearSearchBtnId?: string;
   totalCount: number;
   filteredCount: number;
   viewMode: ViewMode;
+  isSidebarOpen?: boolean;
   sortState?: SortState;
   facetGroups: FacetGroup[];
   items: T[];
@@ -27,18 +27,23 @@ export interface UniversalTemplateProps<T> {
   emptyStateTitle?: string;
   emptyStateMessage?: string;
   actionsHtml?: string;
+  loading?: boolean;
+  loadingMessage?: string;
 }
 
 export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): string {
   const {
     title,
     subtitle,
-    badge,
+    entityLabel = 'registros',
     searchQuery,
     searchPlaceholder = "Buscar por código, nombre, RIF... (Presione '/' para enfocar)",
+    searchInputId = 'universalSearchInput',
+    clearSearchBtnId = 'clearSearchBtn',
     totalCount,
     filteredCount,
     viewMode,
+    isSidebarOpen = true,
     sortState = { column: null, direction: 'none' },
     facetGroups,
     items,
@@ -47,28 +52,50 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
     emptyStateTitle = 'No se encontraron registros',
     emptyStateMessage = 'Intente ajustar el término de búsqueda o restablecer los filtros de la barra lateral.',
     actionsHtml = '',
+    loading = false,
+    loadingMessage = 'Cargando registros...',
   } = props;
 
-  const isFiltered = Boolean(searchQuery.trim()) || facetGroups.some((g) => g.options.some((o) => o.selected && o.value !== 'ALL'));
+  const activeFacetCount = facetGroups.reduce(
+    (sum, group) => sum + group.options.filter((opt) => opt.selected && opt.value !== 'ALL').length,
+    0
+  );
+  const hasSearchQuery = searchQuery.length > 0;
+  const isFiltered = Boolean(searchQuery.trim()) || activeFacetCount > 0;
 
-  // 1. Facet Sidebar HTML
+  // 1. Collapsible Facet Sidebar HTML (<aside>)
   const facetSidebarHtml = `
-    <aside class="w-full lg:w-64 shrink-0 bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-5 h-fit">
+    <aside
+      id="multiViewFacetSidebar"
+      aria-label="Filtros y facetas"
+      aria-hidden="${isSidebarOpen ? 'false' : 'true'}"
+      class="${
+        isSidebarOpen
+          ? 'w-full lg:w-64 shrink-0 bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-5 h-fit'
+          : 'hidden'
+      }"
+    >
       <div class="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
-        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-          <span>⚙️</span>
-          <span>Filtros & Facetas</span>
-        </h3>
+        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+          <span aria-hidden="true">☰</span>
+          <span>Filtros</span>
+          ${
+            activeFacetCount > 0
+              ? `<span class="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 tabular-nums">${activeFacetCount}</span>`
+              : ''
+          }
+        </h2>
         ${
           isFiltered
             ? `
               <button
                 type="button"
                 data-action="reset-all"
-                title="Restablecer todos los filtros"
+                data-clear-filters="true"
+                title="Limpiar filtros"
                 class="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
               >
-                Limpiar
+                Limpiar filtros
               </button>
             `
             : ''
@@ -79,39 +106,54 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
         ${facetGroups
           .map((group) => {
             return `
-              <div class="space-y-2">
-                <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              <fieldset class="space-y-2 border-t border-slate-100 pt-3 first:border-t-0 first:pt-0">
+                <legend class="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   ${escapeHtml(group.label)}
-                </div>
+                </legend>
                 <div class="space-y-1">
                   ${group.options
                     .map((opt) => {
                       const isSelected = opt.selected;
+                      const isZero = opt.count === 0;
+                      const textToneClass = isSelected
+                        ? 'text-indigo-950 font-semibold'
+                        : isZero
+                        ? 'text-slate-400'
+                        : 'text-slate-700';
+                      const countToneClass = isSelected
+                        ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                        : isZero
+                        ? 'bg-slate-50 text-slate-400 border border-slate-100'
+                        : 'bg-slate-100 text-slate-600';
+
                       return `
-                        <button
-                          type="button"
-                          data-facet-group="${escapeHtml(group.id)}"
-                          data-facet-value="${escapeHtml(opt.value)}"
-                          class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                        <label
+                          class="w-full px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer select-none ${
                             isSelected
-                              ? 'bg-indigo-50 font-semibold text-indigo-900 border border-indigo-200/80'
-                              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                              ? 'bg-indigo-50/90 border border-indigo-200/80'
+                              : 'border border-transparent hover:bg-slate-50'
                           }"
                         >
-                          <span class="truncate">${escapeHtml(opt.label)}</span>
-                          <span class="text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
-                            isSelected
-                              ? 'bg-indigo-200/70 text-indigo-900'
-                              : 'bg-slate-100 text-slate-500'
-                          }">
+                          <span class="flex items-center gap-2 min-w-0">
+                            <input
+                              type="checkbox"
+                              data-facet-checkbox="true"
+                              data-facet-group="${escapeHtml(group.id)}"
+                              data-facet-value="${escapeHtml(opt.value)}"
+                              ${isSelected ? 'checked' : ''}
+                              class="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 shrink-0 cursor-pointer"
+                            />
+                            <span class="truncate ${textToneClass}">${escapeHtml(opt.label)}</span>
+                          </span>
+                          <span class="text-[10px] px-1.5 py-0.5 rounded-full font-semibold tabular-nums shrink-0 ${countToneClass}">
                             ${opt.count}
                           </span>
-                        </button>
+                        </label>
                       `;
                     })
                     .join('')}
                 </div>
-              </div>
+              </fieldset>
             `;
           })
           .join('')}
@@ -124,9 +166,10 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
               <button
                 type="button"
                 data-action="reset-all"
+                data-clear-filters="true"
                 class="w-full py-2 px-3 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer text-center"
               >
-                Limpiar Todos los Filtros
+                Limpiar filtros
               </button>
             </div>
           `
@@ -138,7 +181,13 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
   // 2. Main Data Canvas HTML (Table or Cards)
   let contentHtml = '';
 
-  if (items.length === 0) {
+  if (loading) {
+    contentHtml = `
+      <div class="bg-white border border-slate-200 rounded-xl p-10 text-center text-xs text-slate-500 shadow-2xs">
+        ${escapeHtml(loadingMessage)}
+      </div>
+    `;
+  } else if (items.length === 0) {
     contentHtml = `
       <div class="bg-white border border-slate-200 rounded-xl p-10 text-center space-y-3 shadow-2xs">
         <div class="text-3xl select-none" aria-hidden="true">🔍</div>
@@ -153,10 +202,11 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
                 <button
                   type="button"
                   data-action="reset-all"
+                  data-clear-filters="true"
                   class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer inline-flex items-center gap-1.5"
                 >
-                  <span>↺</span>
-                  <span>Restablecer Filtros y Búsqueda</span>
+                  <span aria-hidden="true">↺</span>
+                  <span>Limpiar filtros</span>
                 </button>
               </div>
             `
@@ -165,7 +215,6 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
       </div>
     `;
   } else if (viewMode === 'list') {
-    // List / Table View with Excel-style sortable headers
     contentHtml = `
       <div class="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
         <div class="overflow-x-auto">
@@ -177,7 +226,9 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
                     const isSorted = sortState.column === col.id;
                     const direction = isSorted ? sortState.direction : 'none';
                     const indicator = renderSortIndicator(direction);
-                    const sortClass = isSorted ? 'text-indigo-600 font-extrabold' : 'text-slate-400 group-hover:text-slate-700';
+                    const sortClass = isSorted
+                      ? 'text-indigo-600 font-extrabold'
+                      : 'text-slate-400 group-hover:text-slate-700';
 
                     if (col.sortable) {
                       return `
@@ -185,6 +236,7 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
                           <button
                             type="button"
                             data-action="sort-column"
+                            data-sort-col="${escapeHtml(col.id)}"
                             data-column="${escapeHtml(col.id)}"
                             title="Ordenar por ${escapeHtml(col.header)}"
                             class="group inline-flex items-center gap-1.5 text-left font-bold cursor-pointer transition-colors hover:text-indigo-600"
@@ -235,7 +287,6 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
       </div>
     `;
   } else {
-    // Grid / Card View
     contentHtml = `
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         ${items.map((item) => renderCard(item)).join('')}
@@ -243,29 +294,18 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
     `;
   }
 
-  // 3. Combined Layout
+  // 3. Unified Header + Controls Card + Collapsible Body Layout
   return `
-    <div class="space-y-6">
-      <!-- Semantic Header Zone -->
+    <div class="space-y-5">
       <header class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs space-y-4">
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div class="space-y-1">
-            ${
-              badge
-                ? `
-                  <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-800 text-[11px] font-bold border border-indigo-200">
-                    ${badge.symbol ? `<span aria-hidden="true">${escapeHtml(badge.symbol)}</span>` : ''}
-                    <span>${escapeHtml(badge.label)}</span>
-                  </div>
-                `
-                : ''
-            }
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div class="space-y-1 min-w-0">
             <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
               ${escapeHtml(title)}
             </h1>
             ${
               subtitle
-                ? `<p class="text-xs text-slate-500 max-w-3xl">${escapeHtml(subtitle)}</p>`
+                ? `<p class="text-xs text-slate-500 max-w-3xl truncate sm:whitespace-normal">${escapeHtml(subtitle)}</p>`
                 : ''
             }
           </div>
@@ -273,57 +313,90 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
           ${actionsHtml ? `<div class="shrink-0 flex items-center gap-2">${actionsHtml}</div>` : ''}
         </div>
 
-        <!-- Controls Bar: Search + Match Count + View Mode Switcher -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
-          <div class="relative flex-1 max-w-xl">
-            <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-xs" aria-hidden="true">
-              🔍
-            </span>
-            <input
-              type="text"
-              id="certificateSearchInput"
-              placeholder="${escapeHtml(searchPlaceholder)}"
-              value="${escapeHtml(searchQuery)}"
-              aria-label="Buscar registros"
-              class="w-full text-xs rounded-lg border border-slate-300 bg-white pl-9 pr-16 py-2 shadow-2xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
-            />
-            <div class="absolute inset-y-0 right-0 pr-2 flex items-center gap-1">
+        <!-- Unified Controls Row: Sidebar Toggle + Single Search Input + Totalizer + [Tarjetas | Tabla] -->
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-3 border-t border-slate-100">
+          <div class="flex items-center gap-2.5 flex-1 min-w-0">
+            <button
+              type="button"
+              id="toggleMultiViewSidebarBtn"
+              data-action="toggle-sidebar"
+              data-toggle-sidebar="true"
+              aria-expanded="${isSidebarOpen ? 'true' : 'false'}"
+              aria-controls="multiViewFacetSidebar"
+              title="${isSidebarOpen ? 'Ocultar panel de filtros' : 'Mostrar panel de filtros'}"
+              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                isSidebarOpen
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+              }"
+            >
+              <span aria-hidden="true">☰</span>
+              <span>Filtros</span>
               ${
-                searchQuery
-                  ? `
-                    <button
-                      type="button"
-                      id="clearSearchBtn"
-                      title="Limpiar búsqueda (Esc)"
-                      aria-label="Limpiar búsqueda"
-                      class="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-                    >
-                      ✕
-                    </button>
-                  `
-                  : `
-                    <kbd class="hidden md:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-200 rounded select-none">
-                      /
-                    </kbd>
-                  `
+                activeFacetCount > 0
+                  ? `<span class="inline-flex items-center justify-center min-w-[1.125rem] h-[1.125rem] px-1 text-[10px] font-bold rounded-full tabular-nums ${
+                      isSidebarOpen
+                        ? 'bg-indigo-500 text-white'
+                        : 'bg-indigo-100 text-indigo-800'
+                    }">${activeFacetCount}</span>`
+                  : ''
               }
+            </button>
+
+            <div class="relative flex-1 min-w-0 max-w-xl">
+              <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-xs" aria-hidden="true">
+                🔍
+              </span>
+              <input
+                type="text"
+                id="${escapeHtml(searchInputId)}"
+                data-universal-search="true"
+                autocomplete="off"
+                placeholder="${escapeHtml(searchPlaceholder)}"
+                value="${escapeHtml(searchQuery)}"
+                aria-label="Buscar registros"
+                class="w-full text-xs rounded-lg border border-slate-300 bg-white pl-9 pr-10 py-2 shadow-2xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors"
+              />
+              <div class="absolute inset-y-0 right-0 pr-2 flex items-center gap-1">
+                ${
+                  hasSearchQuery
+                    ? `
+                      <button
+                        type="button"
+                        id="${escapeHtml(clearSearchBtnId)}"
+                        data-action="clear-search"
+                        data-clear-search="true"
+                        title="Limpiar búsqueda (Esc)"
+                        aria-label="Limpiar búsqueda"
+                        class="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    `
+                    : `
+                      <kbd class="hidden md:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-200 rounded select-none">
+                        /
+                      </kbd>
+                    `
+                }
+              </div>
             </div>
           </div>
 
-          <div class="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-            <div class="text-xs text-slate-500 font-medium">
-              <span class="font-bold text-slate-800">${filteredCount}</span>
-              <span> de ${totalCount} registros</span>
+          <div class="flex items-center justify-between lg:justify-end gap-3 shrink-0">
+            <div class="text-xs text-slate-500 font-medium tabular-nums">
+              Mostrando <span class="font-bold text-slate-900 tabular-nums">${filteredCount}</span> de <span class="font-semibold text-slate-700 tabular-nums">${totalCount}</span> ${escapeHtml(entityLabel)}
             </div>
 
-            <!-- Presentation Switcher [⊞ Grid | ☰ List] -->
+            <!-- Presentation Switcher [⊞ Tarjetas | ☰ Tabla] -->
             <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 shadow-2xs" role="group" aria-label="Modo de vista">
               <button
                 type="button"
                 data-action="set-view-mode"
+                data-view-mode="grid"
                 data-mode="grid"
                 aria-pressed="${viewMode === 'grid' ? 'true' : 'false'}"
-                title="Vista en Tarjetas (⊞ Grid)"
+                title="Vista en Tarjetas (⊞)"
                 class="px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer inline-flex items-center gap-1 ${
                   viewMode === 'grid'
                     ? 'bg-white text-slate-900 shadow-2xs font-bold'
@@ -331,14 +404,15 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
                 }"
               >
                 <span aria-hidden="true">⊞</span>
-                <span class="hidden sm:inline">Tarjetas</span>
+                <span>Tarjetas</span>
               </button>
               <button
                 type="button"
                 data-action="set-view-mode"
+                data-view-mode="list"
                 data-mode="list"
                 aria-pressed="${viewMode === 'list' ? 'true' : 'false'}"
-                title="Vista en Tabla (☰ List)"
+                title="Vista en Tabla (☰)"
                 class="px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer inline-flex items-center gap-1 ${
                   viewMode === 'list'
                     ? 'bg-white text-slate-900 shadow-2xs font-bold'
@@ -346,17 +420,17 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
                 }"
               >
                 <span aria-hidden="true">☰</span>
-                <span class="hidden sm:inline">Tabla</span>
+                <span>Tabla</span>
               </button>
             </div>
           </div>
         </div>
       </header>
 
-      <!-- Main Body: Sidebar Facets + Data Canvas -->
-      <div class="flex flex-col lg:flex-row gap-6">
+      <!-- Main Body: Collapsible Facet Sidebar + Responsive Full-Width Data Canvas -->
+      <div class="flex flex-col lg:flex-row gap-6 items-start">
         ${facetSidebarHtml}
-        <section class="flex-1 min-w-0 space-y-4">
+        <section class="flex-1 min-w-0 w-full space-y-4">
           ${contentHtml}
         </section>
       </div>

@@ -338,7 +338,8 @@ function renderCertificadoDirectory(
               </div>
               <input
                 id="certDirectorySearchInput"
-                type="search"
+                type="text"
+                autocomplete="off"
                 value="${escapeHtml(state.query)}"
                 placeholder="Buscar por N° Certificado, Empresa, RIF, alcance o norma... (/ para enfocar)"
                 class="w-full pl-9 pr-10 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900"

@@ -346,7 +346,7 @@ function renderSectorDirectoryView(params: {
             </div>
             <input
               id="iafSearchInput"
-              type="search"
+              type="text"
               value="${escapeHtml(state.query)}"
               placeholder="Buscar por número (14, 17, 28...) o actividad industrial..."
               autocomplete="off"

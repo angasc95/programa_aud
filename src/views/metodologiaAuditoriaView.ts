@@ -261,7 +261,7 @@ function renderMetodologiaDirectoryView(params: {
             </div>
             <input
               id="metodologiaSearchInput"
-              type="search"
+              type="text"
               value="${escapeHtml(state.query)}"
               placeholder="Buscar metodología (Presencial, Remota, Mixta)..."
               autocomplete="off"

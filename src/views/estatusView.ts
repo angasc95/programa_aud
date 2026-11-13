@@ -302,7 +302,7 @@ function renderEstatusDirectoryView(params: {
             </div>
             <input
               id="estatusSearchInput"
-              type="search"
+              type="text"
               value="${escapeHtml(state.query)}"
               placeholder="Buscar estatus (Activo, Suspendido, En Ejecución...)..."
               autocomplete="off"

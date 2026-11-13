@@ -284,7 +284,7 @@ function renderTipoDirectoryView(params: {
             </div>
             <input
               id="tipoSearchInput"
-              type="search"
+              type="text"
               value="${escapeHtml(state.query)}"
               placeholder="Buscar tipo (Etapa 1, Vigilancia, Renovación...)..."
               autocomplete="off"
