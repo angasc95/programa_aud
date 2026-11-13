@@ -71,4 +71,3 @@ Plural directory views across `programa_aud` currently use inconsistent layouts,
 1. Searching in **any** view across the entire application renders at most **one** clear button (`✕`); `grep 'type="search"' src/` returns **0 matches**.
 2. `computeReactiveFacetCounts()` correctly preserves `OR` union within a category and `AND` intersection across categories and search queries.
 3. `src/views/universalTemplate.ts` cleanly toggles between collapsed (`100%` canvas width) and expanded (`lg:w-64` sidebar + canvas) states on both desktop and mobile.
-

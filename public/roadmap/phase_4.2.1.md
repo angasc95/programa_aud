@@ -81,4 +81,3 @@ Every Detail View renders inside a clean vertical container (`space-y-4` / `spac
 1. Searching the entire `src/` directory (excluding legacy `*.test.ts` pending Phase 5.2) for `ZONA ` returns **0 matches** in rendered UI templates.
 2. Every existing Detail View follows the exact visual structure: Parent Zone (when applicable) → subtle horizontal divider → Record Zone → tabbed list-only Children Zone.
 3. Clicking any parent link or child list row pushes onto `state.breadcrumbs` without resetting domain ancestry or exposing raw UUIDs.
-

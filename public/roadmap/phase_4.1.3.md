@@ -73,4 +73,3 @@ Database Phase 1 introduced `organismo_acreditacion` (`ENAC`, `UKAS`, `ANAB`) an
 1. Navigating to `Extra > Acreditación` renders the full **Acreditaciones** Multi View backed by live `acreditacion_norma_iaf` and `organismo_acreditacion` records from Supabase.
 2. Checking `ENAC` or `ISO 9001:2015` dynamically updates counts across `Sector IAF` and `Estatus`, and `"Mostrando X de Y acreditaciones registradas"` reflects the exact filtered set.
 3. Authorized staff (`ADMIN`/`WORKER`) can create a new accreditation scope and see it appear immediately without raw UUIDs exposed anywhere in cards, tables, or dropdowns.
-

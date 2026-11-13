@@ -104,4 +104,3 @@ CREATE POLICY "certificado_update_worker" ON public.certificado
 2. Non-admin users (`WORKER`, `AUDITOR`, `CLIENT`) never receive rows with `deleted_at IS NOT NULL` in any `SELECT` query, whereas `ADMIN` can query archived records for restoration.
 3. No `FOR DELETE` RLS policy exists on any of the 23 soft-deleted tables.
 4. An authenticated `WORKER`, `AUDITOR`, `CLIENT`, or `PENDING` user can `UPDATE` their own `profiles.nombre` via Supabase RLS, while attempting to change `profiles.role` or `profiles.status` is rejected with `Violación RBAC`.
-

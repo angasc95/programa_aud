@@ -155,4 +155,3 @@ Update all 4 functions in `02_cobertura_normativa.sql` to ignore soft-deleted re
 3. Archiving a `certificado` or `norma` allows creating a new active record with the same `numero_certificado` or `codigo` without unique-constraint collisions.
 4. `evaluar_cobertura_certificado()` excludes archived `proceso` and `requisitos_no_aplicables_certificado` rows from ISO 17021-1 coverage calculations.
 5. `get_archive_dependency_summary()` accurately reports active child counts and parent archival triggers block unsafe parent soft-deletes.
-

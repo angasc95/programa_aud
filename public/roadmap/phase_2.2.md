@@ -77,4 +77,3 @@ The current home view (`src/views/dashboardView.ts`, 231 lines) clutters the wor
 2. Any authenticated user (`ADMIN`, `WORKER`, `AUDITOR`, `CLIENT`, `PENDING`) can open `Mi Perfil` (`#profile`), update their `nombre`, persist it to `public.profiles`, and see the updated name reflected in the top header immediately.
 3. Non-admin users see `role` and `status` strictly as read-only governance metadata with zero editable controls or client-side mutation payload fields for `role`/`status`.
 4. Zero raw UUIDs appear anywhere in `dashboardView.ts` or `profileView.ts`.
-

@@ -76,4 +76,3 @@ Follows the strict Phase 4.2.1 3-Zone layout:
 2. Clicking any site in `Certificado > Sitios` opens **`Sitio` Detail View** (`Certificación > Certificado > FN-QMS-2024-001 > Sitio 0`), clearly flagging `Sitio 0` as `Sede Principal`.
 3. `ADMIN`/`WORKER` can edit site attributes and assign/unassign shifts (`turnos_por_sitio`), while `Sitio 0` cannot be archived if active secondary sites depend on it.
 4. Navigating `Certificado -> Acreditación -> Certificado` or `Sitio -> Certificado -> Sitio` triggers clean loop truncation without duplicate breadcrumbs.
-

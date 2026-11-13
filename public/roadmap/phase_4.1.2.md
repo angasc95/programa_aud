@@ -85,4 +85,3 @@ Currently, 9 existing plural directories (`organizacionView.ts` [1,202L], `certi
 1. Every one of the 9 existing plural directories renders a single unified header/controls bar, `"Mostrando X de Y ..."` counter, `[⊞ Tarjetas | ☰ Tabla]` switcher, and collapsible `☰ Filtros` sidebar.
 2. Checking multiple checkboxes within a category applies `OR` logic, checking across categories applies `AND` logic, and sibling/cross-category facet counts recalculate immediately via `computeReactiveFacetCounts()`.
 3. Collapsing the filter sidebar expands both `⊞ Tarjetas` and `☰ Tabla` to 100% container width cleanly on `1440px` and `375px` viewports.
-

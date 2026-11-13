@@ -82,4 +82,3 @@ Existing automated test suites in `src/lib/*.test.ts` currently assert legacy be
 1. `npx tsc --noEmit`, `npm run lint`, `npm test`, and `npm run build` all pass with exit code `0`.
 2. Every unit and integration invariant across Phases 1.1–5.1 is locked down by automated `node:test` assertions.
 3. Live Playwright Chromium verification confirms clean rendering, zero console/runtime errors, zero raw UUID exposure, zero double-`"X"` inputs, zero `"ZONA *"` labels, and full responsive integrity from `375px` to `1440px`.
-

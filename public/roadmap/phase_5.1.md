@@ -68,4 +68,3 @@ With PostgreSQL soft-delete triggers and RLS policies in place (Phases 1.1–1.2
 2. Attempting to archive an `Organización` with active `Certificados` (or `Sitio 0` with active branches) displays exact dependency counts in the modal and blocks unsafe archival cleanly.
 3. Archiving an unblocked record sets `deleted_at`, hides it immediately from operational views, records the transition in `public.audit_log`, and returns the user to the parent view without broken breadcrumbs.
 4. `ADMIN` users can toggle `"Mostrar Archivados"` to inspect archived items and restore them (`deleted_at = NULL`), while `WORKER`, `AUDITOR`, and `CLIENT` never see archived records.
-
