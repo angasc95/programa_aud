@@ -28,13 +28,22 @@ import {
   INITIAL_AUDITORES_DETAILED,
   type AuditorDetailEntity,
 } from '../lib/competencyMatrix';
-import type { ProgramacionAuditEntity } from '../lib/auditExecution';
+import type { ProgramacionAuditEntity, Phase5FindingEntity } from '../lib/auditExecution';
+import { INITIAL_PHASE5_FINDINGS } from '../lib/auditExecution';
+import type { RequisitoLtree } from '../lib/extraDomain';
 import {
   INITIAL_TURNO_CATALOG,
   resolveSitioDetailById,
   type TurnoCatalogItem,
 } from '../lib/sitioDomain';
 import { renderSitioView, type SitioViewState } from './sitioView';
+import {
+  getAllSeededNormaRequirements,
+  resolveProcesoDetailById,
+} from '../lib/procesoDomain';
+import { renderProcesoView, type ProcesoViewState } from './procesoView';
+import { resolveTurnoDetailById } from '../lib/turnoDomain';
+import { renderTurnoView, type TurnoViewState } from './turnoView';
 
 export interface OrganizationRecord {
   id: string;
@@ -88,8 +97,14 @@ export interface CertificacionViewState {
   allAuditorsDetailed?: AuditorDetailEntity[];
   programacionAudits?: ProgramacionAuditEntity[];
   sitioState?: Partial<SitioViewState>;
+  procesoState?: Partial<ProcesoViewState>;
+  turnoState?: Partial<TurnoViewState>;
   shiftCatalog?: TurnoCatalogItem[];
+  requirementsCatalog?: ReadonlyArray<RequisitoLtree>;
+  phase5Findings?: ReadonlyArray<Phase5FindingEntity>;
   archivedSiteIds?: ReadonlySet<string>;
+  archivedProcesoIds?: ReadonlySet<string>;
+  archivedTurnoIds?: ReadonlySet<string>;
 }
 
 export function renderCertificacionView(
@@ -211,6 +226,31 @@ export function renderCertificacionView(
         ? state.allCertificadosDetailed
         : INITIAL_CERTIFICADOS_DETAILED;
 
+    const selectedTurnoId = state.turnoState?.selectedTurnoId || null;
+    const resolvedTurno = selectedTurnoId
+      ? resolveTurnoDetailById({
+          turnoId: selectedTurnoId,
+          originatingSitioId: state.turnoState?.originatingSitioId ?? null,
+          certificates: certList,
+          programacionAudits: state.programacionAudits || [],
+          shiftCatalog: state.shiftCatalog || INITIAL_TURNO_CATALOG,
+          archivedSiteIds: state.archivedSiteIds,
+          archivedTurnoIds: state.archivedTurnoIds,
+        })
+      : null;
+
+    const selectedProcesoId = state.procesoState?.selectedProcesoId || null;
+    const resolvedProceso = selectedProcesoId
+      ? resolveProcesoDetailById({
+          procesoId: selectedProcesoId,
+          certificates: certList,
+          programacionAudits: state.programacionAudits || [],
+          phase5Findings: state.phase5Findings || INITIAL_PHASE5_FINDINGS,
+          requirementsCatalog: state.requirementsCatalog || getAllSeededNormaRequirements(),
+          archivedProcesoIds: state.archivedProcesoIds,
+        })
+      : null;
+
     const selectedSitioId = state.sitioState?.selectedSitioId || null;
     const resolvedSitio = selectedSitioId
       ? resolveSitioDetailById({
@@ -222,7 +262,45 @@ export function renderCertificacionView(
         })
       : null;
 
-    if (resolvedSitio) {
+    if (resolvedTurno) {
+      const turnoViewState: TurnoViewState = {
+        selectedTurnoId,
+        originatingSitioId: state.turnoState?.originatingSitioId ?? null,
+        activeChildTab: state.turnoState?.activeChildTab || 'sitios',
+        isEditingAttributes: Boolean(state.turnoState?.isEditingAttributes),
+        editFormData: state.turnoState?.editFormData,
+        editErrorMessage: state.turnoState?.editErrorMessage ?? null,
+        saveSuccessMessage: state.turnoState?.saveSuccessMessage ?? null,
+        archiveConfirmOpen: Boolean(state.turnoState?.archiveConfirmOpen),
+        archiveErrorMessage: state.turnoState?.archiveErrorMessage ?? null,
+      };
+
+      contentHtml = renderTurnoView({
+        profile,
+        state: turnoViewState,
+        turno: resolvedTurno,
+      });
+    } else if (resolvedProceso) {
+      const procesoViewState: ProcesoViewState = {
+        selectedProcesoId,
+        activeChildTab: state.procesoState?.activeChildTab || 'requisitos',
+        isEditingAttributes: Boolean(state.procesoState?.isEditingAttributes),
+        editFormData: state.procesoState?.editFormData,
+        editErrorMessage: state.procesoState?.editErrorMessage ?? null,
+        saveSuccessMessage: state.procesoState?.saveSuccessMessage ?? null,
+        archiveConfirmOpen: Boolean(state.procesoState?.archiveConfirmOpen),
+        archiveErrorMessage: state.procesoState?.archiveErrorMessage ?? null,
+        isAssigningRequisito: Boolean(state.procesoState?.isAssigningRequisito),
+        requisitoActionMessage: state.procesoState?.requisitoActionMessage ?? null,
+      };
+
+      contentHtml = renderProcesoView({
+        profile,
+        state: procesoViewState,
+        proceso: resolvedProceso,
+        requirementsCatalog: state.requirementsCatalog || getAllSeededNormaRequirements(),
+      });
+    } else if (resolvedSitio) {
       const siblingSites = certList.flatMap((c) =>
         c.sitios
           .filter((s) => !state.archivedSiteIds?.has(s.id))

@@ -3,7 +3,7 @@
  * Aligned with ISO/IEC 17021-1:2015 (clauses 9.1–9.6), ISO 19011:2018, and IAF MD 1:2018.
  */
 
-import type { FindingRecord, FindingType } from './drillDown';
+import type { FindingRecord, FindingType } from './auditDomain';
 import type { AuditLogEntry } from './auditLog';
 import type { MultiViewSelectionMap, SortDirection } from './universalTemplate';
 

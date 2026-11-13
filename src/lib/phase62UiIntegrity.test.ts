@@ -5,9 +5,10 @@ import { renderHeader } from '../views/header';
 import { renderDashboardView } from '../views/dashboardView';
 import { renderProfileView } from '../views/profileView';
 import { renderApprovalsView } from '../views/approvalsView';
-import { renderDrillDownView } from '../views/drillDownView';
 import { renderOrganizacionView } from '../views/organizacionView';
 import { renderCertificadoView } from '../views/certificadoView';
+import { renderProcesoView } from '../views/procesoView';
+import { renderTurnoView } from '../views/turnoView';
 import { renderAuditorView } from '../views/auditorView';
 import { renderProgramacionView } from '../views/programacionView';
 import { renderCalendarioView } from '../views/calendarioView';
@@ -27,6 +28,8 @@ import {
   INITIAL_REQUISITOS_LTREE,
   INITIAL_SECTORES_IAF,
 } from './extraDomain';
+import { resolveProcesoDetailById } from './procesoDomain';
+import { resolveTurnoDetailById } from './turnoDomain';
 import type { UserProfile } from './healthCheck';
 
 const ADMIN_PROFILE: UserProfile = {
@@ -240,53 +243,47 @@ test('Phase 6.2 Zero-UUID audit across Certificación domain (Organización, Cer
     })
   );
 
+  const resolvedProceso = resolveProcesoDetailById({
+    procesoId: cert.procesos[0].id,
+    certificates: INITIAL_CERTIFICADOS_DETAILED,
+    programacionAudits: INITIAL_PROGRAMACION_AUDITS,
+    phase5Findings: INITIAL_PHASE5_FINDINGS,
+  });
+  assert.ok(resolvedProceso);
+
   assertClean(
-    'DrillDown Findings + New Finding Form',
-    renderDrillDownView(ADMIN_PROFILE, {
-      selectedOrgId: org.id,
-      selectedCertId: cert.id,
-      activeTab: 'findings',
-      organizations: INITIAL_ORGANIZACIONES.map((o) => ({
-        id: o.id,
-        nombre: o.nombre,
-        rif: o.rif,
-        direccion_fiscal: o.direccion_fiscal,
-        certificados_count: 1,
-      })),
-      certificates: SAMPLE_CERTIFICATE_RECORDS,
-      sites: [],
-      processes: [
-        {
-          id: '60000000-0000-0000-0000-000000000001',
-          nombre_proceso: 'Troquelado y Fundición',
-          numero_certificado: cert.numero_certificado,
-          clausulas_cubiertas: ['8.5'],
-        },
-      ],
-      shifts: [],
-      standards: INITIAL_NORMAS,
-      requirements: INITIAL_REQUISITOS_LTREE.map((r) => ({
-        id: r.id,
-        codigo: r.codigo,
-        ruta_materializada: r.ruta_materializada,
-        norma: r.norma_codigo,
-      })),
-      audits: INITIAL_PROGRAMACION_AUDITS.map((a) => ({
-        id: a.id,
-        numero_certificado: a.numero_certificado,
-        organizacion_nombre: a.organizacion_nombre,
-        tipo_auditoria: a.tipo_auditoria,
-        metodologia: a.metodologia,
-        fecha_programacion: a.fecha_inicio,
-        estatus: a.estatus,
-      })),
-      auditors: [],
-      findings: [],
-      findingFilterType: 'ALL',
-      findingFilterStatus: 'all',
-      isLoggingFinding: true,
-      loggingAuditId: INITIAL_PROGRAMACION_AUDITS[0].id,
-      loading: false,
+    'Proceso Edit + LTREE Assign Selector',
+    renderProcesoView({
+      profile: ADMIN_PROFILE,
+      state: {
+        selectedProcesoId: resolvedProceso.id,
+        activeChildTab: 'requisitos',
+        isEditingAttributes: true,
+        isAssigningRequisito: true,
+      },
+      proceso: resolvedProceso,
+    })
+  );
+
+  const resolvedTurno = resolveTurnoDetailById({
+    turnoId: cert.turnos[0].id,
+    originatingSitioId: cert.sitios[0].id,
+    certificates: INITIAL_CERTIFICADOS_DETAILED,
+    programacionAudits: INITIAL_PROGRAMACION_AUDITS,
+  });
+  assert.ok(resolvedTurno);
+
+  assertClean(
+    'Turno Edit Form',
+    renderTurnoView({
+      profile: ADMIN_PROFILE,
+      state: {
+        selectedTurnoId: resolvedTurno.id,
+        originatingSitioId: cert.sitios[0].id,
+        activeChildTab: 'sitios',
+        isEditingAttributes: true,
+      },
+      turno: resolvedTurno,
     })
   );
 });

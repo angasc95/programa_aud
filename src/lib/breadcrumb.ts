@@ -22,6 +22,7 @@ export interface BreadcrumbSegment {
   subview?: string | null;
   entityType?: BreadcrumbEntityType | null;
   entityId?: string | null;
+  originatingSitioId?: string | null;
   tab?: string | null;
   tooltip?: string;
 }

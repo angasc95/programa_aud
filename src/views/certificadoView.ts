@@ -868,7 +868,7 @@ function renderActiveChildTab(
     case 'procesos':
       return renderProcesosChildTab(cert.procesos, cert.id);
     case 'turnos':
-      return renderTurnosChildTab(cert.turnos);
+      return renderTurnosChildTab(cert.turnos, cert.id);
     case 'no_aplicables':
       return renderNoAplicablesChildTab(cert.noAplicables);
     case 'cobertura':
@@ -1031,8 +1031,16 @@ function renderProcesosChildTab(procesos: ProcessEntity[], certId: string): stri
                     class="hover:bg-slate-50/80 transition-colors cursor-pointer"
                   >
                     <td class="py-3 px-4 font-bold text-slate-900">
-                      <span class="mr-1.5" aria-hidden="true">${visual.icon}</span>
-                      <span>${escapeHtml(proc.nombre_proceso)}</span>
+                      <button
+                        type="button"
+                        data-action="select-proceso"
+                        data-proceso-id="${escapeHtml(proc.id)}"
+                        data-cert-id="${escapeHtml(certId)}"
+                        class="inline-flex items-center gap-1.5 text-left font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+                      >
+                        <span aria-hidden="true">${visual.icon}</span>
+                        <span>${escapeHtml(proc.nombre_proceso)}</span>
+                      </button>
                     </td>
                     <td class="py-3 px-4 whitespace-nowrap">
                       <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${visual.badgeClass}">
@@ -1081,7 +1089,7 @@ function renderProcesosChildTab(procesos: ProcessEntity[], certId: string): stri
 /**
  * TAB 3: Turnos (public.turno) — List-Only Table
  */
-function renderTurnosChildTab(turnos: ShiftEntity[]): string {
+function renderTurnosChildTab(turnos: ShiftEntity[], certId: string): string {
   if (turnos.length === 0) {
     return `
       <div class="p-8 text-center text-slate-500 text-xs bg-slate-50 rounded-xl border border-slate-200">
@@ -1106,9 +1114,23 @@ function renderTurnosChildTab(turnos: ShiftEntity[]): string {
             ${turnos
               .map(
                 (turno) => `
-              <tr class="hover:bg-slate-50/80 transition-colors">
+              <tr
+                data-action="select-turno-preview"
+                data-turno-id="${escapeHtml(turno.id)}"
+                data-cert-id="${escapeHtml(certId)}"
+                class="hover:bg-slate-50/80 transition-colors cursor-pointer"
+              >
                 <td class="py-3 px-4 font-bold text-slate-900">
-                  ⏱️ ${escapeHtml(turno.descripcion)}
+                  <button
+                    type="button"
+                    data-action="select-turno"
+                    data-turno-id="${escapeHtml(turno.id)}"
+                    data-cert-id="${escapeHtml(certId)}"
+                    class="inline-flex items-center gap-1.5 text-left font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+                  >
+                    <span aria-hidden="true">⏱️</span>
+                    <span>${escapeHtml(turno.descripcion)}</span>
+                  </button>
                 </td>
                 <td class="py-3 px-4 font-mono font-semibold text-indigo-700 tabular-nums whitespace-nowrap">
                   ${escapeHtml(turno.hora_entrada)} — ${escapeHtml(turno.hora_salida)}

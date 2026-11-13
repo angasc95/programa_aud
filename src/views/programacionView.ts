@@ -1205,7 +1205,15 @@ function renderVerificationMatrixTab(
                         ${escapeHtml(item.titulo_clausula)}
                       </td>
                       <td class="px-3 py-3 text-slate-700">
-                        ${escapeHtml(item.proceso_nombre)}
+                        <button
+                          type="button"
+                          data-action="select-proceso-by-name"
+                          data-cert-id="${escapeHtml(audit.id_certificado)}"
+                          data-proceso-nombre="${escapeHtml(item.proceso_nombre)}"
+                          class="font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer text-left"
+                        >
+                          ${escapeHtml(item.proceso_nombre)}
+                        </button>
                       </td>
                       <td class="px-3 py-3">
                         ${

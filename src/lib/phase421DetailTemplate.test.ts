@@ -87,6 +87,8 @@ describe('Phase 4.2.1: Standardized 3-Zone Detail Template & 9 Detail Views', ()
       'src/views/metodologiaAuditoriaView.ts',
       'src/views/acreditacionView.ts',
       'src/views/sitioView.ts',
+      'src/views/procesoView.ts',
+      'src/views/turnoView.ts',
     ];
 
     for (const relPath of viewFiles) {

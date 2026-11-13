@@ -541,7 +541,17 @@ function renderSitioTurnosTab(params: {
                             </span>
                           </td>
                           <td class="py-3 px-4 font-medium text-slate-700">
-                            ${escapeHtml(turno.descripcion)}
+                            <button
+                              type="button"
+                              data-action="select-turno"
+                              data-turno-id="${escapeHtml(turno.id_turno)}"
+                              data-sitio-id="${escapeHtml(sitio.id)}"
+                              data-cert-id="${escapeHtml(sitio.id_certificado)}"
+                              class="inline-flex items-center gap-1.5 text-left font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+                            >
+                              <span aria-hidden="true">🕒</span>
+                              <span>${escapeHtml(turno.descripcion)}</span>
+                            </button>
                           </td>
                           ${
                             isStaff

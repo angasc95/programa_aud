@@ -460,3 +460,63 @@ test('Phase 4.2.2: composite breadcrumb truncates cycles cleanly for Certificado
   assert.equal(loopedSitio[2].tab, 'auditorias');
 });
 
+test('Phase 4.2.3: composite breadcrumb truncates cycles cleanly for Certificado -> Proceso -> Turno -> Sitio -> Certificado', () => {
+  let trail = resetBreadcrumbToDomain('certificacion', 'certificates');
+  trail = pushBreadcrumb(trail, {
+    id: 'cert-fn-001',
+    label: 'FN-QMS-2024-001',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'cert',
+    entityId: '40000000-0000-0000-0000-000000000001',
+    tab: 'procesos',
+  });
+  trail = pushBreadcrumb(trail, {
+    id: 'proceso-6001',
+    label: 'Troquelado y Fundición',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'proceso',
+    entityId: '60000000-0000-0000-0000-000000000001',
+    tab: 'auditorias',
+  });
+  trail = pushBreadcrumb(trail, {
+    id: 'turno-7001',
+    label: 'Turno 07:00 – 15:00',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'turno',
+    entityId: '70000000-0000-0000-0000-000000000001',
+    originatingSitioId: '50000000-0000-0000-0000-000000000001',
+    tab: 'sitios',
+  });
+  trail = pushBreadcrumb(trail, {
+    id: 'sitio-5001',
+    label: 'Sitio 0',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'sitio',
+    entityId: '50000000-0000-0000-0000-000000000001',
+    tab: 'turnos',
+  });
+  assert.equal(trail.length, 6);
+
+  const loopedCert = pushBreadcrumb(trail, {
+    id: 'cert-fn-001-back',
+    label: 'FN-QMS-2024-001',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'cert',
+    entityId: '40000000-0000-0000-0000-000000000001',
+    tab: 'sitios',
+  });
+  assert.equal(loopedCert.length, 3);
+  assert.equal(loopedCert[2].entityType, 'cert');
+  assert.equal(loopedCert[2].tab, 'sitios');
+
+  const stepBackToSub = popToParentBreadcrumb(loopedCert);
+  assert.equal(stepBackToSub.trail.length, 2);
+  assert.equal(stepBackToSub.target?.id, 'subview-certificacion-certificates');
+});
+
+

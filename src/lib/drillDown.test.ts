@@ -13,7 +13,7 @@ import {
   verifyRoleDataBoundary,
   INITIAL_FINDINGS,
   type FindingRecord,
-} from './drillDown';
+} from './auditDomain';
 
 test('getAuditModalityMeta returns accurate metadata and ISO audit descriptors', () => {
   const e1 = getAuditModalityMeta('ETAPA_1');

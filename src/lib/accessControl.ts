@@ -9,7 +9,7 @@ import type { CertificateRecord } from './searchControls';
 import type { CertificadoDetailEntity } from './multisiteSampling';
 import { countActiveCertificates, type CertificadoSummary, type OrganizacionEntity } from './activeCertificates';
 import type { AcreditacionNormaIaf } from './extraDomain';
-import type { FindingRecord } from './drillDown';
+import type { FindingRecord } from './auditDomain';
 import type { AuditRecord } from '../views/auditoriasView';
 import type { OrganizationRecord } from '../views/certificacionView';
 
