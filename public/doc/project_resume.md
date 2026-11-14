@@ -9,13 +9,13 @@
 
 ## 1. Visión General y Estado Final del Proyecto
 
-`programa_aud` es una plataforma integral para la **gestión, planificación, asignación técnica, trazabilidad normativa y control de hallazgos de programas y planes de auditoría de certificación**, diseñada e implementada bajo estándares internacionales:
+`programa_aud` es una plataforma integral para la **gestión, planificación, asignación técnica, trazabilidad normativa, gobierno de retención lógica y control de hallazgos de programas y planes de auditoría de certificación**, diseñada e implementada bajo estándares internacionales:
 
-- **ISO/IEC 17021-1:2015:** Integridad relacional de subconjunto entre certificados, sedes, turnos y procesos (validada mediante triggers en PostgreSQL); gestión de imparcialidad mediante bitácora forense inmutable (`public.audit_log` con resolución legible de actores y regla **Zero-UUID**); competencias técnicas obligatorias (`norma` + `sector_iaf` + `subsector_iaf`); validación de alcance narrativo (`certificado.alcance`, 10–1000 caracteres); exclusiones justificadas de cláusulas (ISO 9001 Cláusula 4.3); y **Motor de Decisión de Certificación (Cláusulas 9.5/9.6)** que bloquea recomendaciones de aprobación ante No Conformidades Mayores abiertas o No Conformidades Menores sin plan de acción correctiva.
-- **ISO 19011:2018 e IAF MD 1:2018:** Ciclo completo de planificación de auditorías, equipos evaluadores (`Auditor Líder`, `Auditor de Equipo`, `Experto Técnico`), metodologías (`Presencial`, `Remota`, `Mixta`), modalidades canónicas (`Etapa 1`, `Etapa 2`, `Seguimiento 1`, `Seguimiento 2`, `Renovación`, `Diagnóstico`, `Extraordinaria`, `Especial`, `Otro`), muestreo multisitio bajo la **Convención Sitio 0** (Sede Principal HQ siempre en índice 0) y ciclo de vida CAPA de hallazgos en 5 estados.
-- **Clasificación IAF y Acreditación:** Matriz cruzada entre normas certificables, organismos de acreditación (`ENAC`, `UKAS`, `ANAB`), sectores productivos IAF y sub-sectores jerárquicos con nivel de riesgo (`ALTO`, `MEDIO`, `BAJO`).
+- **ISO/IEC 17021-1:2015:** Integridad relacional de subconjunto entre certificados, sedes, turnos y procesos (validada mediante triggers en PostgreSQL); trazabilidad forense inmutable (`public.audit_log` con resolución legible de actores y regla **Zero-UUID**); competencias técnicas obligatorias (`norma` + `sector_iaf` + `subsector_iaf`); declaración narrativa de alcance (`certificado.alcance`, 10–1000 caracteres); exclusiones justificadas de cláusulas (`requisitos_no_aplicables_certificado`); y **Motor de Decisión de Certificación (Cláusulas 9.5/9.6)** que bloquea recomendaciones de aprobación ante No Conformidades Mayores abiertas o No Conformidades Menores sin plan de acción correctiva.
+- **ISO 19011:2018 e IAF MD 1:2018:** Ciclo completo de planificación de auditorías, equipos evaluadores (`Auditor Líder`, `Auditor de Equipo`, `Experto Técnico`), metodologías (`Presencial`, `Remota`, `Mixta`), modalidades canónicas (`Etapa 1`, `Etapa 2`, `Seguimiento 1`, `Seguimiento 2`, `Renovación`, `Diagnóstico`, `Extraordinaria`, `Especial`, `Otro`), muestreo multisitio bajo la **Convención Sitio 0** (Sede Principal HQ siempre protegida en índice `0`) y ciclo de vida CAPA de hallazgos en 5 estados.
+- **ISO/IEC 17011 y Clasificación IAF:** Matriz cruzada entre organismos acreditadores (`ENAC`, `UKAS`, `ANAB`), normas certificables, alcances de acreditación (`acreditacion_norma_iaf`), sectores IAF y sub-sectores jerárquicos con nivel de riesgo (`ALTO`, `MEDIO`, `BAJO`).
 
-Las **Fases 1 a 6.3** de la hoja de ruta maestra (`public/roadmap/`) se encuentran completamente ejecutadas y verificadas: base de datos PostgreSQL/Supabase (**31 tablas**, **33 índices**, motor `LTREE`, DCL + RLS), servidor Express 5 (`server.ts`), aplicación SPA TypeScript estricta (`0 any`), **16 suites automatizadas (`155` pruebas en `node:test`)**, compilación Vite segmentada con `manualChunks` y validación responsiva de `375px` a `1920px`.
+Las **Fases 1.1 a 5.2** de la hoja de ruta de modernización (`public/roadmap/`) se encuentran completamente ejecutadas y verificadas: base de datos PostgreSQL/Supabase (**31 tablas**, **52 índices** incluyendo **15 índices únicos parciales**, retención **Soft-Delete en 23 tablas protegidas**, **92 políticas RLS** + DCL), servidor Express 5 (`server.ts`), aplicación SPA TypeScript estricta (`strict: true`, `0 any`), **20 módulos en `src/lib/`**, **30 vistas en `src/views/`**, **30 archivos de pruebas unitarias (`236` pruebas aprobadas en `23` suites de `node:test`)**, compilación Vite con `manualChunks` y validación responsiva en navegador real Chromium (`375px` a `1920px`).
 
 ---
 
@@ -23,64 +23,68 @@ Las **Fases 1 a 6.3** de la hoja de ruta maestra (`public/roadmap/`) se encuentr
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  Frontend SPA (src/main.ts + src/lib/* + src/views/*)                   │
+│  Frontend SPA (src/main.ts + 20 módulos src/lib/* + 30 vistas src/views/*)
 │  • TypeScript strict (0 any) + Vite 6 (manualChunks) + Tailwind CSS v4  │
-│  • Cabecera en 3 bloques (Auditorías | Certificación | Extra)           │
-│  • Enrutamiento SPA (#/{route}/{subview}) + Breadcrumbs jerárquicos     │
-│  • Plantilla Universal List/Grid + Fichas de Detalle en 4 Zonas         │
-│  • @supabase/supabase-js (URL + Anon Key) + llamadas HTTP a /api/*      │
+│  • Cabecera en 3 bloques (Auditoría | Certificación | Extra) + Mi Perfil│
+│  • Dashboard minimalista RBAC (5 métricas) sin exploradores duplicados  │
+│  • Breadcrumbs compactos (1 línea, elipsis y prevención de bucles)      │
+│  • Multi View universal (facetas reactivas, búsqueda type="text")       │
+│  • Detail View estandarizado en 3 Zonas + Archivo Seguro / Restauración │
+│  • @supabase/supabase-js (URL + Anon Key) + peticiones HTTP a /api/*    │
 └──────────────────────────┬───────────────────────────┬──────────────────┘
                            │ REST / RPC / Auth JWT     │ HTTP (mismo origen)
                            ▼                           ▼
 ┌─────────────────────────────────────────┐ ┌─────────────────────────────┐
 │  Supabase Cloud (PostgreSQL + GoTrue)   │ │  Express 5 (server.ts)      │
-│  • GoTrue Auth v2 + Trigger perfiles    │ │  • Puerto 3000 (0.0.0.0)    │
+│  • GoTrue Auth v2 + Trigger profiles    │ │  • Puerto 3000 (0.0.0.0)    │
 │  • PostgREST protegido por DCL + RLS    │ │  • Dev: Vite middleware     │
-│  • 31 tablas + 33 índices (GiST/B-tree) │ │  • Prod: dist/ + fallback   │
-│  • Motor LTREE + audit_log inmutable    │ │  • GET /api/health          │
-│  • Triggers de integridad ISO 17021-1   │ │  • POST /api/reset-db       │
-└─────────────────────────────────────────┘ └──────────────┬──────────────┘
-                                                           │ Management API / pg
-                                                           ▼
+│  • 31 tablas + 52 índices (15 uq_active)│ │  • Prod: dist/ + fallback   │
+│  • Soft-Delete (23 tablas) + guardias   │ │  • GET /api/health          │
+│  • Motor LTREE + audit_log inmutable    │ │  • POST /api/reset-db       │
+│  • RPCs: get_archive_dependency_summary │ └──────────────┬──────────────┘
+│          archive_record / cobertura     │                │ Management API / pg
+└─────────────────────────────────────────┘                ▼
                                               public/supabase/queries/00..06.sql
 ```
 
-### Mapa de Fases Implementadas (Fases 1–6.3)
+### Mapa de Fases Implementadas (`public/roadmap/` — Fases 1.1 a 5.2)
 
 | Fase | Alcance Ejecutado | Entregables Principales |
 | :---: | :--- | :--- |
-| **Fase 1** | Base de Datos y Esquema Normativo | Sub-sectores IAF con riesgo (`subsector_iaf`), expansión de `norma`, esquemas de acreditación (`organismo_acreditacion`, `acreditacion_norma_iaf`), `certificado.alcance` (1000 chars), `proceso.tipo` (`Estratégico`/`Medular`/`De Apoyo`/`Otro`), Convención Sitio 0, justificaciones en `requisitos_no_aplicables_certificado` y catálogos canónicos. |
-| **Fase 2** | Shell Global UI/UX y Navegación | Iconografía minimalista de rol/estado (`🛡️`, `⚙️`, `📋`, `🏢`, `⏳`, `❌`), cabecera en 3 bloques con `data-nav-reset="true"`, motor de breadcrumbs con truncamiento a 24 caracteres, plantilla universal List/Grid con facetas y ordenamiento tipo Excel, fichas de detalle en 4 zonas y modal forense `🕒 Historial de Cambios`. |
-| **Fase 3** | Dominio **Extra** (Catálogos Maestros) | Gestión y consulta de `Norma` (pestañas Acreditación y Requisitos `LTREE`), `Sector IAF` (pestañas Sub-Sectores y Auditores), `Estatus`, `Tipo` y `Metodología`. |
-| **Fases 4.1–4.3** | Dominio **Certificación** | `Organización` con conteo exacto de certificados activos; `Certificado` con tabla limpia y ficha en 5 pestañas (`Sitios` con Sitio 0 primero, `Procesos`, `Turnos`, `No Aplicables` con validación `>= 5` chars, `Auditorías`); `Auditor` con matriz de competencias ISO/IAF y control de vigencias (`Vigente`, `Por Vencer`, `Vencido`). |
-| **Fase 5** | Dominio **Auditorías** | `Programación` (ficha con `Equipo Evaluador`, `Sedes y Muestreo`, `Matriz de Verificación Normativa`), `Calendario` (Mensual, Trimestral, Timeline Gantt y detector de conflictos) y `Resultado` (tablero Tabla/Kanban de hallazgos, ciclo CAPA y motor de recomendación ISO/IEC 17021-1 Cláusulas 9.5/9.6). |
-| **Fases 6.1–6.3** | Integración, Seguridad y Cierre | Integridad transversal de breadcrumbs e historial forense, cumplimiento estricto **Zero-UUID**, endurecimiento RBAC/RLS (`ADMIN`, `WORKER`, `AUDITOR`, `CLIENT`), **16 suites `node:test`** (`155` pruebas), `tsc --noEmit`, `vite build` y sincronización documental. |
+| **Fases 1.1–1.2** | Retención Soft-Delete y Endurecimiento RLS | Columnas `deleted_at`, `deleted_by`, `delete_reason`; triggers `fn_prevent_hard_delete` (23 tablas), `fn_sync_soft_delete_*` y `fn_guard_parent_archival`; RPCs `get_archive_dependency_summary` y `archive_record`; `REVOKE DELETE` en 26 tablas; 15 índices únicos parciales (`WHERE deleted_at IS NULL`); guardia `fn_protect_profile_rbac_fields` contra auto-escalamiento en `profiles`. |
+| **Fases 2.1–2.2** | Shell Global en 3 Bloques, Dashboard Minimalista y `Mi Perfil` | Cabecera en 3 bloques singulares (`Auditoría`, `Certificación`, `Extra` con `Acreditación`); retiro de sub-vistas obsoletas (`Drill-Down`, `Sedes Multisitio`, `Mapa de Procesos`, `Turnos`, `Requisitos LTREE`, `Todos los Catálogos`) y tarjetas duplicadas; Dashboard de 5 métricas acotadas por RBAC; nueva vista **`Mi Perfil`** (`profileView.ts`) con bloqueo estricto de `role` y `status`. |
+| **Fase 3** | Motor de Breadcrumbs Compactos | Barra de una sola línea sin bordes contenedores (`flex-nowrap`), truncamiento a 24 caracteres (`…`) y colapso intermedio (`MAX_VISIBLE_BREADCRUMBS = 4`), regla estricta de reseteo en cabecera (`data-nav-reset="true"`), preservación de linaje contextual cross-domain y prevención de bucles con claves compuestas (`id` / `entityId + entityType + subview/route`). |
+| **Fases 4.1–4.2** | Plantillas Universales Multi View y Detail View en 3 Zonas | **Multi View** (`universalTemplate`): barra lateral colapsable con botón hamburguesa, conteos reactivos por intersección ($S_{-k}$), buscador único `type="text"` con un solo botón `✕` (sin doble X nativa), totalizador `Mostrando X de Y` y conmutador `Tarjetas`/`Tabla`. **Detail View** (`detailTemplate`): arquitectura vertical limpia en 3 Zonas (`Parent Zone` → divisor → `Record Zone` → `Children Zone` en pestañas), eliminación de encabezados `ZONA 1/3/4` y retiro de `drillDownView`. Nuevos dominios/vistas **`Acreditación`**, **`Sitio`** (Sede 0 HQ), **`Proceso`** (`LTREE`) y **`Turno`** (jornadas nocturnas). |
+| **Fases 5.1–5.2** | Archivo Seguro, Restauración Admin y Suite de Verificación | Modal de archivo seguro (`archiveModalView.ts`) con bloqueo por dependencias activas y motivo (máx. 300 chars); filtro `"Mostrar Archivados"` y acción `"Restaurar"` exclusivos para `ADMIN`; actualización integral de suites legacy + **4 nuevas suites de dominio** (**236 pruebas / 23 suites en `node:test`**), `tsc --noEmit` (`0 any`), compilación `vite build` y verificación responsiva Chromium (`375px`–`1440px`). |
 
 ---
 
-## 3. Bloques Operativos, RBAC y Trazabilidad
+## 3. Bloques Operativos, RBAC y Gobernanza
 
-### 3.1 Tres Bloques Operativos en la Cabecera Global (`src/views/header.ts`)
+### 3.1 Tres Bloques Operativos en la Cabecera Global (`src/views/header.ts` + `src/lib/healthCheck.ts`)
 
-1. **Bloque 1 — `Auditorías`:**
+1. **Bloque 1 — `Auditoría` (`📅`):**
    - `Programación` (`#auditorias/scheduling`): Planificación de eventos, selección de equipo competente, muestreo multisitio y matriz normativa.
    - `Calendario` (`#auditorias/calendar`): Vistas Mensual, Trimestral y Línea de Tiempo Gantt con alertas de solapamiento de auditores.
-   - `Resultado` (`#auditorias/findings`): Tablero Tabla/Kanban de hallazgos (`NC_MAYOR`, `NC_MENOR`, `OBSERVACION`, `OPORTUNIDAD_MEJORA`), gestión CAPA y firma del dictamen ISO/IEC 17021-1.
-2. **Bloque 2 — `Certificación`:**
-   - `Organización` (`#certificacion/organizations`): Directorio de clientes titulares, validación de RIF/NIF, conteo estricto de certificados activos y pestaña de certificados asociados.
-   - `Certificado` (`#certificacion/certificates`): Listado limpio sin ruido visual y ficha en 5 pestañas relacionales.
+   - `Resultado` (`#auditorias/findings`): Tablero Tabla/Kanban de hallazgos (`NC_MAYOR`, `NC_MENOR`, `OBSERVACION`, `OPORTUNIDAD_MEJORA`), flujo CAPA y firma del dictamen ISO/IEC 17021-1.
+2. **Bloque 2 — `Certificación` (`🏛️`):**
+   - `Organización` (`#certificacion/organizations`): Directorio de clientes titulares, validación de RIF/NIF, conteo estricto de certificados activos y acceso contextual a certificados.
+   - `Certificado` (`#certificacion/certificates`): Listado limpio Multi View y ficha en 3 zonas con 6 pestañas de hijos (`Sitios` con Sitio 0 HQ primero, `Procesos`, `Turnos`, `No Aplicables`, `Cobertura Normativa`, `Auditorías`) que navegan directamente a los Detail Views de `Sitio`, `Proceso` y `Turno`.
    - `Auditor` (`#certificacion/auditors`): Directorio técnico, calificaciones, vigencias de credenciales e historial de auditorías.
-   - Secciones operativas complementarias: `Drill-Down` jerárquico, `Sedes Multisitio`, `Mapa de Procesos` y `Turnos` (exclusivo para personal interno `ADMIN`/`WORKER`).
-3. **Bloque 3 — `Extra`:**
-   - `Norma` (`#extra/standards`), `Sector IAF` (`#extra/iaf`), `Estatus` (`#extra/estatus`), `Tipo` (`#extra/tipos`), `Metodología` (`#extra/metodologias`), más `Requisitos LTREE` (`#extra/requirements`) y visor consolidado `Todos los Catálogos` (`#extra/catalogs`).
+3. **Bloque 3 — `Extra` (`📚`):**
+   - `Norma` (`#extra/standards`), `Sector IAF` (`#extra/iaf`), `Acreditación` (`#extra/accreditations`), `Estatus` (`#extra/estatus`), `Tipo` (`#extra/tipos`) y `Metodología` (`#extra/metodologias`).
+4. **Menú de Cuenta (esquina superior derecha):**
+   - `Mi Perfil` (`#profile`): Disponible para todo usuario autenticado (`ADMIN`, `WORKER`, `AUDITOR`, `CLIENT`, incluyendo cuentas `PENDING`/`REJECTED`) para editar exclusivamente su `nombre` y contraseña, manteniendo `role` y `status` en solo lectura.
+   - `Panel Aprobaciones` (`#approvals`): Gestión para `ADMIN` y consulta de solo lectura para `WORKER`.
+   - `Estado DB` (`#database`): Diagnóstico de conectividad en vivo exclusivo para `ADMIN`.
 
-### 3.2 Matriz de Roles y Control de Acceso (`04_rls.sql` + `src/lib/accessControl.ts`)
+### 3.2 Matriz de Roles, Soft-Delete y Control de Acceso (`04_rls.sql` + `src/lib/accessControl.ts` + `src/lib/archiveGovernance.ts`)
 
-- **Autoregistro (`Sign up`):** Los usuarios `CLIENT` se crean aprobados (`APPROVED`); las solicitudes como `ADMIN`, `WORKER` o `AUDITOR` nacen en `PENDING` mediante `handle_new_user()`. Los usuarios no aprobados (`PENDING ⏳` o `REJECTED ❌`) ven su icono de rol suprimido y no pueden acceder a rutas operativas.
-- **`ADMIN` (`🛡️`):** Control administrativo total, gestión de aprobaciones y roles (`approvals`), panel diagnóstico en vivo (`database`), edición de catálogos, planificación, hallazgos y lectura global de `audit_log`.
-- **`WORKER` (`⚙️`):** Gestión operativa completa de organizaciones, certificados, sedes, turnos, procesos, catálogos, planificación de auditorías y hallazgos; consulta de aprobaciones en modo solo lectura y acceso a `audit_log`.
-- **`AUDITOR` (`📋`):** Lectura acotada a organizaciones, certificados, sedes y procesos vinculados a sus auditorías asignadas; mutación de matriz normativa, hallazgos y recomendación ISO 17021-1 únicamente en auditorías donde participa en `equipo_auditor` (`canMutateAuditExecution`), más consulta de `audit_log` de sus auditorías y hallazgos asignados.
-- **`CLIENT` (`🏢`):** Acceso estrictamente de solo lectura a organizaciones aprobadas en `client_organization_access`, sus certificados, auditorías y hallazgos (sin acceso a `equipo_auditor`, `audit_log` ni mutaciones).
+- **Autoregistro (`Sign up`):** Los usuarios `CLIENT` nacen aprobados (`APPROVED`); las solicitudes como `ADMIN`, `WORKER` o `AUDITOR` quedan en `PENDING` mediante `handle_new_user()`. Los perfiles `PENDING` (`⏳`) o `REJECTED` (`❌`) suprimen el icono de rol y solo acceden a `dashboard` y `profile`.
+- **`ADMIN` (`🛡️`):** Acceso total a los 3 bloques, `Panel Aprobaciones` (gestión de roles/estados), `Estado DB`, edición, archivo seguro (`🗄️ Archivar`), filtro `"Mostrar Archivados"`, acción `"Restaurar"` (`deleted_at = NULL`) y lectura global de `audit_log`.
+- **`WORKER` (`⚙️`):** Acceso a los 3 bloques, gestión operativa completa, lectura de usuarios en `Panel Aprobaciones`, ejecución de archivo seguro vía `archive_record` cuando no existen dependencias activas (sin acceso a `"Mostrar Archivados"` ni `"Restaurar"`) y lectura de `audit_log`.
+- **`AUDITOR` (`📋`):** Visibilidad acotada a bloques **`Auditoría`** y **`Extra`** (sin acceso al menú `Certificación`); lectura de organizaciones/certificados/sitios/procesos asociados a sus auditorías asignadas; mutación de matriz normativa, hallazgos y recomendación ISO 17021-1 únicamente en auditorías donde participa en `equipo_auditor` (`canMutateAuditExecution`), más consulta acotada de `audit_log`. Sin permisos de archivo.
+- **`CLIENT` (`🏢`):** Acceso de solo lectura a los 3 bloques acotado a organizaciones aprobadas en `client_organization_access`, sus certificados, sitios, procesos, auditorías y hallazgos (sin acceso a `equipo_auditor`, `audit_log`, archivo seguro ni mutaciones).
 
 ---
 
@@ -88,10 +92,10 @@ Las **Fases 1 a 6.3** de la hoja de ruta maestra (`public/roadmap/`) se encuentr
 
 | Documento | Contenido Técnico Cubierto |
 | :--- | :--- |
-| [`database_architecture.md`](architecture/database_architecture.md) | Orden de scripts SQL (`00`–`06`), extensiones (`uuid-ossp`, `ltree`), tipos `ENUM`, trigger `handle_new_user`, catálogo completo de **31 tablas**, triggers de integridad ISO/IEC 17021-1, `audit_log` inmutable (13 triggers), 19 triggers `updated_at`, motor recursivo `LTREE` y **33 índices**. |
-| [`backend_api_security.md`](architecture/backend_api_security.md) | Servidor Express 5 (`server.ts`), endpoints `/api/health` y `/api/reset-db` (estrategia dual Supabase Management API / `pg.Client`), inyección de configuración (`vite.config.ts`), aislamiento de secretos y matriz **DCL + RLS** en las **31 tablas** con 7 funciones `SECURITY DEFINER`. |
-| [`frontend_architecture.md`](architecture/frontend_architecture.md) | Estado `AppState` (`src/main.ts`), enrutamiento hash SPA, breadcrumbs con `data-nav-reset="true"`, plantilla universal List/Grid, fichas en 4 zonas, modal `audit_log` Zero-UUID, inventario de **16 módulos en `src/lib/`** y **25 vistas en `src/views/`**. |
-| [`testing_and_operations.md`](architecture/testing_and_operations.md) | **16 suites unitarias (`155` pruebas en `node:test`)**, verificación estricta `tsc --noEmit` (`0 any`), compilación Vite con `manualChunks`, verificación responsiva `375px–1920px`, cuentas de prueba y despliegue en producción. |
+| [`database_architecture.md`](architecture/database_architecture.md) | Scripts SQL (`00`–`06`), extensiones (`uuid-ossp`, `ltree`), ENUMs, `handle_new_user`, catálogo de **31 tablas**, arquitectura **Soft-Delete (23 tablas protegidas)**, `get_archive_dependency_summary`, guardia `fn_protect_profile_rbac_fields`, triggers ISO 17021-1, `audit_log` inmutable (25 triggers de auditoría), 19 triggers `updated_at`, motor `LTREE` y **52 índices** (15 únicos parciales + 37 B-tree/GiST). |
+| [`backend_api_security.md`](architecture/backend_api_security.md) | Servidor Express 5 (`server.ts`), endpoints `/api/health` y `/api/reset-db`, inyección de entorno (`vite.config.ts`), aislamiento de secretos, DCL (`REVOKE DELETE` en 26 tablas), 7 funciones `SECURITY DEFINER`, RPC `archive_record`, bloqueo anti-escalamiento en `profiles` y matriz de **92 políticas RLS** en las 31 tablas. |
+| [`frontend_architecture.md`](architecture/frontend_architecture.md) | Estado `AppState` (`src/main.ts`), enrutamiento hash SPA, cabecera en 3 bloques, Dashboard minimalista, vista `Mi Perfil`, motor de breadcrumbs compactos, plantilla universal Multi View (facetas reactivas $S_{-k}$ y búsqueda `type="text"`), fichas de detalle en 3 Zonas (`Acreditación`, `Sitio`, `Proceso`, `Turno`), modal de archivo seguro + restauración e inventario de **20 módulos en `src/lib/`** y **30 vistas en `src/views/`**. |
+| [`testing_and_operations.md`](architecture/testing_and_operations.md) | **30 archivos de pruebas (`236` pruebas en `23` suites `node:test`)**, verificación `tsc --noEmit` (`0 any`), compilación Vite con `manualChunks`, verificación responsiva Chromium (`375×812`, `1440×900`, `1920px`), cuentas de prueba y despliegue en producción. |
 
 ---
 
@@ -109,11 +113,11 @@ Las **Fases 1 a 6.3** de la hoja de ruta maestra (`public/roadmap/`) se encuentr
 ├── src/
 │   ├── index.css                            # Tailwind CSS v4 y tipografías
 │   ├── main.ts                              # Estado global, rutas SPA, hidratación Supabase y eventos
-│   ├── lib/                                 # 16 módulos de lógica pura + 16 suites *.test.ts
-│   └── views/                               # 25 módulos de vistas HTML declarativas
+│   ├── lib/                                 # 20 módulos de lógica pura + 30 archivos *.test.ts
+│   └── views/                               # 30 módulos de vistas HTML declarativas
 └── public/
-    ├── doc/                                 # Documentación técnica y resumen del proyecto
-    ├── roadmap/                             # Especificaciones ejecutadas (Fases 1 a 6.3)
+    ├── doc/                                 # Documentación técnica sincronizada del proyecto
+    ├── roadmap/                             # Especificaciones ejecutadas (Fases 1.1 a 5.2)
     └── supabase/queries/                    # Scripts SQL 00_delete_tables.sql .. 06_datos_prueba.sql
 ```
 
