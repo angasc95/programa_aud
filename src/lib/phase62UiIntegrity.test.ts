@@ -7,6 +7,7 @@ import { renderProfileView } from '../views/profileView';
 import { renderApprovalsView } from '../views/approvalsView';
 import { renderOrganizacionView } from '../views/organizacionView';
 import { renderCertificadoView } from '../views/certificadoView';
+import { renderSitioView } from '../views/sitioView';
 import { renderProcesoView } from '../views/procesoView';
 import { renderTurnoView } from '../views/turnoView';
 import { renderAuditorView } from '../views/auditorView';
@@ -14,7 +15,9 @@ import { renderProgramacionView } from '../views/programacionView';
 import { renderCalendarioView } from '../views/calendarioView';
 import { renderResultadoView } from '../views/resultadoView';
 import { renderExtraView } from '../views/extraView';
+import { renderAcreditacionView } from '../views/acreditacionView';
 import { renderAuditLogModal } from '../views/auditLogModal';
+import { renderArchiveModal } from '../views/archiveModalView';
 import { renderDetailPageTemplate } from '../views/detailTemplate';
 import { renderBreadcrumbBar } from '../views/breadcrumbView';
 import { pushBreadcrumb, resetBreadcrumbToDomain } from './breadcrumb';
@@ -25,9 +28,12 @@ import { INITIAL_AUDITORES_DETAILED } from './competencyMatrix';
 import { INITIAL_PROGRAMACION_AUDITS, INITIAL_PHASE5_FINDINGS } from './auditExecution';
 import {
   INITIAL_NORMAS,
+  INITIAL_ORGANISMOS,
   INITIAL_REQUISITOS_LTREE,
   INITIAL_SECTORES_IAF,
 } from './extraDomain';
+import { buildInitialAcreditacionEntities } from './acreditacionDomain';
+import { resolveSitioDetailById } from './sitioDomain';
 import { resolveProcesoDetailById } from './procesoDomain';
 import { resolveTurnoDetailById } from './turnoDomain';
 import type { UserProfile } from './healthCheck';
@@ -175,7 +181,7 @@ test('Phase 6.2 Zero-UUID audit across Header, Dashboard, Approvals, and Audit L
   );
 });
 
-test('Phase 6.2 Zero-UUID audit across Certificación domain (Organización, Certificado, Auditor, Drill-Down)', () => {
+test('Phase 6.2 Zero-UUID audit across Certificación domain (Organización, Certificado, Auditor, Sitio, Proceso, Turno)', () => {
   const org = INITIAL_ORGANIZACIONES[0];
   const cert = INITIAL_CERTIFICADOS_DETAILED[0];
   const aud = INITIAL_AUDITORES_DETAILED[0];
@@ -272,6 +278,32 @@ test('Phase 6.2 Zero-UUID audit across Certificación domain (Organización, Cer
     programacionAudits: INITIAL_PROGRAMACION_AUDITS,
   });
   assert.ok(resolvedTurno);
+
+  const resolvedSitio = resolveSitioDetailById({
+    sitioId: cert.sitios[0].id,
+    certificates: INITIAL_CERTIFICADOS_DETAILED,
+    programacionAudits: INITIAL_PROGRAMACION_AUDITS,
+  });
+  assert.ok(resolvedSitio);
+
+  assertClean(
+    'Sitio Edit Form',
+    renderSitioView({
+      profile: ADMIN_PROFILE,
+      state: {
+        selectedSitioId: resolvedSitio.id,
+        activeChildTab: 'turnos',
+        isEditingAttributes: true,
+        isAssigningShift: true,
+      },
+      sitio: resolvedSitio,
+      siblingSites: cert.sitios.map((s) => ({
+        id: s.id,
+        id_certificado: cert.id,
+        numero_sitio: s.numero_sitio,
+      })),
+    })
+  );
 
   assertClean(
     'Turno Edit Form',
@@ -427,6 +459,48 @@ test('Phase 6.2 Zero-UUID audit across Extra domain modals and DetailTemplate', 
     })
   );
 
+  const acreditaciones = buildInitialAcreditacionEntities(INITIAL_CERTIFICADOS_DETAILED);
+  const acredDirHtml = renderAcreditacionView({
+    profile: ADMIN_PROFILE,
+    state: {
+      selectedAccreditationId: null,
+      query: 'ENAC',
+      viewMode: 'grid',
+      sortColumn: null,
+      sortDirection: 'none',
+      isCreating: true,
+    },
+    acreditaciones,
+    organismos: INITIAL_ORGANISMOS,
+    normas: INITIAL_NORMAS,
+    sectores: INITIAL_SECTORES_IAF,
+    certificates: INITIAL_CERTIFICADOS_DETAILED,
+  });
+  assertClean('Acreditacion Directory + Create Modal', acredDirHtml);
+  assert.equal(/type=["']search["']/i.test(acredDirHtml), false);
+  assert.ok(acredDirHtml.includes('type="text"'));
+
+  assertClean(
+    'ArchiveModal',
+    renderArchiveModal({
+      isOpen: true,
+      tableName: 'certificado',
+      recordId: INITIAL_CERTIFICADOS_DETAILED[0].id,
+      entityTypeLabel: 'Certificado',
+      recordTitle: INITIAL_CERTIFICADOS_DETAILED[0].numero_certificado,
+      recordSubtitle: INITIAL_CERTIFICADOS_DETAILED[0].organizacion_nombre,
+      loadingSummary: false,
+      summary: {
+        can_archive: false,
+        total_active_dependencies: 2,
+        dependencies: [{ table: 'sitio', label: 'Sitios operativos', count: 2 }],
+      },
+      reason: '',
+      submitting: false,
+      errorMessage: null,
+    })
+  );
+
   assertClean(
     'DetailTemplate',
     renderDetailPageTemplate({
@@ -434,14 +508,19 @@ test('Phase 6.2 Zero-UUID audit across Extra domain modals and DetailTemplate', 
       entitySymbol: '📜',
       title: 'FN-QMS-2024-001',
       backButton: { label: 'Volver', nav: 'certificacion', subview: 'certificates' },
-      parentInfo: {
-        parentLabel: 'Organización',
-        parentName: 'Iberometal Componentes S.A.',
-        navAction: {
-          nav: 'drilldown',
-          entityId: INITIAL_ORGANIZACIONES[0].id,
+      parents: [
+        {
+          label: 'Organización',
+          value: 'Iberometal Componentes S.A.',
+          symbol: '🏢',
+          navAction: {
+            nav: 'certificacion',
+            subview: 'organizations',
+            entityType: 'org',
+            entityId: INITIAL_ORGANIZACIONES[0].id,
+          },
         },
-      },
+      ],
       tableName: 'certificado',
       recordId: INITIAL_CERTIFICADOS_DETAILED[0].id,
       attributes: [{ label: 'Norma', value: 'ISO 9001:2015' }],

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  canAccessSubview,
   canEditAuditScheduleOrTeam,
   canMutateAuditExecution,
   canViewAuditLogForEntity,
@@ -15,12 +16,17 @@ import {
   scopeProgramacionAuditsForProfile,
   scopeSitesOrProcessesForCertificates,
 } from './accessControl.js';
+import { canArchiveRecord, canInspectArchivedRecords } from './archiveGovernance.js';
 import { INITIAL_PROGRAMACION_AUDITS, INITIAL_PHASE5_FINDINGS } from './auditExecution.js';
 import { INITIAL_CERTIFICADOS_DETAILED } from './multisiteSampling.js';
 import { INITIAL_ORGANIZACIONES } from './activeCertificates.js';
 import { renderDashboardView } from '../views/dashboardView.js';
 import { renderHeader } from '../views/header.js';
-import type { UserProfile } from './healthCheck.js';
+import {
+  canAccessRoute,
+  getVisibleDomainMenus,
+  type UserProfile,
+} from './healthCheck.js';
 import type { CertificateRecord } from './searchControls.js';
 
 const ADMIN_PROFILE: UserProfile = {
@@ -339,4 +345,39 @@ test('Phase 6.1 Operational Lockdown: PENDING and REJECTED dashboards suppress r
   assert.match(rejectedDash, /Acceso no autorizado/);
   assert.doesNotMatch(rejectedDash, /Explorador Operativo de Certificados/);
   assert.doesNotMatch(rejectedDash, /📋|🛡️|⚙️|🏢/);
+});
+
+test('Fase 5.2 Governance Alignment: 3-block menu isolation, profile route access, and archive restoration permissions', () => {
+  for (const prof of [
+    ADMIN_PROFILE,
+    WORKER_PROFILE,
+    ASSIGNED_AUDITOR_PROFILE,
+    CLIENT_PROFILE,
+    PENDING_PROFILE,
+    REJECTED_PROFILE,
+  ]) {
+    assert.equal(canAccessRoute(prof, 'profile'), true);
+    assert.equal(canAccessSubview(prof, 'profile'), true);
+  }
+
+  // Verify 3 domain blocks for ADMIN/WORKER/CLIENT vs 2 blocks for AUDITOR
+  assert.deepEqual(
+    getVisibleDomainMenus(ADMIN_PROFILE).map((m) => m.label),
+    ['Auditoría', 'Certificación', 'Extra']
+  );
+  assert.deepEqual(
+    getVisibleDomainMenus(ASSIGNED_AUDITOR_PROFILE).map((m) => m.label),
+    ['Auditoría', 'Extra']
+  );
+
+  // Archive execution for staff (ADMIN/WORKER); archived inspection/restore strictly for ADMIN
+  assert.equal(canArchiveRecord(ADMIN_PROFILE), true);
+  assert.equal(canArchiveRecord(WORKER_PROFILE), true);
+  assert.equal(canArchiveRecord(ASSIGNED_AUDITOR_PROFILE), false);
+  assert.equal(canArchiveRecord(CLIENT_PROFILE), false);
+
+  assert.equal(canInspectArchivedRecords(ADMIN_PROFILE), true);
+  assert.equal(canInspectArchivedRecords(WORKER_PROFILE), false);
+  assert.equal(canInspectArchivedRecords(ASSIGNED_AUDITOR_PROFILE), false);
+  assert.equal(canInspectArchivedRecords(CLIENT_PROFILE), false);
 });

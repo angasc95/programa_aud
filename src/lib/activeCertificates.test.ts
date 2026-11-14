@@ -246,13 +246,10 @@ import type { UserProfile } from './healthCheck';
 
 const mockProfile: UserProfile = {
   id: '00000000-0000-0000-0000-000000000001',
-  user_id: '00000000-0000-0000-0000-000000000001',
-  email: 'admin@certificacion-fn.com',
   nombre: 'Auditor Senior Lead',
-  rol: 'ADMIN',
-  estatus: 'APPROVED',
+  role: 'ADMIN',
+  status: 'APPROVED',
   created_at: '2024-01-01T00:00:00Z',
-  updated_at: '2024-01-01T00:00:00Z',
 };
 
 const mockCertificates: CertificadoSummary[] = [
@@ -280,13 +277,13 @@ const mockCertificates: CertificadoSummary[] = [
   },
 ];
 
-describe('Organización View - 4-Zone Detail & Zero-UUID Compliance', () => {
-  it('renders directory view without exposing raw UUIDs in visible text', () => {
+describe('Organización View - Standardized 3-Zone Detail, Multi View & Zero-UUID Compliance', () => {
+  it('renders Multi View directory without type="search" double-X or exposed raw UUIDs', () => {
     const listHtml = renderOrganizacionView({
       profile: mockProfile,
       state: {
         selectedOrganizacionId: null,
-        query: '',
+        query: 'Ibero',
         hasActiveCertificates: 'ALL',
         selectedSectorIaf: 'ALL',
         viewMode: 'grid',
@@ -298,6 +295,12 @@ describe('Organización View - 4-Zone Detail & Zero-UUID Compliance', () => {
       organizaciones: INITIAL_ORGANIZACIONES,
       certificados: mockCertificates,
     });
+
+    assert.equal(/type=["']search["']/i.test(listHtml), false);
+    assert.ok(listHtml.includes('type="text"'));
+    assert.equal((listHtml.match(/data-clear-search="true"/g) || []).length, 1);
+    assert.ok(listHtml.includes('Mostrando'));
+    assert.ok(listHtml.includes('data-toggle-sidebar="true"'));
 
     const compliance = assertZeroUuidExposure(listHtml);
     assert.ok(
@@ -337,7 +340,9 @@ describe('Organización View - 4-Zone Detail & Zero-UUID Compliance', () => {
     assert.ok(detailHtml.includes('aria-label="Detalle del registro"'));
     assert.ok(detailHtml.includes('role="tablist"'));
     assert.ok(!detailHtml.includes('ZONA 1:'));
+    assert.ok(!detailHtml.includes('ZONA 2:'));
     assert.ok(!detailHtml.includes('ZONA 3:'));
+    assert.ok(!detailHtml.includes('ZONA 4:'));
     assert.ok(detailHtml.includes('Certificados'));
     assert.ok(detailHtml.includes('Auditorías'));
     assert.ok(detailHtml.includes('Historial de Cambios'));

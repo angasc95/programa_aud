@@ -150,7 +150,7 @@ test('getUserIdentityDisplay renders minimalist role iconography for approved us
   assert.equal(rejectedDisplay.displayNameWithRoleOrStatus, 'Juan Pérez (Rechazado)');
 });
 
-test('getVisibleDomainMenus and canAccessRoute enforce role and approval boundaries', () => {
+test('getVisibleDomainMenus and canAccessRoute enforce role, approval, 3-block menu, and profile route boundaries', () => {
   const pendingAdmin: UserProfile = {
     id: 'p1',
     nombre: 'Pending',
@@ -160,6 +160,17 @@ test('getVisibleDomainMenus and canAccessRoute enforce role and approval boundar
   assert.equal(getVisibleDomainMenus(pendingAdmin).length, 0);
   assert.equal(canAccessRoute(pendingAdmin, 'auditorias'), false);
   assert.equal(canAccessRoute(pendingAdmin, 'dashboard'), true);
+  assert.equal(canAccessRoute(pendingAdmin, 'profile'), true);
+
+  const rejectedWorker: UserProfile = {
+    id: 'r1',
+    nombre: 'Rejected Worker',
+    role: 'WORKER',
+    status: 'REJECTED',
+  };
+  assert.equal(getVisibleDomainMenus(rejectedWorker).length, 0);
+  assert.equal(canAccessRoute(rejectedWorker, 'profile'), true);
+  assert.equal(canAccessRoute(null, 'profile'), false);
 
   const approvedAuditor: UserProfile = {
     id: 'a1',
@@ -171,6 +182,7 @@ test('getVisibleDomainMenus and canAccessRoute enforce role and approval boundar
   assert.deepEqual(auditorDomains, ['auditorias', 'extra']);
   assert.equal(canAccessRoute(approvedAuditor, 'certificacion'), false);
   assert.equal(canAccessRoute(approvedAuditor, 'approvals'), false);
+  assert.equal(canAccessRoute(approvedAuditor, 'profile'), true);
 
   const approvedClient: UserProfile = {
     id: 'c1',
@@ -178,10 +190,46 @@ test('getVisibleDomainMenus and canAccessRoute enforce role and approval boundar
     role: 'CLIENT',
     status: 'APPROVED',
   };
-  const clientDomains = getVisibleDomainMenus(approvedClient).map((m) => m.id);
-  assert.deepEqual(clientDomains, ['auditorias', 'certificacion', 'extra']);
-  const certMenu = getVisibleDomainMenus(approvedClient).find((m) => m.id === 'certificacion');
-  assert.equal(certMenu?.items.some((i) => i.id === 'shifts'), false);
+  const clientMenus = getVisibleDomainMenus(approvedClient);
+  assert.deepEqual(
+    clientMenus.map((m) => ({ id: m.id, label: m.label })),
+    [
+      { id: 'auditorias', label: 'Auditoría' },
+      { id: 'certificacion', label: 'Certificación' },
+      { id: 'extra', label: 'Extra' },
+    ]
+  );
+  assert.deepEqual(
+    clientMenus[0].items.map((i) => ({ id: i.id, label: i.label })),
+    [
+      { id: 'scheduling', label: 'Programación' },
+      { id: 'calendar', label: 'Calendario' },
+      { id: 'findings', label: 'Resultado' },
+    ]
+  );
+  assert.deepEqual(
+    clientMenus[1].items.map((i) => ({ id: i.id, label: i.label })),
+    [
+      { id: 'organizations', label: 'Organización' },
+      { id: 'certificates', label: 'Certificado' },
+      { id: 'auditors', label: 'Auditor' },
+    ]
+  );
+  assert.deepEqual(
+    clientMenus[2].items.map((i) => ({ id: i.id, label: i.label })),
+    [
+      { id: 'standards', label: 'Norma' },
+      { id: 'iaf', label: 'Sector IAF' },
+      { id: 'accreditations', label: 'Acreditación' },
+      { id: 'estatus', label: 'Estatus' },
+      { id: 'tipos', label: 'Tipo' },
+      { id: 'metodologias', label: 'Metodología' },
+    ]
+  );
+  const allItemIds = clientMenus.flatMap((m) => m.items.map((i) => i.id));
+  for (const retired of ['drilldown', 'sites', 'processes', 'shifts', 'requirements', 'catalogs']) {
+    assert.equal(allItemIds.includes(retired), false, `Retired nav item "${retired}" must be absent`);
+  }
 
   const approvedAdmin: UserProfile = {
     id: 'ad1',
@@ -192,6 +240,7 @@ test('getVisibleDomainMenus and canAccessRoute enforce role and approval boundar
   assert.equal(canAccessRoute(approvedAdmin, 'approvals'), true);
   assert.equal(canAccessRoute(approvedAdmin, 'database'), true);
   assert.equal(canAccessRoute(approvedAdmin, 'certificacion'), true);
+  assert.equal(canAccessRoute(approvedAdmin, 'profile'), true);
 
   const approvedWorker: UserProfile = {
     id: 'w1',
@@ -202,8 +251,10 @@ test('getVisibleDomainMenus and canAccessRoute enforce role and approval boundar
   assert.equal(canAccessRoute(approvedWorker, 'approvals'), true);
   assert.equal(canAccessRoute(approvedWorker, 'database'), false);
   assert.equal(canAccessRoute(approvedWorker, 'certificacion'), true);
+  assert.equal(canAccessRoute(approvedWorker, 'profile'), true);
   assert.equal(canAccessRoute(approvedClient, 'approvals'), false);
   assert.equal(canAccessRoute(approvedClient, 'database'), false);
+  assert.equal(canAccessRoute(approvedClient, 'profile'), true);
 });
 
 test('filterProfilesByStatus filters pending, approved, rejected, and all profiles', () => {

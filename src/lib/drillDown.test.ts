@@ -268,4 +268,3 @@ test('verifyRoleDataBoundary enforces strict multi-role partitioning', () => {
   });
   assert.equal(approvedClient.canAccess, true);
 });
-

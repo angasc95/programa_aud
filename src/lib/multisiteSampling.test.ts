@@ -265,12 +265,17 @@ describe('Phase 4.2 - Zero-UUID Exposure Compliance & Clean List Rule', () => {
     assert.ok(listHtml.includes('Estatus'));
     assert.ok(listHtml.includes('Vigencia'));
 
+    // Single type="text" search bar (zero native type="search" double-X) + reactive Multi View totalizer
+    assert.strictEqual(/type=["']search["']/i.test(listHtml), false);
+    assert.ok(listHtml.includes('type="text"'));
+    assert.ok(listHtml.includes('Mostrando'));
+
     // Zero-UUID check
     const listCheck = assertZeroUuidExposure(listHtml);
     assert.strictEqual(listCheck.compliant, true, `List view exposed raw UUIDs: ${listCheck.exposedUuids.join(', ')}`);
   });
 
-  it('renders 4-zone detail view with 5 specialized child tabs adhering to Zero-UUID mandate', async () => {
+  it('renders Standardized 3-Zone detail view with 5 specialized child tabs adhering to Zero-UUID mandate', async () => {
     const { renderCertificadoView } = await import('../views/certificadoView');
     const mockProfile = {
       id: 'mock-user-1',
@@ -304,6 +309,7 @@ describe('Phase 4.2 - Zero-UUID Exposure Compliance & Clean List Rule', () => {
     assert.ok(detailHtml.includes('aria-label="Detalle del registro"'));
     assert.ok(detailHtml.includes('role="tablist"'));
     assert.ok(!detailHtml.includes('ZONA 1:'));
+    assert.ok(!detailHtml.includes('ZONA 2:'));
     assert.ok(!detailHtml.includes('ZONA 3:'));
     assert.ok(!detailHtml.includes('ZONA 4:'));
 
@@ -311,7 +317,7 @@ describe('Phase 4.2 - Zero-UUID Exposure Compliance & Clean List Rule', () => {
     assert.ok(detailHtml.includes('Sede Central / Principal'));
     assert.ok(detailHtml.includes('Sede #0'));
 
-    // Check live character counter label in read-only zone 3
+    // Check live character counter label in Record Zone
     assert.ok(detailHtml.includes('/ 1000 caracteres'));
 
     // Check forensic changelog button

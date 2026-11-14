@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   ARCHIVE_REASON_MAX_LENGTH,
   PURE_JUNCTION_DELETE_TABLES,
@@ -18,6 +20,9 @@ import {
   renderArchivarButtonHtml,
   sanitizeArchiveReason,
 } from './archiveGovernance';
+import { canArchiveSitio } from './sitioDomain';
+import { canArchiveProceso } from './procesoDomain';
+import { canArchiveTurno } from './turnoDomain';
 import { renderArchiveModal, renderArchiveToast } from '../views/archiveModalView';
 import { renderUniversalTemplate } from '../views/universalTemplate';
 import { assertZeroUuidExposure } from './zeroUuid';
@@ -304,4 +309,92 @@ test('Phase 5.1 universalTemplate renders "Mostrar Archivados" & "Restaurar" str
     findings: INITIAL_PHASE5_FINDINGS,
   });
   assert.equal(secSummary.can_archive, false);
+});
+
+test('Fase 5.2 ArchiveGovernance: Sitio 0 HQ, Proceso, and Turno guards enforce dependency protection rules', () => {
+  const multisiteCert = INITIAL_CERTIFICADOS_DETAILED.find(
+    (c) => c.sitios.some((s) => s.numero_sitio === 0) && c.sitios.some((s) => s.numero_sitio > 0)
+  )!;
+  const site0 = multisiteCert.sitios.find((s) => s.numero_sitio === 0)!;
+  const siblingSites = multisiteCert.sitios.map((s) => ({
+    id: s.id,
+    id_certificado: multisiteCert.id,
+    numero_sitio: s.numero_sitio,
+    deleted_at: null as string | null,
+  }));
+
+  // Sitio 0 blocked while active secondary branches exist
+  const blockedByBranches = canArchiveSitio({
+    site: { id: site0.id, id_certificado: multisiteCert.id, numero_sitio: 0 },
+    siblingSites,
+    associatedAuditsCount: 0,
+  });
+  assert.equal(blockedByBranches.allowed, false);
+  assert.match(blockedByBranches.reason || '', /Sitio 0/);
+
+  // Sitio 0 blocked when no branches remain but audits are still linked
+  const branchesArchived = siblingSites.map((s) =>
+    s.numero_sitio > 0 ? { ...s, deleted_at: '2026-11-13T00:00:00Z' } : s
+  );
+  const blockedByAudit = canArchiveSitio({
+    site: { id: site0.id, id_certificado: multisiteCert.id, numero_sitio: 0 },
+    siblingSites: branchesArchived,
+    associatedAuditsCount: 1,
+  });
+  assert.equal(blockedByAudit.allowed, false);
+  assert.match(blockedByAudit.reason || '', /auditoría/);
+
+  // Sitio 0 unblocked only once secondary sites & linked audits are cleared
+  const unblockedSite0 = canArchiveSitio({
+    site: { id: site0.id, id_certificado: multisiteCert.id, numero_sitio: 0 },
+    siblingSites: branchesArchived,
+    associatedAuditsCount: 0,
+  });
+  assert.equal(unblockedSite0.allowed, true);
+
+  // Proceso and Turno dependency guards
+  assert.equal(canArchiveProceso({ associatedHallazgosCount: 1, associatedAuditoriasCount: 0 }).allowed, false);
+  assert.equal(canArchiveProceso({ associatedHallazgosCount: 0, associatedAuditoriasCount: 0 }).allowed, true);
+  assert.equal(canArchiveTurno({ assignedSitiosCount: 2 }).allowed, false);
+  assert.equal(canArchiveTurno({ assignedSitiosCount: 0 }).allowed, true);
+});
+
+test('Fase 5.2 ArchiveGovernance: static scan confirms zero .delete() calls on protected soft-delete tables across src/', () => {
+  const srcRoot = path.resolve(process.cwd(), 'src');
+  const sourceFiles: string[] = [];
+
+  const collectTsFiles = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        collectTsFiles(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
+        sourceFiles.push(fullPath);
+      }
+    }
+  };
+  collectTsFiles(srcRoot);
+  assert.ok(sourceFiles.length > 0);
+
+  const protectedSet = new Set<string>(PROTECTED_SOFT_DELETE_TABLES);
+  const pureJunctionSet = new Set<string>(PURE_JUNCTION_DELETE_TABLES);
+  const fromDeletePattern = /\.from\(\s*['"]([a-z0-9_]+)['"]\s*\)\s*\.delete\s*\(/gi;
+
+  for (const filePath of sourceFiles) {
+    const content = fs.readFileSync(filePath, 'utf8');
+    let match: RegExpExecArray | null = fromDeletePattern.exec(content);
+    while (match !== null) {
+      const table = match[1];
+      assert.equal(
+        protectedSet.has(table),
+        false,
+        `Forbidden .delete() call on protected soft-delete table "${table}" in ${path.relative(process.cwd(), filePath)}`
+      );
+      assert.ok(
+        pureJunctionSet.has(table),
+        `Unexpected .delete() on non-junction table "${table}" in ${path.relative(process.cwd(), filePath)}`
+      );
+      match = fromDeletePattern.exec(content);
+    }
+  }
 });

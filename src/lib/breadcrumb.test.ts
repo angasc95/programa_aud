@@ -406,7 +406,7 @@ test('Phase 4.2.2: composite breadcrumb truncates cycles cleanly for Certificado
     label: '01/C-SC001',
     route: 'extra',
     subview: 'accreditations',
-    entityType: 'acreditacion',
+    entityType: 'accreditation',
     entityId: 'dc000000-0000-0000-0000-000000000001',
     tab: 'certificados',
   });
@@ -517,6 +517,65 @@ test('Phase 4.2.3: composite breadcrumb truncates cycles cleanly for Certificado
   const stepBackToSub = popToParentBreadcrumb(loopedCert);
   assert.equal(stepBackToSub.trail.length, 2);
   assert.equal(stepBackToSub.target?.id, 'subview-certificacion-certificates');
+});
+
+test('Fase 5.2: Cross-domain Certificado -> Norma -> Certificado preserves root lineage and Mi Perfil triggers reset', () => {
+  let trail = resetBreadcrumbToDomain('certificacion', 'certificates');
+  assert.equal(trail[0].label, 'Certificación');
+  assert.equal(trail[1].label, 'Certificado');
+
+  trail = pushBreadcrumb(trail, {
+    id: 'cert-1',
+    label: 'FN-QMS-2024-001',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'cert',
+    entityId: '40000000-0000-0000-0000-000000000001',
+    tab: 'cobertura',
+  });
+  trail = pushBreadcrumb(trail, {
+    id: 'norma-9001',
+    label: 'ISO 9001:2015',
+    route: 'extra',
+    subview: 'standards',
+    entityType: 'norma',
+    entityId: 'e0000000-0000-0000-0000-000000009001',
+    tab: 'certificados',
+  });
+
+  // Root domain remains Certificación across cross-domain navigation
+  assert.equal(trail.length, 4);
+  assert.equal(trail[0].route, 'certificacion');
+
+  // Re-entering Certificado truncates back to Certificado index 2 without infinite cycle
+  const returned = pushBreadcrumb(trail, {
+    id: 'cert-1-again',
+    label: 'FN-QMS-2024-001',
+    route: 'certificacion',
+    subview: 'certificates',
+    entityType: 'cert',
+    entityId: '40000000-0000-0000-0000-000000000001',
+    tab: 'sitios',
+  });
+  assert.equal(returned.length, 3);
+  assert.equal(returned[2].tab, 'sitios');
+
+  const headerWithAccountOpen = renderHeader({
+    profile: {
+      id: '11111111-1111-1111-1111-111111111111',
+      nombre: 'Admin',
+      role: 'ADMIN',
+      status: 'APPROVED',
+    },
+    email: 'admin@fondonorma.test',
+    isAdmin: true,
+    canViewApprovals: true,
+    activeRoute: 'certificacion',
+    activeSubSection: 'certificates',
+    pendingCount: 0,
+    openMenu: 'account',
+  });
+  assert.match(headerWithAccountOpen, /data-nav="profile"[^>]*data-nav-reset="true"|data-nav-reset="true"[^>]*data-nav="profile"/);
 });
 
 
