@@ -119,6 +119,12 @@ test('Phase 2.1: profile route is accessible for all authenticated users and Mi 
     });
     assert.ok(headerHtml.includes('data-nav="profile"'));
     assert.ok(headerHtml.includes('Mi Perfil'));
+    assert.ok(headerHtml.includes('data-nav="dashboard"'));
+    assert.ok(headerHtml.includes('Inicio'));
+    const userMenuStart = headerHtml.indexOf('id="userMenuContainer"');
+    const inicioIdx = headerHtml.indexOf('Inicio', userMenuStart);
+    const perfilIdx = headerHtml.indexOf('Mi Perfil', userMenuStart);
+    assert.ok(inicioIdx > userMenuStart && perfilIdx > inicioIdx, 'Inicio must be the first option in user menu');
     assert.equal(headerHtml.includes('Mi Perfil / Panel'), false);
     assert.equal(assertZeroUuidExposure(headerHtml).compliant, true);
   }

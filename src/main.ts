@@ -2183,6 +2183,14 @@ function bindAuthenticatedEvents(): void {
       if (isHeaderReset) {
         // Top Header Reset Rule: ONLY reset breadcrumb trail on top-header triggers
         state.breadcrumbs = resetBreadcrumbToDomain(target, subview);
+        if (target === 'dashboard') {
+          state.auditLogModal.isOpen = false;
+          state.auditLogModal.errorMessage = null;
+          state.archiveGovernance.modal.isOpen = false;
+          state.auditPlanning.isModalOpen = false;
+          state.extraDomain.isAddAccreditationModalOpen = false;
+          state.extraDomain.isAddSubsectorModalOpen = false;
+        }
       } else if (target === 'auditorias' || target === 'certificacion' || target === 'extra') {
         const subLabel = subview ? getSubviewLabel(target, subview) : getDomainLabel(target);
         state.breadcrumbs = pushBreadcrumb(state.breadcrumbs, {
