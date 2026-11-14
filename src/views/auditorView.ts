@@ -304,7 +304,7 @@ function renderAuditorDirectory(
       header: 'Normas Acreditadas',
       sortable: true,
       renderCell: (auditor) => `
-        <div class="flex flex-wrap gap-1 max-w-xs">
+        <div class="flex flex-wrap gap-1 max-w-xs xl:max-w-md">
           ${auditor.normas_acreditadas
             .map(
               (n) => `
@@ -598,7 +598,7 @@ function renderAuditorDetailPage(
           <span class="text-[10px] uppercase font-bold text-slate-400 block">
             Biografía y Resumen Profesional (ISO 19011:2018)
           </span>
-          <p class="text-xs text-slate-800 leading-relaxed font-sans bg-white p-3.5 rounded border border-slate-200/80">
+          <p class="text-xs text-slate-800 leading-relaxed font-sans bg-white p-3.5 rounded border border-slate-200/80 max-w-4xl">
             ${escapeHtml(auditor.biografia || 'Sin biografía registrada.')}
           </p>
         </div>

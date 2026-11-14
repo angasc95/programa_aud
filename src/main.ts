@@ -19,6 +19,7 @@ import {
   type UserRole,
   type UserStatus,
 } from './lib/healthCheck';
+import { APP_SHELL_CONTAINER_CLASS } from './lib/layout';
 import { renderHeader, type HeaderDropdownId } from './views/header';
 import { renderAuthView, type AuthViewState } from './views/authView';
 import { renderDashboardView } from './views/dashboardView';
@@ -1321,7 +1322,7 @@ function render(): void {
     })}
     ${
       state.breadcrumbs && state.breadcrumbs.length > 1
-        ? `<div class="max-w-7xl w-full mx-auto px-4 sm:px-6 pt-3 pb-0">${breadcrumbBarHtml}</div>`
+        ? `<div class="${APP_SHELL_CONTAINER_CLASS} pt-3 pb-0">${breadcrumbBarHtml}</div>`
         : ''
     }
     ${bodyHtml}

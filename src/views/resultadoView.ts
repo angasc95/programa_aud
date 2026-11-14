@@ -701,7 +701,7 @@ function renderFindingsTable(
                       <div class="font-semibold text-slate-800">${escapeHtml(f.proceso_nombre)}</div>
                       <div class="text-[11px] text-slate-500">${escapeHtml(f.sitio_nombre)} · ${escapeHtml(f.organizacion_nombre || '')}</div>
                     </td>
-                    <td class="px-3 py-3 max-w-md">
+                    <td class="px-3 py-3 max-w-md xl:max-w-xl">
                       <div class="font-semibold text-slate-900">${escapeHtml(f.descripcion)}</div>
                       ${
                         f.evidencia
@@ -825,7 +825,7 @@ function renderFindingDetailModal(
       aria-modal="true"
       aria-labelledby="findingDetailModalTitle"
     >
-      <div class="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-6">
+      <div class="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-6">
         <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/80 flex items-start justify-between gap-4">
           <div class="space-y-1">
             <div class="flex flex-wrap items-center gap-2">

@@ -1099,7 +1099,7 @@ function renderSamplingChildTab(
                             : ''
                         }
                       </td>
-                      <td class="px-3 py-3 text-slate-600 max-w-xs">${escapeHtml(site.direccion_sitio)}</td>
+                      <td class="px-3 py-3 text-slate-600 max-w-xs xl:max-w-md">${escapeHtml(site.direccion_sitio)}</td>
                       <td class="px-3 py-3">
                         ${
                           canEdit
@@ -1361,7 +1361,7 @@ function renderFindingsChildTab(
                         <div class="font-mono font-semibold text-indigo-700">Cláusula ${escapeHtml(f.requisito_codigo)}</div>
                         <div class="text-[11px] text-slate-500">${escapeHtml(f.proceso_nombre)}</div>
                       </td>
-                      <td class="px-3 py-3 text-slate-700 max-w-xs">
+                      <td class="px-3 py-3 text-slate-700 max-w-xs xl:max-w-md">
                         <p class="line-clamp-2">${escapeHtml(f.descripcion)}</p>
                       </td>
                       <td class="px-3 py-3 whitespace-nowrap">

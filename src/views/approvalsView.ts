@@ -9,6 +9,7 @@ import {
   type UserProfile,
   type UserStatus,
 } from '../lib/healthCheck';
+import { APP_SHELL_CONTAINER_CLASS } from '../lib/layout';
 
 export interface ApprovalsViewState {
   profiles: UserProfile[];
@@ -181,7 +182,7 @@ export function renderApprovalsView(state: ApprovalsViewState): string {
     : '';
 
   return `
-    <main class="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10">
+    <main class="flex-1 ${APP_SHELL_CONTAINER_CLASS} py-8 sm:py-10">
       <section class="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
         <div class="p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div class="space-y-1">
@@ -193,7 +194,7 @@ export function renderApprovalsView(state: ApprovalsViewState): string {
                   : ''
               }
             </div>
-            <p class="text-xs text-slate-500">
+            <p class="text-xs text-slate-500 max-w-3xl">
               ${
                 state.readOnly
                   ? 'Consulta de solicitudes y cuentas registradas. Solo un Administrador puede aprobar, rechazar o cambiar roles.'

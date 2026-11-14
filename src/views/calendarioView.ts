@@ -642,7 +642,7 @@ function renderCalendarEventDrawer(audit: ProgramacionAuditEntity): string {
       aria-modal="true"
       aria-labelledby="calDrawerTitle"
     >
-      <div class="w-full max-w-md bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col justify-between overflow-y-auto">
+      <div class="w-full max-w-md sm:max-w-lg bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col justify-between overflow-y-auto">
         <div class="p-6 space-y-5">
           <!-- Drawer Header -->
           <div class="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">

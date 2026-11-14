@@ -184,7 +184,7 @@ function renderTipoDirectoryView(params: {
       header: 'Propósito Normativo (ISO 17021-1)',
       sortable: true,
       renderCell: (item) => `
-        <span class="text-slate-600 block max-w-sm">${escapeHtml(item.descripcion)}</span>
+        <span class="text-slate-600 block max-w-sm xl:max-w-xl">${escapeHtml(item.descripcion)}</span>
       `,
     },
     {

@@ -6,6 +6,7 @@ import {
   type UserStatus,
 } from '../lib/healthCheck';
 import { normalizeText, type AuditorDetailEntity } from '../lib/competencyMatrix';
+import { APP_SHELL_CONTAINER_CLASS } from '../lib/layout';
 
 export interface ClientOrgAccessSummary {
   id_organizacion: string;
@@ -248,9 +249,11 @@ export function renderProfileView(props: ProfileViewProps): string {
   );
 
   return `
-    <main class="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 space-y-6">
-      <!-- 1. Account Summary & Read-Only Governance Card -->
-      <section class="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
+    <main class="flex-1 ${APP_SHELL_CONTAINER_CLASS} py-8">
+      <div class="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+        <div class="xl:col-span-7 space-y-6">
+          <!-- 1. Account Summary & Read-Only Governance Card -->
+          <section class="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
         <div class="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 border-b border-slate-100 pb-4">
           <div class="space-y-1 min-w-0">
             <h1 class="text-2xl font-bold tracking-tight text-slate-900 truncate">
@@ -280,11 +283,16 @@ export function renderProfileView(props: ProfileViewProps): string {
           </div>
         </div>
 
-        <p class="text-xs text-slate-500 border-t border-slate-100 pt-3">
+        <p class="text-xs text-slate-500 border-t border-slate-100 pt-3 max-w-3xl">
           ${escapeHtml(govMeta.governanceNote)}
         </p>
       </section>
 
+      <!-- 4. Role-Contextual Read-Only Panel (CLIENT / AUDITOR) -->
+      ${roleContextHtml}
+        </div>
+
+        <div class="xl:col-span-5 space-y-6">
       <!-- 2. Self-Service Name Update Form -->
       <section class="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
         <div class="space-y-1">
@@ -409,9 +417,8 @@ export function renderProfileView(props: ProfileViewProps): string {
             : ''
         }
       </section>
-
-      <!-- 4. Role-Contextual Read-Only Panel (CLIENT / AUDITOR) -->
-      ${roleContextHtml}
+        </div>
+      </div>
     </main>
   `;
 }

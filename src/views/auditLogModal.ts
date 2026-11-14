@@ -157,7 +157,7 @@ export function renderAuditLogModal(props: AuditLogModalProps): string {
       aria-modal="true"
       aria-labelledby="auditLogModalTitle"
     >
-      <div class="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-8">
+      <div class="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-8">
         <!-- Header -->
         <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-4 bg-slate-50/70">
           <div class="flex items-center gap-2.5 min-w-0">

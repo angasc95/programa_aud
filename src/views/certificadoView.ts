@@ -501,7 +501,7 @@ function renderCertificadoDirectory(
         <div class="text-xs text-slate-600 bg-slate-50/75 p-3 rounded-lg border border-slate-100 space-y-1.5">
           <div class="flex items-center justify-between gap-2">
             <span class="text-slate-500 text-[11px]">Sector IAF ${cert.sector_iaf}:</span>
-            <span class="font-medium text-slate-800 truncate max-w-[200px]" title="${escapeHtml(cert.sector_iaf_descripcion)}">
+            <span class="font-medium text-slate-800 truncate max-w-[200px] xl:max-w-[300px]" title="${escapeHtml(cert.sector_iaf_descripcion)}">
               ${escapeHtml(cert.sector_iaf_descripcion)}
             </span>
           </div>
@@ -746,7 +746,7 @@ function renderCertificadoDetailPage(
               (${cert.alcance.length} / 1000 caracteres)
             </span>
           </div>
-          <p class="text-xs text-slate-800 leading-relaxed font-sans bg-white p-3.5 rounded border border-slate-200/80">
+          <p class="text-xs text-slate-800 leading-relaxed font-sans bg-white p-3.5 rounded border border-slate-200/80 max-w-4xl">
             ${escapeHtml(cert.alcance)}
           </p>
         </div>
@@ -986,7 +986,7 @@ function renderSitiosChildTab(sites: SiteEntity[], certId: string): string {
                     }
                   </td>
                   <td class="py-3 px-4 text-slate-700">
-                    <p class="max-w-xs truncate" title="${escapeHtml(site.direccion_sitio)}">
+                    <p class="max-w-xs xl:max-w-lg truncate" title="${escapeHtml(site.direccion_sitio)}">
                       ${escapeHtml(site.direccion_sitio)}
                     </p>
                   </td>

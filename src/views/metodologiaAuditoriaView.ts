@@ -154,14 +154,14 @@ function renderMetodologiaDirectoryView(params: {
       header: 'Descripción Técnica',
       sortable: true,
       renderCell: (item) => `
-        <span class="text-slate-700 font-medium block max-w-xs">${escapeHtml(item.descripcion)}</span>
+        <span class="text-slate-700 font-medium block max-w-xs xl:max-w-md">${escapeHtml(item.descripcion)}</span>
       `,
     },
     {
       id: 'protocolo',
       header: 'Protocolo TIC (IAF MD 4)',
       renderCell: (item) => `
-        <span class="text-slate-600 block max-w-xs truncate" title="${escapeHtml(item.protocolo_tic)}">
+        <span class="text-slate-600 block max-w-xs xl:max-w-md truncate" title="${escapeHtml(item.protocolo_tic)}">
           ${escapeHtml(item.protocolo_tic)}
         </span>
       `,

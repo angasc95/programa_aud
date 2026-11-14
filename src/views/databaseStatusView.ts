@@ -1,5 +1,6 @@
 import { escapeHtml } from '../lib/html';
 import { summarizeHealthChecks, type HealthCheckItem } from '../lib/healthCheck';
+import { APP_SHELL_CONTAINER_CLASS } from '../lib/layout';
 
 function renderCheckState(state: HealthCheckItem['state']): string {
   if (state === 'pass') {
@@ -66,10 +67,10 @@ export function renderDatabaseStatusView(
   const rows = checks
     .map(
       (item) => `
-      <div class="px-6 sm:px-8 py-4 flex items-start justify-between gap-4">
+      <div class="bg-white px-6 sm:px-8 py-5 flex items-start justify-between gap-4">
         <div class="min-w-0">
           <div class="text-sm font-semibold text-slate-900">${escapeHtml(item.label)}</div>
-          <p class="text-xs text-slate-500 mt-0.5">${escapeHtml(item.description)}</p>
+          <p class="text-xs text-slate-500 mt-0.5 max-w-xl">${escapeHtml(item.description)}</p>
           <p class="text-xs text-slate-700 mt-1.5 font-medium">${escapeHtml(item.detail)}</p>
         </div>
         <div class="shrink-0 text-right space-y-1">
@@ -86,8 +87,8 @@ export function renderDatabaseStatusView(
     .join('');
 
   return `
-    <main class="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10">
-      <section class="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
+    <main class="flex-1 ${APP_SHELL_CONTAINER_CLASS} py-8 sm:py-10">
+      <section class="bg-white border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
         <div class="p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div class="space-y-1.5">
             <div class="text-xs font-semibold ${statusColor}">${statusTag}</div>
@@ -109,7 +110,9 @@ export function renderDatabaseStatusView(
           </button>
         </div>
 
-        ${rows}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-px bg-slate-100">
+          ${rows}
+        </div>
       </section>
     </main>
   `;

@@ -6,6 +6,10 @@ import {
   type DomainRoute,
   type UserProfile,
 } from '../lib/healthCheck';
+import {
+  APP_HEADER_CONTAINER_CLASS,
+  APP_SHELL_CONTAINER_CLASS,
+} from '../lib/layout';
 
 export type { ActiveRoute, DomainRoute };
 export type HeaderDropdownId = DomainRoute | 'account';
@@ -42,7 +46,7 @@ export function renderHeader(opts: HeaderOptions): string {
   if (!profile) {
     return `
       <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-xs border-b border-slate-200">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-6">
+        <div class="${APP_SHELL_CONTAINER_CLASS} h-16 flex items-center justify-between gap-6">
           <div class="flex items-center gap-2.5 min-w-0">
             <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-slate-900 text-white text-sm font-bold shrink-0" aria-hidden="true">PA</span>
             <span class="text-base font-bold tracking-tight text-slate-900 whitespace-nowrap truncate">
@@ -256,7 +260,7 @@ export function renderHeader(opts: HeaderOptions): string {
 
   return `
     <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-xs border-b border-slate-200">
-      <div class="max-w-7xl mx-auto px-3 sm:px-6 min-h-16 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-2 sm:gap-x-4 gap-y-0">
+      <div class="${APP_HEADER_CONTAINER_CLASS} min-h-16 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-2 sm:gap-x-4 gap-y-0">
         <button
           type="button"
           data-nav="dashboard"

@@ -50,7 +50,7 @@ export function renderBreadcrumbBar(opts: BreadcrumbViewOptions): string {
           <li class="inline-flex items-center gap-1.5 min-w-0" aria-current="page">
             <span
               title="${escapeHtml(fullLabel)}"
-              class="font-semibold text-slate-900 text-xs truncate max-w-[140px] sm:max-w-[200px] md:max-w-[260px]"
+              class="font-semibold text-slate-900 text-xs truncate max-w-[140px] sm:max-w-[200px] md:max-w-[260px] lg:max-w-[360px] xl:max-w-[460px]"
             >
               ${escapeHtml(display)}
             </span>
@@ -65,7 +65,7 @@ export function renderBreadcrumbBar(opts: BreadcrumbViewOptions): string {
             data-breadcrumb-id="${escapeHtml(seg.id)}"
             data-breadcrumb-idx="${item.index}"
             title="${escapeHtml(fullLabel)}"
-            class="font-medium text-slate-600 hover:text-indigo-600 hover:underline transition-colors cursor-pointer text-xs truncate max-w-[140px] sm:max-w-[200px] text-left"
+            class="font-medium text-slate-600 hover:text-indigo-600 hover:underline transition-colors cursor-pointer text-xs truncate max-w-[140px] sm:max-w-[200px] lg:max-w-[280px] xl:max-w-[360px] text-left"
           >
             ${escapeHtml(display)}
           </button>

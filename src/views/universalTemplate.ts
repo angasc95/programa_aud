@@ -13,6 +13,7 @@ import {
   getArchiveTableDisplayLabel,
   type ArchivedItemEntry,
 } from '../lib/archiveGovernance';
+import { getUniversalCardGridClass } from '../lib/layout';
 
 export interface UniversalTemplateProps<T> {
   domainKey?: string;
@@ -92,7 +93,7 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
       aria-hidden="${isSidebarOpen ? 'false' : 'true'}"
       class="${
         isSidebarOpen
-          ? 'w-full lg:w-64 shrink-0 min-w-0 overflow-hidden bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-5 h-fit'
+          ? 'w-full lg:w-64 xl:w-72 shrink-0 min-w-0 overflow-hidden bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-5 h-fit'
           : 'hidden'
       }"
     >
@@ -316,7 +317,7 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
     `;
   } else {
     contentHtml = `
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="${getUniversalCardGridClass(isSidebarOpen)}">
         ${items.map((item) => renderCard(item)).join('')}
       </div>
     `;
@@ -373,7 +374,7 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
               }
             </button>
 
-            <div class="relative flex-1 min-w-0 max-w-xl">
+            <div class="relative flex-1 min-w-0 max-w-2xl">
               <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-xs" aria-hidden="true">
                 🔍
               </span>

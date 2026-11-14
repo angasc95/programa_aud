@@ -1,6 +1,7 @@
 import { escapeHtml } from '../lib/html';
 import type { DashboardSummaryMetrics } from '../lib/accessControl';
 import type { UserProfile } from '../lib/healthCheck';
+import { APP_SHELL_CONTAINER_CLASS } from '../lib/layout';
 
 const DEFAULT_METRICS: DashboardSummaryMetrics = {
   organizacionesActivas: 0,
@@ -117,7 +118,7 @@ export function renderDashboardView(
           </span>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           ${tiles
             .map(
               (tile) => `
@@ -143,7 +144,7 @@ export function renderDashboardView(
   }
 
   return `
-    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 space-y-8">
+    <main class="flex-1 ${APP_SHELL_CONTAINER_CLASS} py-8 space-y-8">
       <section class="bg-white border border-slate-200 rounded-xl p-6 sm:p-8 space-y-2">
         <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 text-balance">
           Bienvenido, ${escapeHtml(profile.nombre)}

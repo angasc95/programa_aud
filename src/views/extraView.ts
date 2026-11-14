@@ -1,5 +1,6 @@
 import { escapeHtml } from '../lib/html';
 import type { UserProfile } from '../lib/healthCheck';
+import { APP_SHELL_CONTAINER_CLASS } from '../lib/layout';
 import {
   INITIAL_NORMAS,
   INITIAL_ACREDITACIONES,
@@ -386,7 +387,7 @@ export function renderExtraView(
   }
 
   return `
-    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 pt-3 pb-8 space-y-5">
+    <main class="flex-1 ${APP_SHELL_CONTAINER_CLASS} pt-3 pb-8 space-y-5">
       <div id="extraActiveViewContainer">
         ${activeContentHtml}
       </div>

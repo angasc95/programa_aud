@@ -330,8 +330,8 @@ function renderOrganizacionDirectoryView(props: {
       header: 'Contacto Principal',
       sortable: false,
       renderCell: (org) => `
-        <div class="font-medium text-slate-800 max-w-[170px] truncate">${escapeHtml(org.contacto_principal || '—')}</div>
-        <div class="text-[11px] text-slate-500 font-mono max-w-[170px] truncate" title="${escapeHtml(org.correo_contacto || '')}">${escapeHtml(org.correo_contacto || '')}</div>
+        <div class="font-medium text-slate-800 max-w-[170px] xl:max-w-[260px] truncate">${escapeHtml(org.contacto_principal || '—')}</div>
+        <div class="text-[11px] text-slate-500 font-mono max-w-[170px] xl:max-w-[260px] truncate" title="${escapeHtml(org.correo_contacto || '')}">${escapeHtml(org.correo_contacto || '')}</div>
       `,
     },
     {
@@ -339,7 +339,7 @@ function renderOrganizacionDirectoryView(props: {
       header: 'Sector Principal',
       sortable: true,
       renderCell: (org) => `
-        <span class="inline-block max-w-[200px] leading-snug px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
+        <span class="inline-block max-w-[200px] xl:max-w-[300px] leading-snug px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
           Sector ${org.sector_iaf_numero || '—'}: ${escapeHtml(org.sector_principal || 'General')}
         </span>
       `,
@@ -673,7 +673,7 @@ function renderReadOnlyAttributes(
   totalCount: number
 ): string {
   return `
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-3">
       <!-- Legal Name -->
       <div class="p-3 bg-slate-50/70 border border-slate-200 rounded-lg space-y-0.5">
         <span class="text-[10px] uppercase font-bold text-slate-400">Razón Social:</span>
@@ -725,8 +725,8 @@ function renderReadOnlyAttributes(
         <p class="text-xs font-bold text-slate-900 tabular-nums">${activeCount} activos (${totalCount} emitidos)</p>
       </div>
 
-      <!-- Fiscal Address (full width 2 cols) -->
-      <div class="md:col-span-2 p-3 bg-slate-50/70 border border-slate-200 rounded-lg space-y-0.5">
+      <!-- Fiscal Address (balanced in 4x2 grid on xl) -->
+      <div class="md:col-span-2 xl:col-span-1 p-3 bg-slate-50/70 border border-slate-200 rounded-lg space-y-0.5">
         <span class="text-[10px] uppercase font-bold text-slate-400">Dirección Fiscal de la Sede Principal:</span>
         <p class="text-xs font-medium text-slate-800">${escapeHtml(org.direccion_fiscal || 'No especificada')}</p>
       </div>

@@ -12,6 +12,7 @@ import { renderProgramacionView } from './programacionView';
 import { renderCalendarioView } from './calendarioView';
 import { renderResultadoView } from './resultadoView';
 import type { ArchiveMultiViewConfig } from '../lib/archiveGovernance';
+import { APP_SHELL_CONTAINER_CLASS } from '../lib/layout';
 
 export interface AuditRecord {
   id: string;
@@ -92,7 +93,7 @@ export function renderAuditoriasView(
   }
 
   return `
-    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 pt-3 pb-8 space-y-5">
+    <main class="flex-1 ${APP_SHELL_CONTAINER_CLASS} pt-3 pb-8 space-y-5">
       ${contentHtml}
     </main>
   `;

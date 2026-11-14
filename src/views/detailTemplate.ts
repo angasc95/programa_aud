@@ -202,10 +202,10 @@ export function renderDetailPageTemplate(props: DetailPageTemplateProps): string
   const attributesHtml =
     attributes.length > 0
       ? `
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
         ${attributes
           .map((attr) => {
-            const spanClass = attr.colSpanFull ? 'sm:col-span-2 lg:col-span-3' : '';
+            const spanClass = attr.colSpanFull ? 'col-span-full' : '';
             return `
               <div class="${spanClass} bg-slate-50/70 border border-slate-200/90 rounded-xl p-3.5 space-y-1">
                 <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
@@ -247,24 +247,26 @@ export function renderDetailPageTemplate(props: DetailPageTemplateProps): string
   const editableScopeHtml = editableScopeField
     ? `
       <div class="bg-slate-50/70 border border-slate-200/90 rounded-xl p-4 space-y-2">
-        <div class="flex items-center justify-between gap-2">
-          <label for="detailScopeInput" class="text-xs font-bold uppercase tracking-wider text-slate-700">
-            ${escapeHtml(editableScopeField.label)}
-          </label>
-          <div class="text-[11px] font-mono text-slate-400">
-            <span id="scopeCharCount">${editableScopeField.value.length}</span> / ${editableScopeField.maxLength} caracteres
+        <div class="max-w-4xl space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <label for="detailScopeInput" class="text-xs font-bold uppercase tracking-wider text-slate-700">
+              ${escapeHtml(editableScopeField.label)}
+            </label>
+            <div class="text-[11px] font-mono text-slate-400">
+              <span id="scopeCharCount">${editableScopeField.value.length}</span> / ${editableScopeField.maxLength} caracteres
+            </div>
           </div>
+          <textarea
+            id="detailScopeInput"
+            name="${escapeHtml(editableScopeField.fieldName)}"
+            maxlength="${editableScopeField.maxLength}"
+            rows="3"
+            class="w-full text-xs rounded-lg border border-slate-300 bg-white p-2.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+          >${escapeHtml(editableScopeField.value)}</textarea>
+          <p class="text-[11px] text-slate-400">
+            Alcance de certificación formal auditable conforme a ISO/IEC 17021-1:2015 cláusula 8.2.
+          </p>
         </div>
-        <textarea
-          id="detailScopeInput"
-          name="${escapeHtml(editableScopeField.fieldName)}"
-          maxlength="${editableScopeField.maxLength}"
-          rows="3"
-          class="w-full text-xs rounded-lg border border-slate-300 bg-white p-2.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
-        >${escapeHtml(editableScopeField.value)}</textarea>
-        <p class="text-[11px] text-slate-400">
-          Alcance de certificación formal auditable conforme a ISO/IEC 17021-1:2015 cláusula 8.2.
-        </p>
       </div>
     `
     : '';

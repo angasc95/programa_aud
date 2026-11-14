@@ -219,7 +219,7 @@ function renderNormaDirectoryView(params: {
       header: 'Título Oficial',
       sortable: true,
       renderCell: (norma) => `
-        <span class="text-slate-700 font-medium block max-w-xs truncate" title="${escapeHtml(norma.titulo)}">
+        <span class="text-slate-700 font-medium block max-w-xs xl:max-w-md truncate" title="${escapeHtml(norma.titulo)}">
           ${escapeHtml(norma.titulo)}
         </span>
       `,
@@ -518,7 +518,7 @@ function renderNormaDetailPage(params: {
                                   >
                                     Sector IAF ${acc.sector_iaf_numero}
                                   </button>
-                                  <div class="text-[11px] text-slate-500 max-w-xs truncate" title="${escapeHtml(acc.sector_iaf_descripcion || '')}">
+                                  <div class="text-[11px] text-slate-500 max-w-xs xl:max-w-md truncate" title="${escapeHtml(acc.sector_iaf_descripcion || '')}">
                                     ${escapeHtml(acc.sector_iaf_descripcion || '')}
                                   </div>
                                 `
