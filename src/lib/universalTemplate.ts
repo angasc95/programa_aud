@@ -44,6 +44,8 @@ export interface ColumnDefinition<T> {
   sortable?: boolean;
   align?: 'left' | 'center' | 'right';
   className?: string;
+  defaultWidthPct?: number;
+  minWidthPx?: number;
   renderCell: (item: T) => string;
   getValue?: (item: T) => unknown;
 }
@@ -410,4 +412,145 @@ export function renderSortIndicator(direction: SortDirection): string {
     default:
       return '▲▼';
   }
+}
+
+export const DEFAULT_MIN_COLUMN_WIDTH_PX = 64;
+
+/**
+ * Resolves normalized percentage widths summing strictly to 100% for all columns.
+ */
+export function resolveColumnWidthPercentages<T>(
+  columns: readonly Pick<ColumnDefinition<T>, 'id' | 'defaultWidthPct'>[],
+  storedWidths?: Readonly<Record<string, number>>
+): Record<string, number> {
+  const result: Record<string, number> = {};
+  if (columns.length === 0) return result;
+
+  const explicitSum = columns.reduce((sum, col) => {
+    const stored = storedWidths?.[col.id];
+    if (typeof stored === 'number' && Number.isFinite(stored) && stored > 0) {
+      return sum + stored;
+    }
+    if (typeof col.defaultWidthPct === 'number' && Number.isFinite(col.defaultWidthPct) && col.defaultWidthPct > 0) {
+      return sum + col.defaultWidthPct;
+    }
+    return sum;
+  }, 0);
+
+  const missingCols = columns.filter((col) => {
+    const stored = storedWidths?.[col.id];
+    const hasStored = typeof stored === 'number' && Number.isFinite(stored) && stored > 0;
+    const hasDefault =
+      typeof col.defaultWidthPct === 'number' &&
+      Number.isFinite(col.defaultWidthPct) &&
+      col.defaultWidthPct > 0;
+    return !hasStored && !hasDefault;
+  });
+
+  const remainingPct = Math.max(0, 100 - explicitSum);
+  const fallbackShare =
+    missingCols.length > 0
+      ? remainingPct > 1
+        ? remainingPct / missingCols.length
+        : 100 / columns.length
+      : 0;
+
+  let rawSum = 0;
+  const rawWidths: Record<string, number> = {};
+  for (const col of columns) {
+    const stored = storedWidths?.[col.id];
+    let val: number;
+    if (typeof stored === 'number' && Number.isFinite(stored) && stored > 0) {
+      val = stored;
+    } else if (
+      typeof col.defaultWidthPct === 'number' &&
+      Number.isFinite(col.defaultWidthPct) &&
+      col.defaultWidthPct > 0
+    ) {
+      val = col.defaultWidthPct;
+    } else {
+      val = fallbackShare;
+    }
+    rawWidths[col.id] = val;
+    rawSum += val;
+  }
+
+  if (rawSum <= 0) {
+    const equal = 100 / columns.length;
+    for (const col of columns) {
+      result[col.id] = equal;
+    }
+    return result;
+  }
+
+  let running = 0;
+  columns.forEach((col, idx) => {
+    if (idx === columns.length - 1) {
+      result[col.id] = Math.max(0.01, Number((100 - running).toFixed(4)));
+    } else {
+      const normalized = Number(((rawWidths[col.id] / rawSum) * 100).toFixed(4));
+      result[col.id] = normalized;
+      running += normalized;
+    }
+  });
+
+  return result;
+}
+
+export interface ResizeAdjacentColumnsParams {
+  currentWidths: Readonly<Record<string, number>>;
+  columnOrder: readonly string[];
+  leftColumnId: string;
+  deltaPx: number;
+  tableWidthPx: number;
+  minWidthsPx?: Readonly<Record<string, number>>;
+}
+
+/**
+ * Adjusts a dragged column and its right-hand adjacent sibling proportionally within 100%
+ * while respecting minimum column pixel widths so total width never exceeds container bounds.
+ */
+export function resizeAdjacentColumns(params: ResizeAdjacentColumnsParams): Record<string, number> {
+  const { currentWidths, columnOrder, leftColumnId, deltaPx, tableWidthPx, minWidthsPx } = params;
+  const next: Record<string, number> = { ...currentWidths };
+
+  if (tableWidthPx <= 0 || !Number.isFinite(deltaPx)) {
+    return next;
+  }
+
+  const leftIdx = columnOrder.indexOf(leftColumnId);
+  if (leftIdx < 0 || leftIdx >= columnOrder.length - 1) {
+    return next;
+  }
+
+  const rightColumnId = columnOrder[leftIdx + 1];
+  const leftStart = currentWidths[leftColumnId] ?? 0;
+  const rightStart = currentWidths[rightColumnId] ?? 0;
+  const pairTotal = leftStart + rightStart;
+  if (pairTotal <= 0) {
+    return next;
+  }
+
+  const rawLeftMinPct = ((minWidthsPx?.[leftColumnId] ?? DEFAULT_MIN_COLUMN_WIDTH_PX) / tableWidthPx) * 100;
+  const rawRightMinPct = ((minWidthsPx?.[rightColumnId] ?? DEFAULT_MIN_COLUMN_WIDTH_PX) / tableWidthPx) * 100;
+
+  let leftMinPct = Math.max(4, rawLeftMinPct);
+  let rightMinPct = Math.max(4, rawRightMinPct);
+  const combinedMin = leftMinPct + rightMinPct;
+  if (combinedMin > pairTotal) {
+    const scale = pairTotal / combinedMin;
+    leftMinPct *= scale;
+    rightMinPct *= scale;
+  }
+
+  const deltaPct = (deltaPx / tableWidthPx) * 100;
+  const minAllowedLeft = leftMinPct;
+  const maxAllowedLeft = pairTotal - rightMinPct;
+  const clampedLeft = Math.min(maxAllowedLeft, Math.max(minAllowedLeft, leftStart + deltaPct));
+  const clampedRight = pairTotal - clampedLeft;
+
+  next[leftColumnId] = Number(clampedLeft.toFixed(4));
+  next[rightColumnId] = Number(clampedRight.toFixed(4));
+
+  return next;
 }

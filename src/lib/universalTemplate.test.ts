@@ -12,10 +12,12 @@ import {
   clearFacetSelections,
   countActiveFacetSelections,
   formatMultiViewTotalizer,
+  resolveColumnWidthPercentages,
+  resizeAdjacentColumns,
   type MultiViewFacetCategory,
   type MultiViewSelectionMap,
 } from './universalTemplate';
-import { renderUniversalTemplate } from '../views/universalTemplate';
+import { renderListViewTable, renderUniversalTemplate } from '../views/universalTemplate';
 import { renderSearchControls } from '../views/searchControlsView';
 import { assertZeroUuidExposure } from './zeroUuid';
 
@@ -274,6 +276,19 @@ test('Phase 4.1.1: renderUniversalTemplate renders unified controls, single type
   // Empty query shows '/' hint and 0 clear buttons
   assert.equal(collapsedHtml.includes('data-clear-search="true"'), false);
   assert.ok(collapsedHtml.includes('>'));
+
+  // Step 1: Single outer card & icon-only controls (no Filtros/Tarjetas/Tabla text labels)
+  assert.ok(expandedHtml.includes('rounded-2xl'));
+  assert.ok(expandedHtml.includes('aria-label="Filtros"'));
+  assert.ok(expandedHtml.includes('aria-label="Vista en Tarjetas"'));
+  assert.ok(expandedHtml.includes('aria-label="Vista en Tabla"'));
+  assert.equal(expandedHtml.includes('<span>Filtros</span>'), false);
+  assert.equal(expandedHtml.includes('<span>Tarjetas</span>'), false);
+  assert.equal(expandedHtml.includes('<span>Tabla</span>'), false);
+
+  // Step 1: List View renders table-fixed + colgroup
+  assert.ok(collapsedHtml.includes('table-fixed'));
+  assert.ok(collapsedHtml.includes('<colgroup>'));
 });
 
 test('Phase 4.1.1: searchControlsView uses type="text" without native double-X', () => {
@@ -287,4 +302,74 @@ test('Phase 4.1.1: searchControlsView uses type="text" without native double-X',
   assert.equal(/type=["']search["']/.test(html), false);
   assert.ok(html.includes('type="text"'));
   assert.equal((html.match(/data-action="clear-search"/g) || []).length, 1);
+});
+
+test('Step 1: resolveColumnWidthPercentages normalizes widths strictly to 100% and resizeAdjacentColumns enforces minWidthPx', () => {
+  const cols = [
+    { id: 'a', defaultWidthPct: 50, minWidthPx: 120 },
+    { id: 'b', defaultWidthPct: 30, minWidthPx: 80 },
+    { id: 'c', minWidthPx: 80 },
+  ];
+  const resolved = resolveColumnWidthPercentages(cols);
+  const sum = Object.values(resolved).reduce((acc, v) => acc + v, 0);
+  assert.ok(Math.abs(sum - 100) < 0.01, `Expected sum ~100, got ${sum}`);
+  assert.equal(Math.round(resolved.a), 50);
+  assert.equal(Math.round(resolved.b), 30);
+  assert.equal(Math.round(resolved.c), 20);
+
+  // Dragging 'a' right by +100px on a 1000px table grows 'a' by +10% and shrinks 'b' by -10%
+  const resized = resizeAdjacentColumns({
+    currentWidths: resolved,
+    columnOrder: ['a', 'b', 'c'],
+    leftColumnId: 'a',
+    deltaPx: 100,
+    tableWidthPx: 1000,
+    minWidthsPx: { a: 120, b: 80, c: 80 },
+  });
+  assert.equal(Math.round(resized.a), 60);
+  assert.equal(Math.round(resized.b), 20);
+  assert.equal(Math.round(resized.c), 20);
+  const resizedSum = Object.values(resized).reduce((acc, v) => acc + v, 0);
+  assert.ok(Math.abs(resizedSum - 100) < 0.01);
+
+  // Extreme drag cannot shrink right neighbor 'b' below its 80px (8%) minWidthPx
+  const clamped = resizeAdjacentColumns({
+    currentWidths: resolved,
+    columnOrder: ['a', 'b', 'c'],
+    leftColumnId: 'a',
+    deltaPx: 500,
+    tableWidthPx: 1000,
+    minWidthsPx: { a: 120, b: 80, c: 80 },
+  });
+  assert.equal(Math.round(clamped.b), 8);
+  assert.equal(Math.round(clamped.a), 72);
+  assert.ok(Math.abs(Object.values(clamped).reduce((acc, v) => acc + v, 0) - 100) < 0.01);
+});
+
+test('Step 1: renderListViewTable renders colgroup, drag handles (except last col), and full-row clickable attributes', () => {
+  const html = renderListViewTable({
+    tableId: 'demo-table',
+    items: SAMPLE_DATA.slice(0, 2),
+    columns: [
+      { id: 'nombre', header: 'Nombre', sortable: true, defaultWidthPct: 60, minWidthPx: 140, renderCell: (i) => i.nombre },
+      { id: 'estatus', header: 'Estatus', sortable: true, defaultWidthPct: 40, minWidthPx: 90, renderCell: (i) => i.estatus },
+    ],
+    sortState: { column: 'nombre', direction: 'asc' },
+    getRowAttrs: (item) => `data-action="select-demo" data-demo-id="${item.id}"`,
+  });
+
+  assert.ok(html.includes('data-resizable-table="demo-table"'));
+  assert.ok(html.includes('table-fixed'));
+  assert.ok(html.includes('<colgroup>'));
+  assert.ok(html.includes('data-col-id="nombre"'));
+  assert.ok(html.includes('style="width: 60.00%;"'));
+  assert.ok(html.includes('style="width: 40.00%;"'));
+  // Resize handle on first column only, NOT on last column
+  assert.equal((html.match(/data-resize-col=/g) || []).length, 1);
+  assert.ok(html.includes('data-resize-col="nombre"'));
+  assert.equal(html.includes('data-resize-col="estatus"'), false);
+  // Full-row clickable attributes + keyboard accessibility
+  assert.ok(html.includes('data-action="select-demo" data-demo-id="1" tabindex="0"'));
+  assert.ok(html.includes('cursor-pointer'));
+  assert.equal(html.includes('overflow-x-auto'), false);
 });

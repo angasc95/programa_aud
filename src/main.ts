@@ -129,6 +129,9 @@ import {
 import {
   clearFacetSelections,
   cycleSortDirection,
+  DEFAULT_MIN_COLUMN_WIDTH_PX,
+  resizeAdjacentColumns,
+  resolveColumnWidthPercentages,
   toggleFacetSelection,
   type MultiViewSelectionMap,
   type SortDirection,
@@ -305,6 +308,7 @@ interface AppState {
   auditPlanning: {
     isModalOpen: boolean;
   };
+  tableColumnWidths: Record<string, Record<string, number>>;
   programacionDomain: ProgramacionViewState;
   calendarioDomain: CalendarioViewState;
   resultadoDomain: ResultadoViewState;
@@ -709,6 +713,7 @@ const state: AppState = {
   auditPlanning: {
     isModalOpen: false,
   },
+  tableColumnWidths: {},
   programacionDomain: {
     selectedAuditId: null,
     activeChildTab: 'equipo',
@@ -2116,6 +2121,141 @@ function bindMultiViewDirectoryControls(): void {
   });
 }
 
+function bindResizableTables(): void {
+  document.querySelectorAll<HTMLTableElement>('table[data-resizable-table]').forEach((table) => {
+    const tableId = table.dataset.resizableTable || '';
+    const cols = Array.from(table.querySelectorAll<HTMLTableColElement>('colgroup col[data-col-id]'));
+    if (cols.length < 2) return;
+
+    const columnOrder = cols.map((col) => col.dataset.colId || '').filter(Boolean);
+    const minWidthsPx: Record<string, number> = {};
+    const domWidths: Record<string, number> = {};
+    for (const col of cols) {
+      const id = col.dataset.colId || '';
+      if (!id) continue;
+      const minPx = Number(col.dataset.minWidth || DEFAULT_MIN_COLUMN_WIDTH_PX);
+      minWidthsPx[id] = Number.isFinite(minPx) && minPx > 0 ? minPx : DEFAULT_MIN_COLUMN_WIDTH_PX;
+      const pct = parseFloat(col.style.width);
+      if (Number.isFinite(pct) && pct > 0) {
+        domWidths[id] = pct;
+      }
+    }
+
+    const stored = tableId ? state.tableColumnWidths[tableId] : undefined;
+    if (stored && Object.keys(stored).length > 0) {
+      const restored = resolveColumnWidthPercentages(
+        columnOrder.map((id) => ({ id, defaultWidthPct: domWidths[id] })),
+        stored
+      );
+      cols.forEach((col) => {
+        const id = col.dataset.colId || '';
+        const pct = restored[id];
+        if (id && typeof pct === 'number') {
+          col.style.width = `${pct.toFixed(2)}%`;
+        }
+      });
+    }
+
+    table.querySelectorAll<HTMLElement>('[data-resize-col]').forEach((handle) => {
+      handle.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+
+      handle.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        const leftColumnId = handle.dataset.resizeCol || '';
+        if (!leftColumnId) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const tableWidthPx = table.getBoundingClientRect().width;
+        if (tableWidthPx <= 0) return;
+
+        const rawStartWidths: Record<string, number> = {};
+        cols.forEach((col) => {
+          const id = col.dataset.colId || '';
+          if (!id) return;
+          const stylePct = parseFloat(col.style.width);
+          const rectPct = (col.getBoundingClientRect().width / tableWidthPx) * 100;
+          rawStartWidths[id] =
+            Number.isFinite(stylePct) && stylePct > 0
+              ? stylePct
+              : Math.max(4, rectPct || 100 / cols.length);
+        });
+
+        const startWidths = resolveColumnWidthPercentages(
+          columnOrder.map((id) => ({ id, defaultWidthPct: rawStartWidths[id] }))
+        );
+        const startX = e.clientX;
+        let latestWidths: Record<string, number> = { ...startWidths };
+        let didDrag = false;
+
+        const onPointerMove = (moveEvent: PointerEvent) => {
+          const deltaPx = moveEvent.clientX - startX;
+          if (Math.abs(deltaPx) > 2) {
+            didDrag = true;
+          }
+          latestWidths = resizeAdjacentColumns({
+            currentWidths: startWidths,
+            columnOrder,
+            leftColumnId,
+            deltaPx,
+            tableWidthPx,
+            minWidthsPx,
+          });
+          cols.forEach((col) => {
+            const id = col.dataset.colId || '';
+            const pct = latestWidths[id];
+            if (id && typeof pct === 'number') {
+              col.style.width = `${pct.toFixed(2)}%`;
+            }
+          });
+        };
+
+        const finishResize = () => {
+          window.removeEventListener('pointermove', onPointerMove);
+          window.removeEventListener('pointerup', finishResize);
+          window.removeEventListener('pointercancel', finishResize);
+          if (didDrag) {
+            if (tableId) {
+              state.tableColumnWidths[tableId] = latestWidths;
+            }
+            const suppressClick = (clickEvt: MouseEvent) => {
+              clickEvt.preventDefault();
+              clickEvt.stopPropagation();
+            };
+            table.addEventListener('click', suppressClick, { capture: true, once: true });
+            window.setTimeout(() => {
+              table.removeEventListener('click', suppressClick, { capture: true });
+            }, 60);
+          }
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', finishResize);
+        window.addEventListener('pointercancel', finishResize);
+      });
+    });
+  });
+
+  document
+    .querySelectorAll<HTMLTableRowElement>('tr[tabindex="0"][data-action]')
+    .forEach((row) => {
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          const target = e.target as HTMLElement | null;
+          if (target && target !== row && target.closest('button, a, input, select, textarea')) {
+            return;
+          }
+          e.preventDefault();
+          row.click();
+        }
+      });
+    });
+}
+
 function bindAuthenticatedEvents(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-menu-toggle]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -2512,8 +2652,9 @@ function bindAuthenticatedEvents(): void {
     });
   });
 
-  // Universal Multi View Directory Controls (Phase 4.1.2 — 9 Directories)
+  // Universal Multi View Directory Controls (Phase 4.1.2 — 9 Directories) & Resizable Tables
   bindMultiViewDirectoryControls();
+  bindResizableTables();
 
   // Self-service Profile handlers (Phase 2.2)
   const profileNombreInput = document.getElementById('profileNombreInput') as HTMLInputElement | null;
@@ -8676,6 +8817,7 @@ function resetClientSessionState(): void {
     archivedSnapshotsByKey: {},
     archivedCatalogIds: new Set<string>(),
   };
+  state.tableColumnWidths = {};
   syncUrlHash('dashboard', null, true);
   state.approvals.profiles = [];
   state.dbCheck = {

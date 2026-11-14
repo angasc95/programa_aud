@@ -48,14 +48,19 @@ const CLIENT_PROFILE: UserProfile = {
 
 function assertMultiViewCompliance(html: string, domainKey: string, entityLabel: string): void {
   assert.ok(html.includes(`data-mv-domain="${domainKey}"`), `Missing data-mv-domain="${domainKey}"`);
+  assert.ok(html.includes('rounded-2xl'), `Missing single-card container in ${domainKey}`);
   assert.equal(/type=["']search["']/i.test(html), false, `Found forbidden type="search" in ${domainKey}`);
   assert.ok(html.includes('type="text"'), `Missing type="text" search input in ${domainKey}`);
   assert.ok(html.includes('data-toggle-sidebar="true"'), `Missing sidebar toggle in ${domainKey}`);
+  assert.ok(html.includes('aria-label="Filtros"'), `Missing icon-only Filtros aria-label in ${domainKey}`);
+  assert.equal(html.includes('<span>Filtros</span>'), false, `Unexpected Filtros text label in ${domainKey}`);
   assert.ok(html.includes('data-facet-checkbox="true"'), `Missing checkbox facets in ${domainKey}`);
   assert.ok(html.includes('Mostrando'), `Missing Mostrando totalizer in ${domainKey}`);
   assert.ok(html.includes(entityLabel), `Missing entity label "${entityLabel}" in ${domainKey}`);
   assert.ok(html.includes('data-view-mode="grid"'), `Missing Tarjetas switcher in ${domainKey}`);
   assert.ok(html.includes('data-view-mode="list"'), `Missing Tabla switcher in ${domainKey}`);
+  assert.equal(html.includes('<span>Tarjetas</span>'), false, `Unexpected Tarjetas text label in ${domainKey}`);
+  assert.equal(html.includes('<span>Tabla</span>'), false, `Unexpected Tabla text label in ${domainKey}`);
   assert.equal(
     assertZeroUuidExposure(html).compliant,
     true,
