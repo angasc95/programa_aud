@@ -31,6 +31,12 @@ import {
   renderDetailPageTemplate,
   type DetailParentChip,
 } from './detailTemplate';
+import {
+  canArchiveRecord,
+  extractUniversalArchiveProps,
+  renderArchivarButtonHtml,
+  type ArchiveMultiViewConfig,
+} from '../lib/archiveGovernance';
 
 export type { ProgramacionViewState, ProgramacionChildTab };
 
@@ -42,10 +48,11 @@ export interface ProgramacionViewProps {
   certificates: CertificateRecord[];
   findings?: Phase5FindingEntity[];
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }
 
 export function renderProgramacionView(props: ProgramacionViewProps): string {
-  const { profile, state, audits, auditors, certificates, findings = [], loading = false } = props;
+  const { profile, state, audits, auditors, certificates, findings = [], loading = false, archiveConfig } = props;
 
   if (state.selectedAuditId) {
     const selected = audits.find((a) => a.id === state.selectedAuditId);
@@ -54,7 +61,7 @@ export function renderProgramacionView(props: ProgramacionViewProps): string {
     }
   }
 
-  return renderProgramacionDirectoryView(profile, state, audits, auditors, certificates, loading);
+  return renderProgramacionDirectoryView(profile, state, audits, auditors, certificates, loading, archiveConfig);
 }
 
 function hasLeadAuditorAssigned(audit: ProgramacionAuditEntity): boolean {
@@ -73,7 +80,8 @@ function renderProgramacionDirectoryView(
   allAudits: ProgramacionAuditEntity[],
   auditors: AuditorDetailEntity[],
   certificates: CertificateRecord[],
-  loading: boolean
+  loading: boolean,
+  archiveConfig?: ArchiveMultiViewConfig
 ): string {
   const canPlan = canEditAuditScheduleOrTeam(profile);
 
@@ -414,6 +422,7 @@ function renderProgramacionDirectoryView(
     inlineFormHtml,
     loading,
     loadingMessage: 'Cargando programación de auditorías...',
+    ...extractUniversalArchiveProps(archiveConfig, 'programacion'),
   });
 }
 
@@ -641,17 +650,31 @@ function renderProgramacionDetailView(
     </button>
   `;
 
+  const canArchive = canArchiveRecord(profile);
+  const archiveBtnHtml = canArchive
+    ? renderArchivarButtonHtml({
+        tableName: 'auditoria',
+        recordId: audit.id,
+        entityLabel: 'Auditoría Programada',
+        recordTitle: audit.codigo_auditoria,
+        recordSubtitle: `${audit.organizacion_nombre} · ${audit.tipo_auditoria}`,
+      })
+    : '';
+
   const recordActionsHtml = canEditSchedule
     ? !state.isEditingAttributes
       ? `
-        <button
-          type="button"
-          id="startEditProgAuditBtn"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 cursor-pointer"
-        >
-          <span aria-hidden="true">✏️</span>
-          <span>Editar</span>
-        </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            id="startEditProgAuditBtn"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 cursor-pointer"
+          >
+            <span aria-hidden="true">✏️</span>
+            <span>Editar</span>
+          </button>
+          ${archiveBtnHtml}
+        </div>
       `
       : `
         <button
@@ -663,7 +686,7 @@ function renderProgramacionDetailView(
           <span>Cancelar Edición</span>
         </button>
       `
-    : '';
+    : archiveBtnHtml;
 
   const feedbackHtml = `
     ${

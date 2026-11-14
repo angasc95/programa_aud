@@ -14,6 +14,12 @@ import { renderUniversalTemplate } from './universalTemplate';
 import { renderDetailPageTemplate } from './detailTemplate';
 import type { CertificadoDetailEntity } from '../lib/multisiteSampling';
 import type { ProgramacionAuditEntity } from '../lib/auditExecution';
+import {
+  canArchiveRecord,
+  extractUniversalArchiveProps,
+  renderArchivarButtonHtml,
+  type ArchiveMultiViewConfig,
+} from '../lib/archiveGovernance';
 
 export interface EstatusViewState {
   selectedEstatusId: string | null;
@@ -34,10 +40,11 @@ export interface EstatusViewProps {
   certificados?: CertificadoDetailEntity[];
   audits?: ProgramacionAuditEntity[];
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }
 
 export function renderEstatusView(props: EstatusViewProps): string {
-  const { state, estatusList, certificados = [], audits = [] } = props;
+  const { profile, state, estatusList, certificados = [], audits = [], archiveConfig } = props;
 
   // If a specific status is selected, render its detail page
   if (state.selectedEstatusId) {
@@ -47,6 +54,7 @@ export function renderEstatusView(props: EstatusViewProps): string {
 
     if (selectedItem) {
       return renderEstatusDetailPage({
+        profile,
         item: selectedItem,
         activeTab: state.activeChildTab || 'certificados',
         certificados: certificados.filter(
@@ -64,6 +72,7 @@ export function renderEstatusView(props: EstatusViewProps): string {
     state,
     estatusList,
     loading: props.loading,
+    archiveConfig,
   });
 }
 
@@ -101,8 +110,9 @@ function renderEstatusDirectoryView(params: {
   state: EstatusViewState;
   estatusList: EstatusCatalogItem[];
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }): string {
-  const { state, estatusList, loading } = params;
+  const { state, estatusList, loading, archiveConfig } = params;
 
   const facetCategories: MultiViewFacetCategory<EstatusCatalogItem>[] = [
     {
@@ -297,16 +307,18 @@ function renderEstatusDirectoryView(params: {
     emptyStateTitle: 'No se encontraron estatus',
     emptyStateMessage: 'No se encontraron estatus que coincidan con los filtros aplicados.',
     loading,
+    ...extractUniversalArchiveProps(archiveConfig, 'estatus'),
   });
 }
 
 function renderEstatusDetailPage(params: {
+  profile: UserProfile;
   item: EstatusCatalogItem;
   activeTab: 'reglas' | 'certificados' | 'auditorias';
   certificados: CertificadoDetailEntity[];
   audits: ProgramacionAuditEntity[];
 }): string {
-  const { item, activeTab, certificados, audits } = params;
+  const { profile, item, activeTab, certificados, audits } = params;
   const badgeClass = getStatusBadgeClasses(item.color_token);
 
   const tabCertificadosHtml = `
@@ -434,6 +446,15 @@ function renderEstatusDetailPage(params: {
       action: 'back-to-estatus-list',
     },
     parents: [],
+    recordActionsHtml: canArchiveRecord(profile)
+      ? renderArchivarButtonHtml({
+          tableName: 'estatus',
+          recordId: item.id,
+          entityLabel: 'Estatus Canónico',
+          recordTitle: item.estatus,
+          recordSubtitle: item.categoria_aplicable,
+        })
+      : '',
     tableName: 'estatus',
     recordId: item.id,
     attributes: [

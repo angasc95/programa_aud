@@ -44,6 +44,7 @@ import {
 import { renderProcesoView, type ProcesoViewState } from './procesoView';
 import { resolveTurnoDetailById } from '../lib/turnoDomain';
 import { renderTurnoView, type TurnoViewState } from './turnoView';
+import type { ArchiveMultiViewConfig } from '../lib/archiveGovernance';
 
 export interface OrganizationRecord {
   id: string;
@@ -105,6 +106,7 @@ export interface CertificacionViewState {
   archivedSiteIds?: ReadonlySet<string>;
   archivedProcesoIds?: ReadonlySet<string>;
   archivedTurnoIds?: ReadonlySet<string>;
+  archiveConfig?: ArchiveMultiViewConfig;
 }
 
 export function renderCertificacionView(
@@ -164,6 +166,7 @@ export function renderCertificacionView(
       certificados: certSummaries,
       auditorias: state.programacionAudits || [],
       loading: state.loading,
+      archiveConfig: state.archiveConfig,
     });
   } else if (activeSub === 'auditors') {
     const audState: AuditorViewState = {
@@ -197,6 +200,7 @@ export function renderCertificacionView(
       state: audState,
       auditors: audList,
       loading: state.loading,
+      archiveConfig: state.archiveConfig,
     });
   } else {
     // certificates (and graceful fallback for retired 'sites'/'processes'/'shifts'/'drilldown' subviews)
@@ -344,6 +348,7 @@ export function renderCertificacionView(
         certificates: certList,
         organizaciones: orgList,
         loading: state.loading,
+        archiveConfig: state.archiveConfig,
       });
     }
   }

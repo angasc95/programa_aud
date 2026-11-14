@@ -84,6 +84,25 @@ import {
 } from './lib/breadcrumb';
 import { renderBreadcrumbBar } from './views/breadcrumbView';
 import { renderAuditLogModal } from './views/auditLogModal';
+import { renderArchiveModal, renderArchiveToast } from './views/archiveModalView';
+import {
+  ARCHIVE_REASON_MAX_LENGTH,
+  buildRestorePayload,
+  buildSoftDeletePayload,
+  canArchiveRecord,
+  canInspectArchivedRecords,
+  computeLocalArchiveDependencySummary,
+  createInitialArchiveModalState,
+  getArchiveTableDisplayLabel,
+  mergeArchiveDependencySummaries,
+  parseArchiveDependencySummary,
+  sanitizeArchiveReason,
+  type ArchivableTable,
+  type ArchiveModalState,
+  type ArchiveMultiViewConfig,
+  type ArchiveToastState,
+  type ArchivedItemEntry,
+} from './lib/archiveGovernance';
 import {
   SEEDED_ACTOR_DIRECTORY,
   type ActorDirectoryEntry,
@@ -223,6 +242,15 @@ interface AppState {
     actorDirectory?: Record<string, ActorDirectoryEntry>;
     loading: boolean;
     errorMessage: string | null;
+  };
+  archiveGovernance: {
+    showArchived: boolean;
+    modal: ArchiveModalState;
+    toast: ArchiveToastState | null;
+    restoringId: string | null;
+    archivedRecordsByTable: Record<string, ArchivedItemEntry[]>;
+    archivedSnapshotsByKey: Record<string, unknown>;
+    archivedCatalogIds: Set<string>;
   };
   auth: AuthViewState;
   approvals: {
@@ -668,6 +696,15 @@ const state: AppState = {
     sessionAuditLogs: [],
     loading: false,
   },
+  archiveGovernance: {
+    showArchived: false,
+    modal: createInitialArchiveModalState(),
+    toast: null,
+    restoringId: null,
+    archivedRecordsByTable: {},
+    archivedSnapshotsByKey: {},
+    archivedCatalogIds: new Set<string>(),
+  },
   auditPlanning: {
     isModalOpen: false,
   },
@@ -1020,6 +1057,18 @@ function render(): void {
       : scopedProgramacionAudits[0]?.id || '',
   };
 
+  const canInspectArchived = canInspectArchivedRecords(state.profile);
+  const allArchivedEntries: ArchivedItemEntry[] = canInspectArchived
+    ? Object.values(state.archiveGovernance.archivedRecordsByTable).flat()
+    : [];
+  const archiveConfig: ArchiveMultiViewConfig = {
+    canInspectArchived,
+    showArchived: canInspectArchived && state.archiveGovernance.showArchived,
+    archivedItems: allArchivedEntries,
+    actorDirectory: buildActorDirectory(),
+    restoringId: state.archiveGovernance.restoringId,
+  };
+
   let bodyHtml = '';
   if (effectiveRoute === 'approvals' && staff) {
     bodyHtml = renderApprovalsView({
@@ -1060,6 +1109,7 @@ function render(): void {
       requirements: state.domainData.requirements,
       standards: state.domainData.standards,
       loading: state.domainData.loading,
+      archiveConfig,
     });
   } else if (effectiveRoute === 'certificacion') {
     const filteredRecords = filterCertificateRecords(scopedExplorationRecords, {
@@ -1103,6 +1153,7 @@ function render(): void {
       archivedSiteIds: state.domainData.archivedSiteIds,
       archivedProcesoIds: state.domainData.archivedProcesoIds,
       archivedTurnoIds: state.domainData.archivedTurnoIds,
+      archiveConfig,
     });
   } else if (effectiveRoute === 'extra') {
     const coverageCerts: CertificateCoverageInput[] = [];
@@ -1168,6 +1219,8 @@ function render(): void {
       certificates: scopedDetailedCerts,
       auditors: state.domainData.allAuditorsDetailed,
       audits: scopedProgramacionAudits,
+      archivedRecordIds: state.archiveGovernance.archivedCatalogIds,
+      archiveConfig,
       normaState: {
         selectedNormaId: state.extraDomain.selectedNormaId,
         activeChildTab: state.extraDomain.activeNormaTab,
@@ -1252,6 +1305,8 @@ function render(): void {
 
   const breadcrumbBarHtml = renderBreadcrumbBar({ trail: state.breadcrumbs });
   const auditModalHtml = renderAuditLogModal(state.auditLogModal);
+  const archiveModalHtml = renderArchiveModal(state.archiveGovernance.modal);
+  const archiveToastHtml = renderArchiveToast(state.archiveGovernance.toast);
 
   root.innerHTML = `
     ${renderHeader({
@@ -1271,6 +1326,8 @@ function render(): void {
     }
     ${bodyHtml}
     ${auditModalHtml}
+    ${archiveModalHtml}
+    ${archiveToastHtml}
   `;
 
   bindAuthenticatedEvents();
@@ -2026,6 +2083,35 @@ function bindMultiViewDirectoryControls(): void {
         render();
       });
     });
+
+    container
+      .querySelectorAll<HTMLInputElement>('[data-action="toggle-show-archived"]')
+      .forEach((checkbox) => {
+        checkbox.addEventListener('change', () => {
+          if (!canInspectArchivedRecords(state.profile)) {
+            checkbox.checked = false;
+            state.archiveGovernance.showArchived = false;
+            return;
+          }
+          state.archiveGovernance.showArchived = checkbox.checked;
+          if (checkbox.checked) {
+            void loadArchivedRecordsForAdmin();
+          }
+          render();
+        });
+      });
+
+    container
+      .querySelectorAll<HTMLElement>('[data-action="restore-archived-record"]')
+      .forEach((btn) => {
+        btn.addEventListener('click', () => {
+          if (!canInspectArchivedRecords(state.profile)) return;
+          const tableName = btn.dataset.restoreTable as ArchivableTable | undefined;
+          const recordId = btn.dataset.restoreId;
+          if (!tableName || !recordId) return;
+          void handleRestoreArchivedRecord(tableName, recordId);
+        });
+      });
   });
 }
 
@@ -2520,6 +2606,47 @@ function bindAuthenticatedEvents(): void {
   document.getElementById('closeAuditLogModalFooterBtn')?.addEventListener('click', closeAuditLogModal);
   document.getElementById('auditLogModalBackdrop')?.addEventListener('click', (e) => {
     if (e.target === e.currentTarget) closeAuditLogModal();
+  });
+
+  // Unified Safe Archive Modal Triggers & Controls (Phase 5.1)
+  document.querySelectorAll<HTMLElement>('[data-action="open-archive-modal"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!canArchiveRecord(state.profile)) return;
+      const tableName = btn.dataset.archiveTable as ArchivableTable | undefined;
+      const recordId = btn.dataset.archiveId;
+      if (!tableName || !recordId) return;
+      void openArchiveModal({
+        tableName,
+        recordId,
+        entityTypeLabel: btn.dataset.archiveEntityLabel || getArchiveTableDisplayLabel(tableName),
+        recordTitle: btn.dataset.archiveTitle || 'Registro',
+        recordSubtitle: btn.dataset.archiveSubtitle || null,
+      });
+    });
+  });
+
+  const archiveReasonInput = document.getElementById('archiveReasonInput') as HTMLTextAreaElement | null;
+  if (archiveReasonInput) {
+    archiveReasonInput.addEventListener('input', () => {
+      state.archiveGovernance.modal.reason = archiveReasonInput.value.slice(0, ARCHIVE_REASON_MAX_LENGTH);
+      const countEl = document.getElementById('archiveReasonCharCount');
+      if (countEl) {
+        countEl.textContent = String(state.archiveGovernance.modal.reason.length);
+      }
+    });
+  }
+
+  document.getElementById('closeArchiveModalBtn')?.addEventListener('click', closeArchiveModal);
+  document.getElementById('cancelArchiveModalBtn')?.addEventListener('click', closeArchiveModal);
+  document.getElementById('archiveGovernanceModalBackdrop')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeArchiveModal();
+  });
+  document.getElementById('confirmArchiveModalBtn')?.addEventListener('click', () => {
+    void confirmArchiveRecord();
+  });
+  document.getElementById('dismissArchiveToastBtn')?.addEventListener('click', () => {
+    state.archiveGovernance.toast = null;
+    render();
   });
 
   // Live Scope Textarea Character Counter
@@ -3080,11 +3207,20 @@ function bindAuthenticatedEvents(): void {
     .querySelectorAll<HTMLElement>('[data-action="open-archive-accreditacion"]')
     .forEach((btn) => {
       btn.addEventListener('click', () => {
-        if (!isApprovedStaff()) return;
-        state.extraDomain.accredArchiveConfirmOpen = true;
-        state.extraDomain.accredArchiveErrorMessage = null;
-        state.extraDomain.accredSaveSuccessMessage = null;
-        render();
+        if (!canArchiveRecord(state.profile)) return;
+        const accredId = state.extraDomain.selectedAccreditationId;
+        if (!accredId) return;
+        const current = state.domainData.allAcreditaciones.find(
+          (a) => a.id === accredId && !a.deleted_at
+        );
+        if (!current) return;
+        void openArchiveModal({
+          tableName: 'acreditacion_norma_iaf',
+          recordId: current.id,
+          entityTypeLabel: 'Acreditación ISO/IEC 17011',
+          recordTitle: current.numero_acreditacion,
+          recordSubtitle: `${current.organismo_codigo} · ${current.norma_codigo}`,
+        });
       });
     });
 
@@ -4329,11 +4465,24 @@ function bindAuthenticatedEvents(): void {
 
   document.querySelectorAll<HTMLElement>('[data-action="open-archive-sitio"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (!isApprovedStaff()) return;
-      state.sitioDomain.archiveConfirmOpen = true;
-      state.sitioDomain.archiveErrorMessage = null;
-      state.sitioDomain.saveSuccessMessage = null;
-      render();
+      if (!canArchiveRecord(state.profile)) return;
+      const sitioId = state.sitioDomain.selectedSitioId;
+      if (!sitioId) return;
+      const currentSitio = resolveSitioDetailById({
+        sitioId,
+        certificates: state.domainData.allCertificadosDetailed,
+        programacionAudits: state.domainData.programacionAudits,
+        shiftCatalog: state.domainData.shiftCatalog,
+        archivedSiteIds: state.domainData.archivedSiteIds,
+      });
+      if (!currentSitio) return;
+      void openArchiveModal({
+        tableName: 'sitio',
+        recordId: currentSitio.id,
+        entityTypeLabel: 'Sitio Operativo',
+        recordTitle: `Sitio ${currentSitio.numero_sitio} · ${currentSitio.nombre_sitio}`,
+        recordSubtitle: currentSitio.numero_certificado,
+      });
     });
   });
 
@@ -4918,11 +5067,25 @@ function bindAuthenticatedEvents(): void {
 
   document.querySelectorAll<HTMLElement>('[data-action="open-archive-proceso"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (!isApprovedStaff()) return;
-      state.procesoDomain.archiveConfirmOpen = true;
-      state.procesoDomain.archiveErrorMessage = null;
-      state.procesoDomain.saveSuccessMessage = null;
-      render();
+      if (!canArchiveRecord(state.profile)) return;
+      const procesoId = state.procesoDomain.selectedProcesoId;
+      if (!procesoId) return;
+      const currentProceso = resolveProcesoDetailById({
+        procesoId,
+        certificates: state.domainData.allCertificadosDetailed,
+        programacionAudits: state.domainData.programacionAudits,
+        phase5Findings: state.domainData.phase5Findings,
+        requirementsCatalog: state.domainData.requirementsCatalog,
+        archivedProcesoIds: state.domainData.archivedProcesoIds,
+      });
+      if (!currentProceso) return;
+      void openArchiveModal({
+        tableName: 'proceso',
+        recordId: currentProceso.id,
+        entityTypeLabel: 'Proceso Certificado',
+        recordTitle: currentProceso.nombre_proceso,
+        recordSubtitle: `${currentProceso.tipo} · ${currentProceso.numero_certificado}`,
+      });
     });
   });
 
@@ -5431,11 +5594,26 @@ function bindAuthenticatedEvents(): void {
 
   document.querySelectorAll<HTMLElement>('[data-action="open-archive-turno"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (!isApprovedStaff()) return;
-      state.turnoDomain.archiveConfirmOpen = true;
-      state.turnoDomain.archiveErrorMessage = null;
-      state.turnoDomain.saveSuccessMessage = null;
-      render();
+      if (!canArchiveRecord(state.profile)) return;
+      const turnoId = state.turnoDomain.selectedTurnoId;
+      if (!turnoId) return;
+      const currentTurno = resolveTurnoDetailById({
+        turnoId,
+        originatingSitioId: state.turnoDomain.originatingSitioId,
+        certificates: state.domainData.allCertificadosDetailed,
+        programacionAudits: state.domainData.programacionAudits,
+        shiftCatalog: state.domainData.shiftCatalog,
+        archivedSiteIds: state.domainData.archivedSiteIds,
+        archivedTurnoIds: state.domainData.archivedTurnoIds,
+      });
+      if (!currentTurno) return;
+      void openArchiveModal({
+        tableName: 'turno',
+        recordId: currentTurno.id,
+        entityTypeLabel: 'Turno Operativo',
+        recordTitle: `${formatTurnoTime(currentTurno.hora_entrada)} – ${formatTurnoTime(currentTurno.hora_salida)}`,
+        recordSubtitle: currentTurno.descripcion || null,
+      });
     });
   });
 
@@ -6368,8 +6546,8 @@ function bindPhase5AuditoriasEvents(): void {
         try {
           const [{ data: dbAudit }, { data: dbAuditor }, { data: existingMember }] =
             await Promise.all([
-              supabase.from('auditoria').select('id').eq('id', auditId).maybeSingle(),
-              supabase.from('auditor').select('id').eq('id', auditor.id).maybeSingle(),
+              supabase.from('auditoria').select('id').eq('id', auditId).is('deleted_at', null).maybeSingle(),
+              supabase.from('auditor').select('id').eq('id', auditor.id).is('deleted_at', null).maybeSingle(),
               supabase
                 .from('equipo_auditor')
                 .select('id_auditor')
@@ -6924,9 +7102,9 @@ function bindPhase5AuditoriasEvents(): void {
       void (async () => {
         try {
           const [{ data: dbAudit }, { data: dbReq }, { data: dbProc }] = await Promise.all([
-            supabase.from('auditoria').select('id').eq('id', auditId).maybeSingle(),
-            supabase.from('requisito').select('id').eq('id', reqId).maybeSingle(),
-            supabase.from('proceso').select('id').eq('id', procId).maybeSingle(),
+            supabase.from('auditoria').select('id').eq('id', auditId).is('deleted_at', null).maybeSingle(),
+            supabase.from('requisito').select('id').eq('id', reqId).is('deleted_at', null).maybeSingle(),
+            supabase.from('proceso').select('id').eq('id', procId).is('deleted_at', null).maybeSingle(),
           ]);
           if (dbAudit && dbReq && dbProc) {
             await supabase.from('hallazgo').insert({
@@ -7608,6 +7786,746 @@ async function openAuditLogModal(
   }
 }
 
+const STRICT_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function buildNormaEntitiesForDependencyCheck(): NormaEntity[] {
+  return state.domainData.standards.map((s) => ({
+    id: s.id,
+    codigo: s.codigo || s.norma,
+    titulo: s.titulo || s.esquema || s.norma,
+    estatus: (s.estatus as 'Vigente' | 'En Revisión' | 'Obsoleta') || 'Vigente',
+    esquema: s.esquema,
+    fecha_publicacion: s.fecha_publicacion || '2015-09-15',
+    norma: s.norma,
+    clausulas_count: s.clausulas_count ?? 0,
+    acreditaciones_count: s.acreditaciones_count ?? 0,
+  }));
+}
+
+function closeArchiveModal(): void {
+  if (state.archiveGovernance.modal.submitting) return;
+  state.archiveGovernance.modal = createInitialArchiveModalState();
+  render();
+}
+
+async function openArchiveModal(opts: {
+  tableName: ArchivableTable;
+  recordId: string;
+  entityTypeLabel: string;
+  recordTitle: string;
+  recordSubtitle?: string | null;
+}): Promise<void> {
+  if (!canArchiveRecord(state.profile)) return;
+
+  state.archiveGovernance.modal = {
+    isOpen: true,
+    tableName: opts.tableName,
+    recordId: opts.recordId,
+    entityTypeLabel: opts.entityTypeLabel,
+    recordTitle: opts.recordTitle,
+    recordSubtitle: opts.recordSubtitle ?? null,
+    loadingSummary: true,
+    summary: null,
+    reason: '',
+    submitting: false,
+    errorMessage: null,
+  };
+  render();
+
+  const localSummary = computeLocalArchiveDependencySummary(
+    opts.tableName,
+    opts.recordId,
+    {
+      organizaciones: state.domainData.allOrganizaciones,
+      certificates: state.domainData.allCertificadosDetailed,
+      auditors: state.domainData.allAuditorsDetailed,
+      audits: state.domainData.programacionAudits,
+      findings: state.domainData.phase5Findings,
+      normas: buildNormaEntitiesForDependencyCheck(),
+      requisitos: state.domainData.requirementsCatalog,
+      subsectores: INITIAL_SUBSECTORES_IAF,
+      acreditaciones: state.domainData.allAcreditaciones,
+      estatusList: INITIAL_ESTATUS_CATALOG,
+      tiposList: INITIAL_TIPOS_AUDITORIA_CATALOG,
+      metodologiasList: INITIAL_METODOLOGIAS_CATALOG,
+      archivedSiteIds: state.domainData.archivedSiteIds,
+      archivedProcesoIds: state.domainData.archivedProcesoIds,
+      archivedTurnoIds: state.domainData.archivedTurnoIds,
+    }
+  );
+
+  let finalSummary = localSummary;
+  if (STRICT_UUID_PATTERN.test(opts.recordId)) {
+    try {
+      const { data, error } = await supabase.rpc('get_archive_dependency_summary', {
+        p_table: opts.tableName,
+        p_record_id: opts.recordId,
+      });
+      if (!error && data !== null && data !== undefined) {
+        finalSummary = mergeArchiveDependencySummaries(
+          parseArchiveDependencySummary(data),
+          localSummary
+        );
+      }
+    } catch {
+      finalSummary = localSummary;
+    }
+  }
+
+  if (
+    !state.archiveGovernance.modal.isOpen ||
+    state.archiveGovernance.modal.tableName !== opts.tableName ||
+    state.archiveGovernance.modal.recordId !== opts.recordId
+  ) {
+    return;
+  }
+
+  state.archiveGovernance.modal = {
+    ...state.archiveGovernance.modal,
+    loadingSummary: false,
+    summary: finalSummary,
+  };
+  render();
+}
+
+interface ArchivedRecordSnapshot {
+  org?: OrganizacionEntity;
+  orgLegacy?: OrganizationRecord;
+  certDetail?: CertificadoDetailEntity;
+  certRecord?: CertificateRecord;
+  auditorDetail?: AuditorDetailEntity;
+  auditorLegacy?: AuditorRecord;
+  auditProg?: ProgramacionAuditEntity;
+  auditLegacy?: AuditRecord;
+  siteLinks?: Array<{ certId: string; site: CertificadoDetailEntity['sitios'][number] }>;
+  siteLegacy?: SiteRecord;
+  procesoLinks?: Array<{ certId: string; proc: CertificadoDetailEntity['procesos'][number] }>;
+  procLegacy?: ProcessRecord;
+  shiftItem?: TurnoCatalogItem;
+  shiftLegacy?: ShiftRecord;
+  accred?: AcreditacionDetailEntity;
+  standard?: StandardRecord;
+  sector?: IafRecord;
+}
+
+async function confirmArchiveRecord(): Promise<void> {
+  if (!canArchiveRecord(state.profile)) return;
+  const modal = state.archiveGovernance.modal;
+  if (
+    !modal.isOpen ||
+    modal.submitting ||
+    modal.loadingSummary ||
+    !modal.summary?.can_archive
+  ) {
+    return;
+  }
+
+  const { tableName, recordId, entityTypeLabel, recordTitle, recordSubtitle, reason } = modal;
+  const payload = buildSoftDeletePayload(reason);
+
+  state.archiveGovernance.modal = {
+    ...modal,
+    submitting: true,
+    errorMessage: null,
+  };
+  render();
+
+  if (STRICT_UUID_PATTERN.test(recordId)) {
+    const { error } = await supabase
+      .from(tableName)
+      .update(payload)
+      .eq('id', recordId);
+
+    if (error) {
+      state.archiveGovernance.modal = {
+        ...state.archiveGovernance.modal,
+        submitting: false,
+        errorMessage: translateDatabaseError(error),
+      };
+      render();
+      return;
+    }
+  }
+
+  const snapKey = `${tableName}:${recordId}`;
+  const snapshot: ArchivedRecordSnapshot = {};
+
+  switch (tableName) {
+    case 'organizacion': {
+      snapshot.org = state.domainData.allOrganizaciones.find((o) => o.id === recordId);
+      snapshot.orgLegacy = state.domainData.organizations.find((o) => o.id === recordId);
+      state.domainData.allOrganizaciones = state.domainData.allOrganizaciones.filter(
+        (o) => o.id !== recordId
+      );
+      state.domainData.organizations = state.domainData.organizations.filter(
+        (o) => o.id !== recordId
+      );
+      break;
+    }
+    case 'certificado': {
+      snapshot.certDetail = state.domainData.allCertificadosDetailed.find(
+        (c) => c.id === recordId
+      );
+      snapshot.certRecord = state.exploration.records.find((c) => c.id === recordId);
+      state.domainData.allCertificadosDetailed =
+        state.domainData.allCertificadosDetailed.filter((c) => c.id !== recordId);
+      state.exploration.records = state.exploration.records.filter(
+        (c) => c.id !== recordId
+      );
+      break;
+    }
+    case 'auditor': {
+      snapshot.auditorDetail = state.domainData.allAuditorsDetailed.find(
+        (a) => a.id === recordId
+      );
+      snapshot.auditorLegacy = state.domainData.auditors.find((a) => a.id === recordId);
+      state.domainData.allAuditorsDetailed = state.domainData.allAuditorsDetailed.filter(
+        (a) => a.id !== recordId
+      );
+      state.domainData.auditors = state.domainData.auditors.filter(
+        (a) => a.id !== recordId
+      );
+      break;
+    }
+    case 'auditoria': {
+      snapshot.auditProg = state.domainData.programacionAudits.find(
+        (a) => a.id === recordId
+      );
+      snapshot.auditLegacy = state.domainData.audits.find((a) => a.id === recordId);
+      state.domainData.programacionAudits = state.domainData.programacionAudits.filter(
+        (a) => a.id !== recordId
+      );
+      state.domainData.audits = state.domainData.audits.filter((a) => a.id !== recordId);
+      break;
+    }
+    case 'sitio': {
+      const siteLinks: Array<{
+        certId: string;
+        site: CertificadoDetailEntity['sitios'][number];
+      }> = [];
+      state.domainData.allCertificadosDetailed =
+        state.domainData.allCertificadosDetailed.map((cert) => {
+          const targetSite = cert.sitios.find((s) => s.id === recordId);
+          if (!targetSite) return cert;
+          siteLinks.push({ certId: cert.id, site: targetSite });
+          const nextSitios = cert.sitios.filter((s) => s.id !== recordId);
+          return { ...cert, sitios: nextSitios };
+        });
+      snapshot.siteLinks = siteLinks;
+      snapshot.siteLegacy = state.domainData.sites.find((s) => s.id === recordId);
+      state.domainData.sites = state.domainData.sites.filter((s) => s.id !== recordId);
+      state.domainData.archivedSiteIds.add(recordId);
+      if (siteLinks.length > 0) {
+        const affectedCertIds = new Set(siteLinks.map((l) => l.certId));
+        state.exploration.records = state.exploration.records.map((rec) => {
+          if (!affectedCertIds.has(rec.id)) return rec;
+          const updatedCert = state.domainData.allCertificadosDetailed.find(
+            (c) => c.id === rec.id
+          );
+          return updatedCert
+            ? { ...rec, sitios_count: updatedCert.sitios.length }
+            : rec;
+        });
+      }
+      break;
+    }
+    case 'proceso': {
+      const procesoLinks: Array<{
+        certId: string;
+        proc: CertificadoDetailEntity['procesos'][number];
+      }> = [];
+      state.domainData.allCertificadosDetailed =
+        state.domainData.allCertificadosDetailed.map((cert) => {
+          const targetProc = cert.procesos.find((p) => p.id === recordId);
+          if (!targetProc) return cert;
+          procesoLinks.push({ certId: cert.id, proc: targetProc });
+          return {
+            ...cert,
+            procesos: cert.procesos.filter((p) => p.id !== recordId),
+          };
+        });
+      snapshot.procesoLinks = procesoLinks;
+      snapshot.procLegacy = state.domainData.processes.find((p) => p.id === recordId);
+      state.domainData.processes = state.domainData.processes.filter(
+        (p) => p.id !== recordId
+      );
+      state.domainData.archivedProcesoIds.add(recordId);
+      break;
+    }
+    case 'turno': {
+      snapshot.shiftItem = state.domainData.shiftCatalog.find((t) => t.id === recordId);
+      snapshot.shiftLegacy = state.domainData.shifts.find((s) => s.id === recordId);
+      state.domainData.shiftCatalog = state.domainData.shiftCatalog.filter(
+        (t) => t.id !== recordId
+      );
+      state.domainData.shifts = state.domainData.shifts.filter((s) => s.id !== recordId);
+      state.domainData.archivedTurnoIds.add(recordId);
+      break;
+    }
+    case 'acreditacion_norma_iaf': {
+      snapshot.accred = state.domainData.allAcreditaciones.find((a) => a.id === recordId);
+      state.domainData.allAcreditaciones = state.domainData.allAcreditaciones.map((a) =>
+        a.id === recordId
+          ? { ...a, deleted_at: payload.deleted_at, delete_reason: payload.delete_reason }
+          : a
+      );
+      state.archiveGovernance.archivedCatalogIds.add(recordId);
+      break;
+    }
+    case 'norma': {
+      snapshot.standard = state.domainData.standards.find((s) => s.id === recordId);
+      state.domainData.standards = state.domainData.standards.filter(
+        (s) => s.id !== recordId
+      );
+      state.archiveGovernance.archivedCatalogIds.add(recordId);
+      break;
+    }
+    case 'sector_iaf': {
+      snapshot.sector = state.domainData.iafSectors.find((s) => s.id === recordId);
+      state.domainData.iafSectors = state.domainData.iafSectors.filter(
+        (s) => s.id !== recordId
+      );
+      state.archiveGovernance.archivedCatalogIds.add(recordId);
+      break;
+    }
+    case 'estatus':
+    case 'tipo_auditoria':
+    case 'metodologia_auditoria': {
+      state.archiveGovernance.archivedCatalogIds.add(recordId);
+      break;
+    }
+  }
+
+  state.archiveGovernance.archivedSnapshotsByKey[snapKey] = snapshot;
+
+  const archivedEntry: ArchivedItemEntry = {
+    tableName,
+    id: recordId,
+    title: recordTitle,
+    subtitle: recordSubtitle,
+    deletedAt: payload.deleted_at,
+    deletedBy: state.user?.id || null,
+    deletedByName: state.profile?.nombre || null,
+    deleteReason: payload.delete_reason,
+  };
+  const existingForTable = state.archiveGovernance.archivedRecordsByTable[tableName] || [];
+  state.archiveGovernance.archivedRecordsByTable[tableName] = [
+    archivedEntry,
+    ...existingForTable.filter((item) => item.id !== recordId),
+  ];
+
+  recordPhase5SessionLog(
+    tableName,
+    recordId,
+    'UPDATE',
+    { deleted_at: null },
+    { deleted_at: payload.deleted_at, delete_reason: payload.delete_reason }
+  );
+
+  state.archiveGovernance.modal = createInitialArchiveModalState();
+  backtrackToParentBreadcrumb();
+  state.archiveGovernance.toast = {
+    message: `${entityTypeLabel} "${recordTitle}" archivado correctamente.`,
+    tone: 'success',
+  };
+  render();
+}
+
+async function loadArchivedRecordsForAdmin(): Promise<void> {
+  if (!canInspectArchivedRecords(state.profile)) {
+    state.archiveGovernance.showArchived = false;
+    state.archiveGovernance.archivedRecordsByTable = {};
+    return;
+  }
+
+  try {
+    const [
+      orgsRes,
+      certsRes,
+      auditorsRes,
+      auditsRes,
+      normasRes,
+      sectoresRes,
+      accredRes,
+      sitiosRes,
+      procesosRes,
+      turnosRes,
+      estatusRes,
+      tiposRes,
+      metodologiasRes,
+    ] = await Promise.all([
+      supabase
+        .from('organizacion')
+        .select('id, nombre, rif, deleted_at, deleted_by, delete_reason')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }),
+      supabase
+        .from('certificado')
+        .select('id, numero_certificado, alcance, deleted_at, deleted_by, delete_reason')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }),
+      supabase
+        .from('auditor')
+        .select('id, nombre, deleted_at, deleted_by, delete_reason')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }),
+      supabase
+        .from('auditoria')
+        .select('id, fecha_programacion, certificado:id_certificado(numero_certificado), deleted_at, deleted_by, delete_reason')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }),
+      supabase
+        .from('norma')
+        .select('id, codigo, titulo, norma, deleted_at, deleted_by, delete_reason')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }),
+      supabase
+        .from('sector_iaf')
+        .select('id, sector, deleted_at, deleted_by, delete_reason')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }),
+      supabase
+        .from('acreditacion_norma_iaf')
+        .select('id, numero_acreditacion, estatus, deleted_at, deleted_by, delete_reason')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }),
+      supabase
+        .from('sitio')
+        .select('id, numero_sitio, nombre_sitio, deleted_at, deleted_by, delete_reason')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }),
+      supabase
+        .from('proceso')
+        .select('id, nombre_proceso, tipo, deleted_at, deleted_by, delete_reason')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }),
+      supabase
+        .from('turno')
+        .select('id, hora_entrada, hora_salida, deleted_at, deleted_by, delete_reason')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }),
+      supabase
+        .from('estatus')
+        .select('id, estatus, deleted_at, deleted_by, delete_reason')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }),
+      supabase
+        .from('tipo_auditoria')
+        .select('id, tipo, deleted_at, deleted_by, delete_reason')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }),
+      supabase
+        .from('metodologia_auditoria')
+        .select('id, metodologia, deleted_at, deleted_by, delete_reason')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }),
+    ]);
+
+    const buildEntries = (
+      tableName: ArchivableTable,
+      rows: unknown,
+      mapper: (row: Record<string, unknown>) => { title: string; subtitle?: string | null; code?: string | null }
+    ): ArchivedItemEntry[] => {
+      const dbRows = Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : [];
+      const mappedDb: ArchivedItemEntry[] = dbRows.map((r) => {
+        const meta = mapper(r);
+        return {
+          tableName,
+          id: String(r.id),
+          title: meta.title,
+          subtitle: meta.subtitle ?? null,
+          code: meta.code ?? null,
+          deletedAt: String(r.deleted_at || ''),
+          deletedBy: r.deleted_by ? String(r.deleted_by) : null,
+          deletedByName: null,
+          deleteReason: r.delete_reason ? String(r.delete_reason) : null,
+        };
+      });
+      const dbIds = new Set(mappedDb.map((i) => i.id));
+      const existingLocal = (state.archiveGovernance.archivedRecordsByTable[tableName] || []).filter(
+        (item) => !STRICT_UUID_PATTERN.test(item.id) && !dbIds.has(item.id)
+      );
+      return [...mappedDb, ...existingLocal];
+    };
+
+    const nextByTable: Record<string, ArchivedItemEntry[]> = {
+      organizacion: buildEntries('organizacion', orgsRes.data, (r) => ({
+        title: String(r.nombre || 'Organización Archivada'),
+        subtitle: r.rif ? String(r.rif) : null,
+      })),
+      certificado: buildEntries('certificado', certsRes.data, (r) => ({
+        title: String(r.numero_certificado || 'Certificado Archivado'),
+        subtitle: r.alcance ? String(r.alcance).slice(0, 80) : null,
+        code: String(r.numero_certificado || ''),
+      })),
+      auditor: buildEntries('auditor', auditorsRes.data, (r) => ({
+        title: String(r.nombre || 'Auditor Archivado'),
+      })),
+      auditoria: buildEntries('auditoria', auditsRes.data, (r) => {
+        const certObj = (r.certificado as Record<string, unknown> | null) || null;
+        return {
+          title: certObj?.numero_certificado
+            ? `Auditoría · ${String(certObj.numero_certificado)}`
+            : 'Auditoría Archivada',
+          subtitle: r.fecha_programacion ? `Programada: ${String(r.fecha_programacion)}` : null,
+        };
+      }),
+      norma: buildEntries('norma', normasRes.data, (r) => ({
+        title: String(r.codigo || r.norma || 'Norma Archivada'),
+        subtitle: r.titulo ? String(r.titulo) : null,
+        code: String(r.codigo || r.norma || ''),
+      })),
+      sector_iaf: buildEntries('sector_iaf', sectoresRes.data, (r) => ({
+        title: `Sector IAF ${String(r.sector ?? '')}`.trim(),
+      })),
+      acreditacion_norma_iaf: buildEntries('acreditacion_norma_iaf', accredRes.data, (r) => ({
+        title: String(r.numero_acreditacion || 'Acreditación Archivada'),
+        subtitle: r.estatus ? `Estatus: ${String(r.estatus)}` : null,
+        code: String(r.numero_acreditacion || ''),
+      })),
+      sitio: buildEntries('sitio', sitiosRes.data, (r) => ({
+        title: `Sitio ${String(r.numero_sitio ?? '')} — ${String(r.nombre_sitio || 'Sitio')}`,
+      })),
+      proceso: buildEntries('proceso', procesosRes.data, (r) => ({
+        title: String(r.nombre_proceso || 'Proceso Archivado'),
+        subtitle: r.tipo ? String(r.tipo) : null,
+      })),
+      turno: buildEntries('turno', turnosRes.data, (r) => ({
+        title: `${formatTurnoTime(String(r.hora_entrada || '00:00'))} – ${formatTurnoTime(String(r.hora_salida || '00:00'))}`,
+      })),
+      estatus: buildEntries('estatus', estatusRes.data, (r) => ({
+        title: String(r.estatus || 'Estatus Archivado'),
+      })),
+      tipo_auditoria: buildEntries('tipo_auditoria', tiposRes.data, (r) => ({
+        title: String(r.tipo || 'Tipo Archivado'),
+      })),
+      metodologia_auditoria: buildEntries('metodologia_auditoria', metodologiasRes.data, (r) => ({
+        title: String(r.metodologia || 'Metodología Archivada'),
+      })),
+    };
+
+    state.archiveGovernance.archivedRecordsByTable = nextByTable;
+    render();
+  } catch {
+    render();
+  }
+}
+
+async function handleRestoreArchivedRecord(
+  tableName: ArchivableTable,
+  recordId: string
+): Promise<void> {
+  if (!canInspectArchivedRecords(state.profile)) return;
+
+  const existingEntry = (
+    state.archiveGovernance.archivedRecordsByTable[tableName] || []
+  ).find((i) => i.id === recordId);
+  const title = existingEntry?.title || 'Registro';
+
+  state.archiveGovernance.restoringId = recordId;
+  render();
+
+  const restorePayload = buildRestorePayload();
+  if (STRICT_UUID_PATTERN.test(recordId)) {
+    const { error } = await supabase
+      .from(tableName)
+      .update(restorePayload)
+      .eq('id', recordId);
+
+    if (error) {
+      state.archiveGovernance.restoringId = null;
+      state.archiveGovernance.toast = {
+        message: translateDatabaseError(error),
+        tone: 'warning',
+      };
+      render();
+      return;
+    }
+  }
+
+  state.archiveGovernance.archivedRecordsByTable[tableName] = (
+    state.archiveGovernance.archivedRecordsByTable[tableName] || []
+  ).filter((item) => item.id !== recordId);
+  state.archiveGovernance.archivedCatalogIds.delete(recordId);
+
+  const snapKey = `${tableName}:${recordId}`;
+  const snapshot = state.archiveGovernance.archivedSnapshotsByKey[snapKey] as
+    | ArchivedRecordSnapshot
+    | undefined;
+
+  if (snapshot) {
+    switch (tableName) {
+      case 'organizacion': {
+        if (snapshot.org && !state.domainData.allOrganizaciones.some((o) => o.id === recordId)) {
+          state.domainData.allOrganizaciones = [snapshot.org, ...state.domainData.allOrganizaciones];
+        }
+        if (snapshot.orgLegacy && !state.domainData.organizations.some((o) => o.id === recordId)) {
+          state.domainData.organizations = [snapshot.orgLegacy, ...state.domainData.organizations];
+        }
+        break;
+      }
+      case 'certificado': {
+        if (
+          snapshot.certDetail &&
+          !state.domainData.allCertificadosDetailed.some((c) => c.id === recordId)
+        ) {
+          state.domainData.allCertificadosDetailed = [
+            snapshot.certDetail,
+            ...state.domainData.allCertificadosDetailed,
+          ];
+        }
+        if (
+          snapshot.certRecord &&
+          !state.exploration.records.some((c) => c.id === recordId)
+        ) {
+          state.exploration.records = [snapshot.certRecord, ...state.exploration.records];
+        }
+        break;
+      }
+      case 'auditor': {
+        if (
+          snapshot.auditorDetail &&
+          !state.domainData.allAuditorsDetailed.some((a) => a.id === recordId)
+        ) {
+          state.domainData.allAuditorsDetailed = [
+            snapshot.auditorDetail,
+            ...state.domainData.allAuditorsDetailed,
+          ];
+        }
+        if (
+          snapshot.auditorLegacy &&
+          !state.domainData.auditors.some((a) => a.id === recordId)
+        ) {
+          state.domainData.auditors = [snapshot.auditorLegacy, ...state.domainData.auditors];
+        }
+        break;
+      }
+      case 'auditoria': {
+        if (
+          snapshot.auditProg &&
+          !state.domainData.programacionAudits.some((a) => a.id === recordId)
+        ) {
+          state.domainData.programacionAudits = [
+            snapshot.auditProg,
+            ...state.domainData.programacionAudits,
+          ];
+        }
+        if (
+          snapshot.auditLegacy &&
+          !state.domainData.audits.some((a) => a.id === recordId)
+        ) {
+          state.domainData.audits = [snapshot.auditLegacy, ...state.domainData.audits];
+        }
+        break;
+      }
+      case 'sitio': {
+        state.domainData.archivedSiteIds.delete(recordId);
+        if (snapshot.siteLinks && snapshot.siteLinks.length > 0) {
+          state.domainData.allCertificadosDetailed =
+            state.domainData.allCertificadosDetailed.map((cert) => {
+              const link = snapshot.siteLinks?.find((l) => l.certId === cert.id);
+              if (!link || cert.sitios.some((s) => s.id === recordId)) return cert;
+              return { ...cert, sitios: [...cert.sitios, link.site] };
+            });
+          const affectedCertIds = new Set(snapshot.siteLinks.map((l) => l.certId));
+          state.exploration.records = state.exploration.records.map((rec) => {
+            if (!affectedCertIds.has(rec.id)) return rec;
+            const updatedCert = state.domainData.allCertificadosDetailed.find(
+              (c) => c.id === rec.id
+            );
+            return updatedCert
+              ? { ...rec, sitios_count: updatedCert.sitios.length }
+              : rec;
+          });
+        }
+        if (snapshot.siteLegacy && !state.domainData.sites.some((s) => s.id === recordId)) {
+          state.domainData.sites = [snapshot.siteLegacy, ...state.domainData.sites];
+        }
+        break;
+      }
+      case 'proceso': {
+        state.domainData.archivedProcesoIds.delete(recordId);
+        if (snapshot.procesoLinks && snapshot.procesoLinks.length > 0) {
+          state.domainData.allCertificadosDetailed =
+            state.domainData.allCertificadosDetailed.map((cert) => {
+              const link = snapshot.procesoLinks?.find((l) => l.certId === cert.id);
+              if (!link || cert.procesos.some((p) => p.id === recordId)) return cert;
+              return { ...cert, procesos: [...cert.procesos, link.proc] };
+            });
+        }
+        if (snapshot.procLegacy && !state.domainData.processes.some((p) => p.id === recordId)) {
+          state.domainData.processes = [snapshot.procLegacy, ...state.domainData.processes];
+        }
+        break;
+      }
+      case 'turno': {
+        state.domainData.archivedTurnoIds.delete(recordId);
+        if (snapshot.shiftItem && !state.domainData.shiftCatalog.some((t) => t.id === recordId)) {
+          state.domainData.shiftCatalog = [snapshot.shiftItem, ...state.domainData.shiftCatalog];
+        }
+        if (snapshot.shiftLegacy && !state.domainData.shifts.some((s) => s.id === recordId)) {
+          state.domainData.shifts = [snapshot.shiftLegacy, ...state.domainData.shifts];
+        }
+        break;
+      }
+      case 'acreditacion_norma_iaf': {
+        state.domainData.allAcreditaciones = state.domainData.allAcreditaciones.map((a) =>
+          a.id === recordId ? { ...a, deleted_at: null, delete_reason: null } : a
+        );
+        break;
+      }
+      case 'norma': {
+        if (snapshot.standard && !state.domainData.standards.some((s) => s.id === recordId)) {
+          state.domainData.standards = [snapshot.standard, ...state.domainData.standards];
+        }
+        break;
+      }
+      case 'sector_iaf': {
+        if (snapshot.sector && !state.domainData.iafSectors.some((s) => s.id === recordId)) {
+          state.domainData.iafSectors = [snapshot.sector, ...state.domainData.iafSectors];
+        }
+        break;
+      }
+      case 'estatus':
+      case 'tipo_auditoria':
+      case 'metodologia_auditoria':
+        break;
+    }
+    Reflect.deleteProperty(state.archiveGovernance.archivedSnapshotsByKey, snapKey);
+  } else {
+    state.domainData.archivedSiteIds.delete(recordId);
+    state.domainData.archivedProcesoIds.delete(recordId);
+    state.domainData.archivedTurnoIds.delete(recordId);
+  }
+
+  recordPhase5SessionLog(
+    tableName,
+    recordId,
+    'UPDATE',
+    {
+      deleted_at: existingEntry?.deletedAt || new Date().toISOString(),
+      delete_reason: existingEntry?.deleteReason || null,
+    },
+    restorePayload
+  );
+
+  state.archiveGovernance.restoringId = null;
+  state.archiveGovernance.toast = {
+    message: `Registro "${title}" restaurado al catálogo activo.`,
+    tone: 'success',
+  };
+  render();
+
+  if (STRICT_UUID_PATTERN.test(recordId)) {
+    void loadLiveCertificates();
+    void loadDomainData();
+    if (state.archiveGovernance.showArchived) {
+      void loadArchivedRecordsForAdmin();
+    }
+  }
+}
+
 async function signInWithCredentials(
   email: string,
   password: string,
@@ -7739,6 +8657,15 @@ function resetClientSessionState(): void {
     actorDirectory: { ...SEEDED_ACTOR_DIRECTORY },
     loading: false,
     errorMessage: null,
+  };
+  state.archiveGovernance = {
+    showArchived: false,
+    modal: createInitialArchiveModalState(),
+    toast: null,
+    restoringId: null,
+    archivedRecordsByTable: {},
+    archivedSnapshotsByKey: {},
+    archivedCatalogIds: new Set<string>(),
   };
   syncUrlHash('dashboard', null, true);
   state.approvals.profiles = [];
@@ -8125,7 +9052,8 @@ async function loadUserSession(user: User | null): Promise<void> {
       const { data: orgAccessRows } = await supabase
         .from('client_organization_access')
         .select('id_organizacion, estado, fecha_solicitud, organizacion:id_organizacion ( nombre, rif )')
-        .eq('id_usuario', user.id);
+        .eq('id_usuario', user.id)
+        .is('deleted_at', null);
       const rows = Array.isArray(orgAccessRows) ? orgAccessRows : [];
       state.clientAccessRows = rows.map((row: Record<string, unknown>) => {
         const org = (row.organizacion as Record<string, unknown> | null) || null;
@@ -8182,16 +9110,19 @@ async function loadLiveCertificates(): Promise<void> {
   render();
 
   try {
-    const { data, error } = await supabase.from('certificado').select(`
-      id,
-      numero_certificado,
-      multisitio,
-      created_at,
-      organizacion:id_organizacion ( id, nombre, rif, direccion_fiscal ),
-      norma:id_norma ( id, esquema, norma ),
-      estatus:id_estatus ( id, estatus ),
-      sector_iaf:id_sector_iaf ( id, sector )
-    `);
+    const { data, error } = await supabase
+      .from('certificado')
+      .select(`
+        id,
+        numero_certificado,
+        multisitio,
+        created_at,
+        organizacion:id_organizacion ( id, nombre, rif, direccion_fiscal ),
+        norma:id_norma ( id, esquema, norma ),
+        estatus:id_estatus ( id, estatus ),
+        sector_iaf:id_sector_iaf ( id, sector )
+      `)
+      .is('deleted_at', null);
 
     if (!error && Array.isArray(data) && data.length > 0) {
       const loaded: CertificateRecord[] = await Promise.all(
@@ -8225,7 +9156,8 @@ async function loadLiveCertificates(): Promise<void> {
             const { count } = await supabase
               .from('sitio')
               .select('id', { count: 'exact', head: true })
-              .eq('id_certificado', String(row.id));
+              .eq('id_certificado', String(row.id))
+              .is('deleted_at', null);
             if (typeof count === 'number' && count > 0) {
               sitesCount = count;
             }
@@ -8298,77 +9230,113 @@ async function loadDomainData(): Promise<void> {
       organismosRes,
       acreditacionesRes,
     ] = await Promise.all([
-      supabase.from('auditoria').select(`
-        id,
-        id_certificado,
-        fecha_programacion,
-        fecha_reprogramacion,
-        tipo_auditoria:id_tipo_auditoria ( tipo ),
-        metodologia:id_metodologia ( metodologia ),
-        certificado:id_certificado (
+      supabase
+        .from('auditoria')
+        .select(`
           id,
-          numero_certificado,
-          organizacion:id_organizacion ( nombre )
-        ),
-        equipo:equipo_auditor (
-          rol_auditor,
-          auditor:id_auditor ( nombre )
-        )
-      `),
-      supabase.from('auditor').select(`
-        id,
-        nombre,
-        normas:norma_auditor ( norma:id_norma ( norma ) ),
-        sectores:sector_iaf_auditor ( sector:id_sector_iaf ( sector ) )
-      `),
-      supabase.from('organizacion').select('id, nombre, rif, direccion_fiscal'),
-      supabase.from('sitio').select(`
-        id,
-        numero_sitio,
-        nombre_sitio,
-        direccion_sitio,
-        certificado:id_certificado ( numero_certificado )
-      `),
-      supabase.from('proceso').select(`
-        id,
-        nombre_proceso,
-        certificado:id_certificado ( numero_certificado )
-      `),
-      supabase.from('turno').select('id, hora_entrada, hora_salida'),
+          id_certificado,
+          fecha_programacion,
+          fecha_reprogramacion,
+          tipo_auditoria:id_tipo_auditoria ( tipo ),
+          metodologia:id_metodologia ( metodologia ),
+          certificado:id_certificado (
+            id,
+            numero_certificado,
+            organizacion:id_organizacion ( nombre )
+          ),
+          equipo:equipo_auditor (
+            rol_auditor,
+            auditor:id_auditor ( nombre )
+          )
+        `)
+        .is('deleted_at', null),
+      supabase
+        .from('auditor')
+        .select(`
+          id,
+          nombre,
+          normas:norma_auditor ( norma:id_norma ( norma ) ),
+          sectores:sector_iaf_auditor ( sector:id_sector_iaf ( sector ) )
+        `)
+        .is('deleted_at', null),
+      supabase
+        .from('organizacion')
+        .select('id, nombre, rif, direccion_fiscal')
+        .is('deleted_at', null),
+      supabase
+        .from('sitio')
+        .select(`
+          id,
+          numero_sitio,
+          nombre_sitio,
+          direccion_sitio,
+          certificado:id_certificado ( numero_certificado )
+        `)
+        .is('deleted_at', null),
+      supabase
+        .from('proceso')
+        .select(`
+          id,
+          nombre_proceso,
+          certificado:id_certificado ( numero_certificado )
+        `)
+        .is('deleted_at', null),
+      supabase
+        .from('turno')
+        .select('id, hora_entrada, hora_salida')
+        .is('deleted_at', null),
       supabase
         .from('norma')
         .select('id, esquema, codigo, titulo, estatus, fecha_publicacion, norma')
         .is('deleted_at', null),
-      supabase.from('requisito').select(`
-        id,
-        codigo,
-        ruta_materializada,
-        norma:id_norma ( norma )
-      `),
-      supabase.from('sector_iaf').select('id, sector'),
-      supabase.from('estatus').select('estatus'),
-      supabase.from('tipo_auditoria').select('tipo'),
-      supabase.from('metodologia_auditoria').select('metodologia'),
-      supabase.from('hallazgo').select(`
-        id,
-        id_auditoria,
-        id_requisito,
-        id_proceso,
-        tipo,
-        descripcion,
-        evidencia,
-        cerrado,
-        created_at,
-        auditoria:id_auditoria (
-          tipo_auditoria:id_tipo_auditoria ( tipo ),
-          certificado:id_certificado (
-            numero_certificado,
-            organizacion:id_organizacion ( nombre )
-          )
-        ),
-        requisito:id_requisito ( codigo ),
-        proceso:id_proceso ( nombre_proceso )
-      `),
+      supabase
+        .from('requisito')
+        .select(`
+          id,
+          codigo,
+          ruta_materializada,
+          norma:id_norma ( norma )
+        `)
+        .is('deleted_at', null),
+      supabase
+        .from('sector_iaf')
+        .select('id, sector')
+        .is('deleted_at', null),
+      supabase
+        .from('estatus')
+        .select('estatus')
+        .is('deleted_at', null),
+      supabase
+        .from('tipo_auditoria')
+        .select('tipo')
+        .is('deleted_at', null),
+      supabase
+        .from('metodologia_auditoria')
+        .select('metodologia')
+        .is('deleted_at', null),
+      supabase
+        .from('hallazgo')
+        .select(`
+          id,
+          id_auditoria,
+          id_requisito,
+          id_proceso,
+          tipo,
+          descripcion,
+          evidencia,
+          cerrado,
+          created_at,
+          auditoria:id_auditoria (
+            tipo_auditoria:id_tipo_auditoria ( tipo ),
+            certificado:id_certificado (
+              numero_certificado,
+              organizacion:id_organizacion ( nombre )
+            )
+          ),
+          requisito:id_requisito ( codigo ),
+          proceso:id_proceso ( nombre_proceso )
+        `)
+        .is('deleted_at', null),
       supabase
         .from('organismo_acreditacion')
         .select('id, codigo, nombre, pais, sitio_web')
@@ -8987,11 +9955,11 @@ async function runHealthChecks(): Promise<void> {
   const t3 = performance.now();
   try {
     const [orgsRes, certsRes, auditsRes, findingsRes, sampleCertRes] = await Promise.all([
-      supabase.from('organizacion').select('id', { count: 'exact', head: true }),
-      supabase.from('certificado').select('id', { count: 'exact', head: true }),
-      supabase.from('auditoria').select('id', { count: 'exact', head: true }),
-      supabase.from('hallazgo').select('id', { count: 'exact', head: true }),
-      supabase.from('certificado').select('id, numero_certificado').limit(1).maybeSingle(),
+      supabase.from('organizacion').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+      supabase.from('certificado').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+      supabase.from('auditoria').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+      supabase.from('hallazgo').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+      supabase.from('certificado').select('id, numero_certificado').is('deleted_at', null).limit(1).maybeSingle(),
     ]);
     const ms3 = Math.round(performance.now() - t3);
 
@@ -9058,7 +10026,7 @@ async function runHealthChecks(): Promise<void> {
   try {
     const [logsRes, accessRes] = await Promise.all([
       supabase.from('audit_log').select('id', { count: 'exact', head: true }),
-      supabase.from('client_organization_access').select('id', { count: 'exact', head: true }),
+      supabase.from('client_organization_access').select('id', { count: 'exact', head: true }).is('deleted_at', null),
     ]);
     const ms5 = Math.round(performance.now() - t5);
 
@@ -9121,6 +10089,11 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (e.key !== 'Escape') return;
+
+  if (state.archiveGovernance.modal.isOpen) {
+    closeArchiveModal();
+    return;
+  }
 
   if (state.auditLogModal.isOpen) {
     closeAuditLogModal();

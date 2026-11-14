@@ -19,6 +19,12 @@ import {
 } from '../lib/universalTemplate';
 import { renderUniversalTemplate } from './universalTemplate';
 import { renderDetailPageTemplate, type DetailParentChip } from './detailTemplate';
+import {
+  canArchiveRecord,
+  extractUniversalArchiveProps,
+  renderArchivarButtonHtml,
+  type ArchiveMultiViewConfig,
+} from '../lib/archiveGovernance';
 
 export interface OrganizacionViewState {
   selectedOrganizacionId: string | null;
@@ -46,10 +52,11 @@ export interface OrganizacionViewProps {
   certificados: CertificadoSummary[];
   auditorias?: ProgramacionAuditEntity[];
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }
 
 export function renderOrganizacionView(props: OrganizacionViewProps): string {
-  const { profile, state, organizaciones, certificados, auditorias = [], loading } = props;
+  const { profile, state, organizaciones, certificados, auditorias = [], loading, archiveConfig } = props;
   const isStaff =
     (profile.role === 'ADMIN' || profile.role === 'WORKER') &&
     (!profile.status || profile.status === 'APPROVED');
@@ -79,6 +86,7 @@ export function renderOrganizacionView(props: OrganizacionViewProps): string {
     certificados,
     isStaff,
     loading,
+    archiveConfig,
   });
 }
 
@@ -188,8 +196,9 @@ function renderOrganizacionDirectoryView(props: {
   certificados: CertificadoSummary[];
   isStaff: boolean;
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }): string {
-  const { state, organizaciones, certificados, isStaff, loading } = props;
+  const { state, organizaciones, certificados, isStaff, loading, archiveConfig } = props;
 
   // Compute unique IAF sectors represented across organizations
   const sectorMap = new Map<number, string>();
@@ -490,6 +499,7 @@ function renderOrganizacionDirectoryView(props: {
     inlineFormHtml,
     loading,
     loadingMessage: 'Cargando directorio de organizaciones clientes...',
+    ...extractUniversalArchiveProps(archiveConfig, 'organizaciones'),
   });
 }
 
@@ -545,6 +555,17 @@ function renderOrganizacionDetailView(props: {
     });
   }
 
+  const canArchive = canArchiveRecord(props.profile);
+  const archiveBtnHtml = canArchive
+    ? renderArchivarButtonHtml({
+        tableName: 'organizacion',
+        recordId: org.id,
+        entityLabel: 'Organización Cliente',
+        recordTitle: org.nombre,
+        recordSubtitle: `RIF: ${org.rif}`,
+      })
+    : '';
+
   const recordActionsHtml = isStaff
     ? isEditing
       ? `
@@ -557,14 +578,17 @@ function renderOrganizacionDetailView(props: {
         </button>
       `
       : `
-        <button
-          type="button"
-          id="startEditOrgBtn"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors cursor-pointer"
-        >
-          <span aria-hidden="true">✏️</span>
-          <span>Editar</span>
-        </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            id="startEditOrgBtn"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+          >
+            <span aria-hidden="true">✏️</span>
+            <span>Editar</span>
+          </button>
+          ${archiveBtnHtml}
+        </div>
       `
     : '';
 

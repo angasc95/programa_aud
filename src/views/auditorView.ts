@@ -25,6 +25,12 @@ import {
   renderDetailPageTemplate,
   type DetailParentChip,
 } from './detailTemplate';
+import {
+  canArchiveRecord,
+  extractUniversalArchiveProps,
+  renderArchivarButtonHtml,
+  type ArchiveMultiViewConfig,
+} from '../lib/archiveGovernance';
 
 export type { AuditorViewState, AuditorChildTab };
 
@@ -33,10 +39,11 @@ export interface AuditorViewProps {
   state: AuditorViewState;
   auditors: AuditorDetailEntity[];
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }
 
 export function renderAuditorView(props: AuditorViewProps): string {
-  const { profile, state, auditors, loading = false } = props;
+  const { profile, state, auditors, loading = false, archiveConfig } = props;
 
   if (state.selectedAuditorId) {
     const selectedAuditor = auditors.find((a) => a.id === state.selectedAuditorId);
@@ -45,7 +52,7 @@ export function renderAuditorView(props: AuditorViewProps): string {
     }
   }
 
-  return renderAuditorDirectory(profile, state, auditors, loading);
+  return renderAuditorDirectory(profile, state, auditors, loading, archiveConfig);
 }
 
 function renderCreateAuditorForm(errorMessage?: string | null): string {
@@ -147,7 +154,8 @@ function renderAuditorDirectory(
   profile: UserProfile,
   state: AuditorViewState,
   allAuditors: AuditorDetailEntity[],
-  loading: boolean
+  loading: boolean,
+  archiveConfig?: ArchiveMultiViewConfig
 ): string {
   const isStaff =
     (profile.role === 'ADMIN' || profile.role === 'WORKER') &&
@@ -466,6 +474,7 @@ function renderAuditorDirectory(
     inlineFormHtml,
     loading,
     loadingMessage: 'Cargando cuerpo de auditores y competencias...',
+    ...extractUniversalArchiveProps(archiveConfig, 'auditores'),
   });
 }
 
@@ -510,17 +519,31 @@ function renderAuditorDetailPage(
       : []),
   ];
 
+  const canArchive = canArchiveRecord(profile);
+  const archiveBtnHtml = canArchive
+    ? renderArchivarButtonHtml({
+        tableName: 'auditor',
+        recordId: auditor.id,
+        entityLabel: 'Auditor Evaluador',
+        recordTitle: auditor.nombre,
+        recordSubtitle: auditor.codigo_credencial,
+      })
+    : '';
+
   const recordActionsHtml = isStaff
     ? !isEditing
       ? `
-        <button
-          type="button"
-          id="startEditAuditorBtn"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
-        >
-          <span aria-hidden="true">✏️</span>
-          <span>Editar</span>
-        </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            id="startEditAuditorBtn"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+          >
+            <span aria-hidden="true">✏️</span>
+            <span>Editar</span>
+          </button>
+          ${archiveBtnHtml}
+        </div>
       `
       : `
         <button

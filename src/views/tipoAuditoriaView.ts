@@ -13,6 +13,12 @@ import {
 import { renderUniversalTemplate } from './universalTemplate';
 import { renderDetailPageTemplate } from './detailTemplate';
 import type { ProgramacionAuditEntity } from '../lib/auditExecution';
+import {
+  canArchiveRecord,
+  extractUniversalArchiveProps,
+  renderArchivarButtonHtml,
+  type ArchiveMultiViewConfig,
+} from '../lib/archiveGovernance';
 
 export interface TipoAuditoriaViewState {
   selectedTipoId: string | null;
@@ -31,10 +37,11 @@ export interface TipoAuditoriaViewProps {
   tiposList: TipoAuditoriaCatalogItem[];
   audits?: ProgramacionAuditEntity[];
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }
 
 export function renderTipoAuditoriaView(props: TipoAuditoriaViewProps): string {
-  const { state, tiposList, audits = [] } = props;
+  const { profile, state, tiposList, audits = [], archiveConfig } = props;
 
   // If a specific audit type is selected, render its detail page
   if (state.selectedTipoId) {
@@ -44,6 +51,7 @@ export function renderTipoAuditoriaView(props: TipoAuditoriaViewProps): string {
 
     if (selectedItem) {
       return renderTipoDetailPage({
+        profile,
         item: selectedItem,
         audits: audits.filter(
           (a) => a.tipo_auditoria.toLowerCase() === selectedItem.tipo.toLowerCase()
@@ -57,6 +65,7 @@ export function renderTipoAuditoriaView(props: TipoAuditoriaViewProps): string {
     state,
     tiposList,
     loading: props.loading,
+    archiveConfig,
   });
 }
 
@@ -78,8 +87,9 @@ function renderTipoDirectoryView(params: {
   state: TipoAuditoriaViewState;
   tiposList: TipoAuditoriaCatalogItem[];
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }): string {
-  const { state, tiposList, loading } = params;
+  const { state, tiposList, loading, archiveConfig } = params;
 
   const facetCategories: MultiViewFacetCategory<TipoAuditoriaCatalogItem>[] = [
     {
@@ -268,14 +278,16 @@ function renderTipoDirectoryView(params: {
     emptyStateTitle: 'No se encontraron tipos de auditoría',
     emptyStateMessage: 'No se encontraron tipos de auditoría que coincidan con los filtros aplicados.',
     loading,
+    ...extractUniversalArchiveProps(archiveConfig, 'tipos'),
   });
 }
 
 function renderTipoDetailPage(params: {
+  profile: UserProfile;
   item: TipoAuditoriaCatalogItem;
   audits: ProgramacionAuditEntity[];
 }): string {
-  const { item, audits } = params;
+  const { profile, item, audits } = params;
 
   const tabAuditoriasHtml = `
     <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white">
@@ -350,6 +362,15 @@ function renderTipoDetailPage(params: {
       action: 'back-to-tipo-list',
     },
     parents: [],
+    recordActionsHtml: canArchiveRecord(profile)
+      ? renderArchivarButtonHtml({
+          tableName: 'tipo_auditoria',
+          recordId: item.id,
+          entityLabel: 'Tipo de Auditoría',
+          recordTitle: item.tipo,
+          recordSubtitle: item.etapa_ciclo,
+        })
+      : '',
     tableName: 'tipo_auditoria',
     recordId: item.id,
     attributes: [

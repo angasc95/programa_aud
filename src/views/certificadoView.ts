@@ -25,6 +25,12 @@ import {
 } from '../lib/universalTemplate';
 import { renderUniversalTemplate } from './universalTemplate';
 import { renderDetailPageTemplate, type DetailParentChip } from './detailTemplate';
+import {
+  canArchiveRecord,
+  extractUniversalArchiveProps,
+  renderArchivarButtonHtml,
+  type ArchiveMultiViewConfig,
+} from '../lib/archiveGovernance';
 
 export type { CertificadoViewState, CertificadoChildTab };
 
@@ -34,6 +40,7 @@ export interface CertificadoViewProps {
   certificates: CertificadoDetailEntity[];
   organizaciones?: OrganizacionEntity[];
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }
 
 /**
@@ -96,7 +103,7 @@ function getStatusBadge(status: string): { label: string; badgeClass: string; do
  * Primary view entry point: Renders either the universal directory or the 4-zone detail page.
  */
 export function renderCertificadoView(props: CertificadoViewProps): string {
-  const { profile, state, certificates, organizaciones = [], loading = false } = props;
+  const { profile, state, certificates, organizaciones = [], loading = false, archiveConfig } = props;
 
   if (state.selectedCertId) {
     const selectedCert = certificates.find((c) => c.id === state.selectedCertId);
@@ -105,7 +112,7 @@ export function renderCertificadoView(props: CertificadoViewProps): string {
     }
   }
 
-  return renderCertificadoDirectory(profile, state, certificates, organizaciones, loading);
+  return renderCertificadoDirectory(profile, state, certificates, organizaciones, loading, archiveConfig);
 }
 
 function renderCreateCertificadoForm(
@@ -243,7 +250,8 @@ function renderCertificadoDirectory(
   state: CertificadoViewState,
   allCertificates: CertificadoDetailEntity[],
   organizaciones: OrganizacionEntity[],
-  loading: boolean
+  loading: boolean,
+  archiveConfig?: ArchiveMultiViewConfig
 ): string {
   const isStaff =
     (profile.role === 'ADMIN' || profile.role === 'WORKER') &&
@@ -564,6 +572,7 @@ function renderCertificadoDirectory(
     inlineFormHtml,
     loading,
     loadingMessage: 'Cargando certificados emitidos...',
+    ...extractUniversalArchiveProps(archiveConfig, 'certificados'),
   });
 }
 
@@ -630,17 +639,31 @@ function renderCertificadoDetailPage(
     },
   ];
 
+  const canArchive = canArchiveRecord(profile);
+  const archiveBtnHtml = canArchive
+    ? renderArchivarButtonHtml({
+        tableName: 'certificado',
+        recordId: cert.id,
+        entityLabel: 'Certificado de Conformidad',
+        recordTitle: cert.numero_certificado,
+        recordSubtitle: `${cert.organizacion_nombre} · ${cert.norma_codigo}`,
+      })
+    : '';
+
   const recordActionsHtml = isStaff
     ? !isEditing
       ? `
-        <button
-          type="button"
-          id="startEditCertBtn"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
-        >
-          <span aria-hidden="true">✏️</span>
-          <span>Editar</span>
-        </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            id="startEditCertBtn"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+          >
+            <span aria-hidden="true">✏️</span>
+            <span>Editar</span>
+          </button>
+          ${archiveBtnHtml}
+        </div>
       `
       : `
         <button

@@ -22,6 +22,12 @@ import {
 import { renderUniversalTemplate } from './universalTemplate';
 import { renderDetailPageTemplate } from './detailTemplate';
 import type { CertificadoDetailEntity } from '../lib/multisiteSampling';
+import {
+  canArchiveRecord,
+  extractUniversalArchiveProps,
+  renderArchivarButtonHtml,
+  type ArchiveMultiViewConfig,
+} from '../lib/archiveGovernance';
 
 export interface NormaViewState {
   selectedNormaId: string | null;
@@ -48,6 +54,7 @@ export interface NormaViewProps {
   sectores?: SectorIafEntity[];
   certificados?: CertificadoDetailEntity[];
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }
 
 export function renderNormaView(props: NormaViewProps): string {
@@ -61,6 +68,7 @@ export function renderNormaView(props: NormaViewProps): string {
     sectores = [],
     certificados = [],
     loading,
+    archiveConfig,
   } = props;
 
   const isStaff = profile.role === 'ADMIN' || profile.role === 'WORKER';
@@ -96,6 +104,7 @@ export function renderNormaView(props: NormaViewProps): string {
     normas,
     acreditaciones,
     loading,
+    archiveConfig,
   });
 }
 
@@ -108,8 +117,9 @@ function renderNormaDirectoryView(params: {
   normas: NormaEntity[];
   acreditaciones: AcreditacionNormaIaf[];
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }): string {
-  const { state, normas, acreditaciones, loading } = params;
+  const { state, normas, acreditaciones, loading, archiveConfig } = params;
 
   const uniqueSchemes = Array.from(new Set(normas.map((n) => n.esquema))).sort();
   const uniqueStatuses = ['Vigente', 'En Revisión', 'Obsoleta'];
@@ -385,6 +395,7 @@ function renderNormaDirectoryView(params: {
     emptyStateTitle: 'No se encontraron normas',
     emptyStateMessage: 'No se encontraron normas que coincidan con los filtros aplicados.',
     loading,
+    ...extractUniversalArchiveProps(archiveConfig, 'normas'),
   });
 }
 
@@ -405,6 +416,7 @@ function renderNormaDetailPage(params: {
   isStaff: boolean;
 }): string {
   const {
+    profile,
     norma,
     activeTab,
     acreditaciones,
@@ -840,6 +852,15 @@ function renderNormaDetailPage(params: {
       action: 'back-to-normas-list',
     },
     parents: [],
+    recordActionsHtml: canArchiveRecord(profile)
+      ? renderArchivarButtonHtml({
+          tableName: 'norma',
+          recordId: norma.id,
+          entityLabel: 'Norma de Sistema de Gestión',
+          recordTitle: norma.codigo,
+          recordSubtitle: norma.titulo,
+        })
+      : '',
     tableName: 'norma',
     recordId: norma.id,
     attributes: [

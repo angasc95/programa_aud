@@ -23,6 +23,12 @@ import {
 } from '../lib/universalTemplate';
 import { renderUniversalTemplate } from './universalTemplate';
 import { renderDetailPageTemplate } from './detailTemplate';
+import {
+  canArchiveRecord,
+  extractUniversalArchiveProps,
+  renderArchivarButtonHtml,
+  type ArchiveMultiViewConfig,
+} from '../lib/archiveGovernance';
 
 export interface SectorIafViewState {
   selectedSectorId: string | null;
@@ -46,6 +52,7 @@ export interface SectorIafViewProps {
   certificados?: CertificadoDetailEntity[];
   auditores?: AuditorDetailEntity[];
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }
 
 export function renderSectorIafView(props: SectorIafViewProps): string {
@@ -58,6 +65,7 @@ export function renderSectorIafView(props: SectorIafViewProps): string {
     certificados = [],
     auditores = [],
     loading,
+    archiveConfig,
   } = props;
   const isStaff = profile.role === 'ADMIN' || profile.role === 'WORKER';
 
@@ -99,6 +107,7 @@ export function renderSectorIafView(props: SectorIafViewProps): string {
     sectores,
     subsectores,
     loading,
+    archiveConfig,
   });
 }
 
@@ -108,8 +117,9 @@ function renderSectorDirectoryView(params: {
   sectores: SectorIafEntity[];
   subsectores: SubsectorIafEntity[];
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }): string {
-  const { state, sectores, subsectores, loading } = params;
+  const { state, sectores, subsectores, loading, archiveConfig } = params;
 
   const getRelatedSubs = (sec: SectorIafEntity): SubsectorIafEntity[] =>
     subsectores.filter(
@@ -358,6 +368,7 @@ function renderSectorDirectoryView(params: {
     emptyStateTitle: 'No se encontraron sectores IAF',
     emptyStateMessage: 'No se encontraron sectores que coincidan con los filtros aplicados.',
     loading,
+    ...extractUniversalArchiveProps(archiveConfig, 'iaf'),
   });
 }
 
@@ -376,6 +387,7 @@ function renderSectorDetailPage(params: {
   isStaff: boolean;
 }): string {
   const {
+    profile,
     sector,
     activeTab,
     subsectores,
@@ -814,6 +826,15 @@ function renderSectorDetailPage(params: {
       action: 'back-to-iaf-list',
     },
     parents: [],
+    recordActionsHtml: canArchiveRecord(profile)
+      ? renderArchivarButtonHtml({
+          tableName: 'sector_iaf',
+          recordId: sector.id,
+          entityLabel: 'Sector Técnico IAF',
+          recordTitle: `Sector IAF ${sector.sector}`,
+          recordSubtitle: sector.descripcion,
+        })
+      : '',
     tableName: 'sector_iaf',
     recordId: sector.id,
     attributes: [

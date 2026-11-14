@@ -11,6 +11,7 @@ import type {
 import { renderProgramacionView } from './programacionView';
 import { renderCalendarioView } from './calendarioView';
 import { renderResultadoView } from './resultadoView';
+import type { ArchiveMultiViewConfig } from '../lib/archiveGovernance';
 
 export interface AuditRecord {
   id: string;
@@ -47,6 +48,7 @@ export interface AuditoriasViewState {
   requirements: Array<{ id: string; codigo: string; norma: string }>;
   standards: Array<{ norma: string }>;
   loading: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }
 
 export function renderAuditoriasView(
@@ -85,6 +87,7 @@ export function renderAuditoriasView(
       certificates: state.certificates,
       findings: state.phase5Findings,
       loading: state.loading,
+      archiveConfig: state.archiveConfig,
     });
   }
 

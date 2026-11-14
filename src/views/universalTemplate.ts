@@ -6,6 +6,13 @@ import {
   type SortState,
 } from '../lib/universalTemplate';
 import type { ViewMode } from '../lib/searchControls';
+import type { ActorDirectoryEntry } from '../lib/auditLog';
+import {
+  formatArchivedActorDisplay,
+  formatArchivedDateDisplay,
+  getArchiveTableDisplayLabel,
+  type ArchivedItemEntry,
+} from '../lib/archiveGovernance';
 
 export interface UniversalTemplateProps<T> {
   domainKey?: string;
@@ -31,6 +38,11 @@ export interface UniversalTemplateProps<T> {
   inlineFormHtml?: string;
   loading?: boolean;
   loadingMessage?: string;
+  canInspectArchived?: boolean;
+  showArchived?: boolean;
+  archivedItems?: ArchivedItemEntry[];
+  actorDirectory?: Record<string, ActorDirectoryEntry>;
+  restoringId?: string | null;
 }
 
 export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): string {
@@ -58,6 +70,11 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
     inlineFormHtml = '',
     loading = false,
     loadingMessage = 'Cargando registros...',
+    canInspectArchived = false,
+    showArchived = false,
+    archivedItems = [],
+    actorDirectory,
+    restoringId = null,
   } = props;
 
   const activeFacetCount = facetGroups.reduce(
@@ -396,7 +413,35 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
             </div>
           </div>
 
-          <div class="flex items-center justify-between lg:justify-end gap-3 shrink-0">
+          <div class="flex flex-wrap items-center justify-between lg:justify-end gap-3 shrink-0">
+            ${
+              canInspectArchived
+                ? `
+                  <label
+                    class="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border ${
+                      showArchived
+                        ? 'border-slate-400 bg-slate-100 text-slate-900'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    } text-xs font-semibold cursor-pointer transition-colors select-none whitespace-nowrap"
+                  >
+                    <input
+                      type="checkbox"
+                      id="showArchivedCheckbox"
+                      data-action="toggle-show-archived"
+                      ${showArchived ? 'checked' : ''}
+                      class="h-3.5 w-3.5 rounded border-slate-300 text-slate-800 focus:ring-slate-500 cursor-pointer"
+                    />
+                    <span>Mostrar Archivados</span>
+                    ${
+                      archivedItems.length > 0
+                        ? `<span class="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-200 text-slate-700 tabular-nums">${archivedItems.length}</span>`
+                        : ''
+                    }
+                  </label>
+                `
+                : ''
+            }
+
             <div class="text-xs text-slate-500 font-medium tabular-nums">
               Mostrando <span class="font-bold text-slate-900 tabular-nums">${filteredCount}</span> de <span class="font-semibold text-slate-700 tabular-nums">${totalCount}</span> ${escapeHtml(entityLabel)}
             </div>
@@ -445,6 +490,100 @@ export function renderUniversalTemplate<T>(props: UniversalTemplateProps<T>): st
         ${facetSidebarHtml}
         <section class="flex-1 min-w-0 w-full space-y-4">
           ${contentHtml}
+          ${
+            canInspectArchived && showArchived
+              ? `
+                <div
+                  id="archivedRecordsSection"
+                  class="mt-6 rounded-xl border border-slate-200 bg-slate-50/90 p-4 sm:p-5 space-y-3"
+                >
+                  <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
+                    <div class="flex items-center gap-2">
+                      <span class="inline-flex items-center px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider rounded bg-slate-200 text-slate-700">
+                        Archivo Histórico
+                      </span>
+                      <h3 class="text-sm font-bold text-slate-800">
+                        Registros Archivados
+                      </h3>
+                    </div>
+                    <span class="text-xs font-semibold text-slate-500 tabular-nums">
+                      ${archivedItems.length} ${archivedItems.length === 1 ? 'registro archivado' : 'registros archivados'}
+                    </span>
+                  </div>
+
+                  ${
+                    archivedItems.length === 0
+                      ? `
+                        <p class="text-xs text-slate-500 py-3 text-center">
+                          No hay registros archivados en esta sección.
+                        </p>
+                      `
+                      : `
+                        <div class="divide-y divide-slate-200/80 rounded-lg border border-slate-200 bg-white overflow-hidden">
+                          ${archivedItems
+                            .map((entry) => {
+                              const actorDisplay = formatArchivedActorDisplay(entry, actorDirectory);
+                              const dateDisplay = formatArchivedDateDisplay(entry.deletedAt);
+                              const tableLabel = getArchiveTableDisplayLabel(entry.tableName);
+                              const isRestoring = restoringId === entry.id;
+                              return `
+                                <div
+                                  data-archived-item="${escapeHtml(entry.tableName)}:${escapeHtml(entry.id)}"
+                                  class="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 hover:bg-slate-50/80 transition-colors"
+                                >
+                                  <div class="min-w-0 space-y-1">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                      <span class="inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                        ${escapeHtml(tableLabel)}
+                                      </span>
+                                      ${
+                                        entry.code
+                                          ? `<span class="font-mono text-xs font-semibold text-slate-500">${escapeHtml(entry.code)}</span>`
+                                          : ''
+                                      }
+                                      <span class="text-sm font-semibold text-slate-700 truncate">
+                                        ${escapeHtml(entry.title)}
+                                      </span>
+                                    </div>
+                                    ${
+                                      entry.subtitle
+                                        ? `<p class="text-xs text-slate-500 truncate">${escapeHtml(entry.subtitle)}</p>`
+                                        : ''
+                                    }
+                                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                                      <span class="tabular-nums">Archivado: <strong class="font-semibold text-slate-600">${escapeHtml(dateDisplay)}</strong></span>
+                                      <span>Por: <strong class="font-semibold text-slate-600">${escapeHtml(actorDisplay)}</strong></span>
+                                      ${
+                                        entry.deleteReason
+                                          ? `<span class="text-slate-600 italic">Motivo: "${escapeHtml(entry.deleteReason)}"</span>`
+                                          : ''
+                                      }
+                                    </div>
+                                  </div>
+                                  <div class="shrink-0">
+                                    <button
+                                      type="button"
+                                      data-action="restore-archived-record"
+                                      data-restore-table="${escapeHtml(entry.tableName)}"
+                                      data-restore-id="${escapeHtml(entry.id)}"
+                                      ${isRestoring ? 'disabled' : ''}
+                                      class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                                    >
+                                      <span aria-hidden="true">↺</span>
+                                      <span>${isRestoring ? 'Restaurando...' : 'Restaurar'}</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              `;
+                            })
+                            .join('')}
+                        </div>
+                      `
+                  }
+                </div>
+              `
+              : ''
+          }
         </section>
       </div>
     </div>

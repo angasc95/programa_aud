@@ -13,6 +13,12 @@ import {
 import { renderUniversalTemplate } from './universalTemplate';
 import { renderDetailPageTemplate } from './detailTemplate';
 import type { ProgramacionAuditEntity } from '../lib/auditExecution';
+import {
+  canArchiveRecord,
+  extractUniversalArchiveProps,
+  renderArchivarButtonHtml,
+  type ArchiveMultiViewConfig,
+} from '../lib/archiveGovernance';
 
 export interface MetodologiaAuditoriaViewState {
   selectedMetodologiaId: string | null;
@@ -30,10 +36,11 @@ export interface MetodologiaAuditoriaViewProps {
   metodologiasList: MetodologiaAuditoriaCatalogItem[];
   audits?: ProgramacionAuditEntity[];
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }
 
 export function renderMetodologiaAuditoriaView(props: MetodologiaAuditoriaViewProps): string {
-  const { state, metodologiasList, audits = [] } = props;
+  const { profile, state, metodologiasList, audits = [], archiveConfig } = props;
 
   // If a specific methodology is selected, render its detail page
   if (state.selectedMetodologiaId) {
@@ -46,6 +53,7 @@ export function renderMetodologiaAuditoriaView(props: MetodologiaAuditoriaViewPr
 
     if (selectedItem) {
       return renderMetodologiaDetailPage({
+        profile,
         item: selectedItem,
         audits: audits.filter(
           (a) => a.metodologia.toLowerCase() === selectedItem.metodologia.toLowerCase()
@@ -59,6 +67,7 @@ export function renderMetodologiaAuditoriaView(props: MetodologiaAuditoriaViewPr
     state,
     metodologiasList,
     loading: props.loading,
+    archiveConfig,
   });
 }
 
@@ -66,8 +75,9 @@ function renderMetodologiaDirectoryView(params: {
   state: MetodologiaAuditoriaViewState;
   metodologiasList: MetodologiaAuditoriaCatalogItem[];
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }): string {
-  const { state, metodologiasList, loading } = params;
+  const { state, metodologiasList, loading, archiveConfig } = params;
 
   const facetCategories: MultiViewFacetCategory<MetodologiaAuditoriaCatalogItem>[] = [
     {
@@ -244,14 +254,16 @@ function renderMetodologiaDirectoryView(params: {
     emptyStateTitle: 'No se encontraron metodologías',
     emptyStateMessage: 'No se encontraron metodologías que coincidan con los filtros aplicados.',
     loading,
+    ...extractUniversalArchiveProps(archiveConfig, 'metodologias'),
   });
 }
 
 function renderMetodologiaDetailPage(params: {
+  profile: UserProfile;
   item: MetodologiaAuditoriaCatalogItem;
   audits: ProgramacionAuditEntity[];
 }): string {
-  const { item, audits } = params;
+  const { profile, item, audits } = params;
 
   const tabAuditoriasHtml = `
     <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white">
@@ -326,6 +338,15 @@ function renderMetodologiaDetailPage(params: {
       action: 'back-to-metodologia-list',
     },
     parents: [],
+    recordActionsHtml: canArchiveRecord(profile)
+      ? renderArchivarButtonHtml({
+          tableName: 'metodologia_auditoria',
+          recordId: item.id,
+          entityLabel: 'Metodología de Auditoría',
+          recordTitle: item.metodologia,
+          recordSubtitle: 'ISO 19011 / IAF MD 4',
+        })
+      : '',
     tableName: 'metodologia_auditoria',
     recordId: item.id,
     attributes: [

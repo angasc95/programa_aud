@@ -33,6 +33,10 @@ import {
 } from '../lib/universalTemplate';
 import { renderUniversalTemplate } from './universalTemplate';
 import { renderDetailPageTemplate, type DetailParentChip } from './detailTemplate';
+import {
+  extractUniversalArchiveProps,
+  type ArchiveMultiViewConfig,
+} from '../lib/archiveGovernance';
 
 export type AcreditacionChildTab = 'certificados' | 'subsectores';
 
@@ -72,6 +76,7 @@ export interface AcreditacionViewProps {
   certificates?: ReadonlyArray<CertificadoDetailEntity>;
   subsectores?: ReadonlyArray<SubsectorIafEntity>;
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }
 
 export function renderAcreditacionView(props: AcreditacionViewProps): string {
@@ -85,6 +90,7 @@ export function renderAcreditacionView(props: AcreditacionViewProps): string {
     certificates = [],
     subsectores = INITIAL_SUBSECTORES_IAF,
     loading,
+    archiveConfig,
   } = props;
   const isStaff =
     (profile.role === 'ADMIN' || profile.role === 'WORKER') &&
@@ -113,6 +119,7 @@ export function renderAcreditacionView(props: AcreditacionViewProps): string {
     sectores,
     isStaff,
     loading,
+    archiveConfig,
   });
 }
 
@@ -299,8 +306,9 @@ function renderAcreditacionDirectoryView(params: {
   sectores: SectorIafEntity[];
   isStaff: boolean;
   loading?: boolean;
+  archiveConfig?: ArchiveMultiViewConfig;
 }): string {
-  const { state, acreditaciones, organismos, normas, sectores, isStaff, loading } = params;
+  const { state, acreditaciones, organismos, normas, sectores, isStaff, loading, archiveConfig } = params;
 
   // Build facet option lists dynamically so both live records and catalog choices appear cleanly
   const orgMap = new Map<string, string>();
@@ -716,6 +724,7 @@ function renderAcreditacionDirectoryView(params: {
     inlineFormHtml,
     loading,
     loadingMessage: 'Cargando acreditaciones registradas...',
+    ...extractUniversalArchiveProps(archiveConfig, 'acreditaciones'),
   });
 }
 

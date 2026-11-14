@@ -15,7 +15,11 @@ import {
   type OrganismoAcreditacion,
   type RequisitoLtree,
   type SectorIafEntity,
+  type EstatusCatalogItem,
+  type TipoAuditoriaCatalogItem,
+  type MetodologiaAuditoriaCatalogItem,
 } from '../lib/extraDomain';
+import type { ArchiveMultiViewConfig } from '../lib/archiveGovernance';
 import {
   buildInitialAcreditacionEntities,
   toLegacyAcreditacionNormaIaf,
@@ -98,6 +102,11 @@ export interface ExtraViewState {
   certificates?: CertificadoDetailEntity[];
   auditors?: AuditorDetailEntity[];
   audits?: ProgramacionAuditEntity[];
+  estatusCatalog?: EstatusCatalogItem[];
+  tiposCatalog?: TipoAuditoriaCatalogItem[];
+  metodologiasCatalog?: MetodologiaAuditoriaCatalogItem[];
+  archivedRecordIds?: ReadonlySet<string>;
+  archiveConfig?: ArchiveMultiViewConfig;
   // Deep navigation sub-states
   normaState?: Partial<NormaViewState>;
   iafState?: Partial<SectorIafViewState>;
@@ -180,6 +189,45 @@ export function renderExtraView(
       ? mappedAcreditaciones.map(toLegacyAcreditacionNormaIaf)
       : [...INITIAL_ACREDITACIONES];
 
+  const archivedIds = state.archivedRecordIds;
+
+  const activeNormas = archivedIds
+    ? mappedNormas.filter((n) => !archivedIds.has(n.id))
+    : mappedNormas;
+  const activeSectores = archivedIds
+    ? mappedSectores.filter((s) => !archivedIds.has(s.id))
+    : mappedSectores;
+  const activeAcreditaciones = archivedIds
+    ? mappedAcreditaciones.filter((a) => !archivedIds.has(a.id))
+    : mappedAcreditaciones;
+  const activeLegacyAcreditaciones = archivedIds
+    ? legacyAcreditaciones.filter((a) => !archivedIds.has(a.id))
+    : legacyAcreditaciones;
+
+  const rawEstatus =
+    state.estatusCatalog && state.estatusCatalog.length > 0
+      ? state.estatusCatalog
+      : INITIAL_ESTATUS_CATALOG;
+  const activeEstatusList = archivedIds
+    ? rawEstatus.filter((e) => !archivedIds.has(e.id))
+    : rawEstatus;
+
+  const rawTipos =
+    state.tiposCatalog && state.tiposCatalog.length > 0
+      ? state.tiposCatalog
+      : INITIAL_TIPOS_AUDITORIA_CATALOG;
+  const activeTiposList = archivedIds
+    ? rawTipos.filter((t) => !archivedIds.has(t.id))
+    : rawTipos;
+
+  const rawMetodologias =
+    state.metodologiasCatalog && state.metodologiasCatalog.length > 0
+      ? state.metodologiasCatalog
+      : INITIAL_METODOLOGIAS_CATALOG;
+  const activeMetodologiasList = archivedIds
+    ? rawMetodologias.filter((m) => !archivedIds.has(m.id))
+    : rawMetodologias;
+
   let activeContentHtml = '';
 
   if (activeSub === 'iaf' || activeSub === 'sector_iaf') {
@@ -199,12 +247,13 @@ export function renderExtraView(
     activeContentHtml = renderSectorIafView({
       profile,
       state: iafState,
-      sectores: mappedSectores,
+      sectores: activeSectores,
       subsectores: INITIAL_SUBSECTORES_IAF,
-      acreditaciones: legacyAcreditaciones,
+      acreditaciones: activeLegacyAcreditaciones,
       certificados: state.certificates || [],
       auditores: state.auditors || [],
       loading: state.loading,
+      archiveConfig: state.archiveConfig,
     });
   } else if (
     activeSub === 'accreditations' ||
@@ -235,13 +284,14 @@ export function renderExtraView(
     activeContentHtml = renderAcreditacionView({
       profile,
       state: acredState,
-      acreditaciones: mappedAcreditaciones,
+      acreditaciones: activeAcreditaciones,
       organismos: mappedOrganismos,
-      normas: mappedNormas,
-      sectores: mappedSectores,
+      normas: activeNormas,
+      sectores: activeSectores,
       certificates: state.certificates || [],
       subsectores: INITIAL_SUBSECTORES_IAF,
       loading: state.loading,
+      archiveConfig: state.archiveConfig,
     });
   } else if (activeSub === 'estatus') {
     const estatusState: EstatusViewState = {
@@ -259,10 +309,11 @@ export function renderExtraView(
     activeContentHtml = renderEstatusView({
       profile,
       state: estatusState,
-      estatusList: INITIAL_ESTATUS_CATALOG,
+      estatusList: activeEstatusList,
       certificados: state.certificates || [],
       audits: state.audits || [],
       loading: state.loading,
+      archiveConfig: state.archiveConfig,
     });
   } else if (activeSub === 'tipos' || activeSub === 'tipo') {
     const tipoState: TipoAuditoriaViewState = {
@@ -279,9 +330,10 @@ export function renderExtraView(
     activeContentHtml = renderTipoAuditoriaView({
       profile,
       state: tipoState,
-      tiposList: INITIAL_TIPOS_AUDITORIA_CATALOG,
+      tiposList: activeTiposList,
       audits: state.audits || [],
       loading: state.loading,
+      archiveConfig: state.archiveConfig,
     });
   } else if (activeSub === 'metodologias' || activeSub === 'metodologia') {
     const metState: MetodologiaAuditoriaViewState = {
@@ -297,9 +349,10 @@ export function renderExtraView(
     activeContentHtml = renderMetodologiaAuditoriaView({
       profile,
       state: metState,
-      metodologiasList: INITIAL_METODOLOGIAS_CATALOG,
+      metodologiasList: activeMetodologiasList,
       audits: state.audits || [],
       loading: state.loading,
+      archiveConfig: state.archiveConfig,
     });
   } else {
     // 'standards' (and graceful fallback for retired 'requirements' / 'catalogs')
@@ -321,13 +374,14 @@ export function renderExtraView(
     activeContentHtml = renderNormaView({
       profile,
       state: normaState,
-      normas: mappedNormas,
-      acreditaciones: legacyAcreditaciones,
+      normas: activeNormas,
+      acreditaciones: activeLegacyAcreditaciones,
       organismos: mappedOrganismos,
       requisitos: mappedRequisitos,
-      sectores: mappedSectores,
+      sectores: activeSectores,
       certificados: state.certificates || [],
       loading: state.loading,
+      archiveConfig: state.archiveConfig,
     });
   }
 
